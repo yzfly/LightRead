@@ -32,6 +32,9 @@ sha2 = "0.10.9"
 uuid = { version = "1.20.0", features = ["v4"] }
 tokio = { version = "1.52.3", features = ["macros", "rt"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
+
+# 本地离线语音仅桌面平台 (sherpa-onnx 无移动端预编译库)
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 sherpa-onnx = "1.13.3"
 ureq = "2"
 bzip2 = "0.5.2"
