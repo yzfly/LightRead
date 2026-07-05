@@ -1,0 +1,129 @@
+// LightRead 端到端冒烟: 导入 TXT → 书架出现 → 打开阅读器 → 目录/翻页 → PDF 导入打开
+import { chromium } from 'playwright'
+import { writeFileSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+
+const TMP = '/tmp/lightread-e2e'
+mkdirSync(join(TMP, 'shots'), { recursive: true })
+
+// 1. 测试 TXT (带中文章节)
+const txtPath = join(TMP, '测试小说.txt')
+const chapters = []
+for (let i = 1; i <= 5; i++) {
+  chapters.push(`第${['一', '二', '三', '四', '五'][i - 1]}章 风起于青萍之末\n\n` +
+    `这是第 ${i} 章的正文内容。`.repeat(3) + '\n\n' +
+    '夜色像一块浸了水的墨布，慢慢压下来。他把灯芯挑亮了一点，书页上的字便站得直了些。\n'.repeat(40))
+}
+writeFileSync(txtPath, chapters.join('\n\n'), 'utf-8')
+
+// 2. 最小合法 PDF
+const pdfContent = `%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+4 0 obj << /Length 60 >> stream
+BT /F1 24 Tf 100 700 Td (Hello LightRead PDF) Tj ET
+endstream endobj
+5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+trailer << /Root 1 0 R /Size 6 >>
+%%EOF`
+const pdfPath = join(TMP, 'test-doc.pdf')
+writeFileSync(pdfPath, pdfContent)
+
+const browser = await chromium.launch()
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+const errors = []
+page.on('pageerror', e => errors.push('PAGE_ERROR: ' + e.message))
+page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()) })
+
+const step = async (name, fn) => {
+  try {
+    await fn()
+    console.log('✅', name)
+  } catch (e) {
+    console.log('❌', name, '—', e.message.split('\n')[0])
+    await page.screenshot({ path: join(TMP, 'shots', `fail-${name.replace(/\W+/g, '_')}.png`) })
+  }
+}
+
+await step('打开应用', async () => {
+  await page.goto('http://localhost:4173/', { waitUntil: 'networkidle' })
+  await page.waitForSelector('text=书架还是空的', { timeout: 8000 })
+})
+await page.screenshot({ path: join(TMP, 'shots', '01-empty-library.png') })
+
+await step('导入 TXT', async () => {
+  await page.setInputFiles('input[type=file][multiple]', txtPath)
+  await page.waitForSelector('.book-card', { timeout: 15000 })
+})
+
+await step('导入 PDF', async () => {
+  await page.setInputFiles('input[type=file][multiple]', pdfPath)
+  await page.waitForFunction(() => document.querySelectorAll('.book-card').length >= 2, null, { timeout: 15000 })
+})
+await page.screenshot({ path: join(TMP, 'shots', '02-library.png') })
+
+await step('打开 TXT 阅读器并渲染正文', async () => {
+  await page.click('.book-card:has-text("测试小说")')
+  await page.waitForSelector('foliate-view', { timeout: 15000 })
+  // foliate 渲染在 paginator 的 shadow DOM iframe 里, 通过 view API 取内容
+  await page.waitForFunction(() => {
+    const view = document.querySelector('foliate-view')
+    const doc = view?.renderer?.getContents?.()?.[0]?.doc
+    return !!doc?.body?.textContent?.includes('夜色像一块浸了水的墨布')
+  }, null, { timeout: 15000 })
+})
+await page.screenshot({ path: join(TMP, 'shots', '03-reader.png') })
+
+await step('目录面板显示章节', async () => {
+  await page.click('button[title="目录"]')
+  await page.waitForSelector('.toc-item:has-text("第一章")', { timeout: 5000 })
+  await page.waitForSelector('.toc-item:has-text("第五章")', { timeout: 5000 })
+})
+await page.screenshot({ path: join(TMP, 'shots', '04-toc.png') })
+
+await step('目录跳转到第三章', async () => {
+  await page.click('.toc-item:has-text("第三章")')
+  await page.waitForTimeout(800)
+})
+
+await step('键盘翻页更新进度', async () => {
+  const before = await page.textContent('.percent')
+  await page.keyboard.press('ArrowRight')
+  await page.waitForTimeout(600)
+  const after = await page.textContent('.percent')
+  if (before === after) throw new Error(`进度未变化: ${before} -> ${after}`)
+})
+
+await step('书内搜索', async () => {
+  await page.click('button[title="书内搜索"]')
+  await page.fill('.search-form input', '墨布')
+  await page.press('.search-form input', 'Enter')
+  await page.waitForSelector('.search-item', { timeout: 10000 })
+})
+await page.screenshot({ path: join(TMP, 'shots', '05-search.png') })
+
+await step('返回书架并打开 PDF', async () => {
+  await page.click('button[title="返回藏书"]')
+  await page.waitForSelector('.book-card', { timeout: 8000 })
+  await page.click('.book-card:has-text("test-doc")')
+  await page.waitForSelector('.page-holder canvas', { timeout: 15000 })
+})
+await page.screenshot({ path: join(TMP, 'shots', '06-pdf.png') })
+
+await step('刷新后藏书与进度仍在 (持久化)', async () => {
+  await page.goto('http://localhost:4173/#/library', { waitUntil: 'networkidle' })
+  await page.waitForFunction(() => document.querySelectorAll('.book-card').length >= 2, null, { timeout: 8000 })
+  const hasProgress = await page.locator('.book-card:has-text("测试小说") .progress').count()
+  if (!hasProgress) throw new Error('TXT 书籍没有显示阅读进度')
+})
+await page.screenshot({ path: join(TMP, 'shots', '07-persisted.png') })
+
+const fatal = errors.filter(e => !e.includes('favicon') && !e.includes('sw.js'))
+if (fatal.length) {
+  console.log('\n--- 页面错误 ---')
+  for (const e of fatal.slice(0, 10)) console.log(e)
+} else {
+  console.log('\n无页面错误')
+}
+await browser.close()
