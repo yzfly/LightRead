@@ -4,6 +4,7 @@ import { getStorage, isTauri } from '../storage'
 import { useSettings } from '../stores/settings'
 import { useLibrary } from '../stores/library'
 import { exportBackup, importBackup } from '../services/backup'
+import { backupToWebdav, restoreFromWebdav, testWebdav, webdavBackupInfo } from '../services/webdav'
 import { fetchRemote } from '../services/net'
 import { toast } from '../services/toast'
 
@@ -13,6 +14,51 @@ const library = useLibrary()
 const storageKind = ref('')
 const busy = ref('')
 const backupInput = ref<HTMLInputElement>()
+
+// ---- WebDAV ----
+const davInfo = ref('')
+
+async function davTest() {
+  busy.value = '测试连接…'
+  try {
+    await testWebdav()
+    const info = await webdavBackupInfo()
+    davInfo.value = info
+      ? `✅ 连接正常, 云端备份: ${(info.size / 1024 / 1024).toFixed(1)}MB (${info.modified.slice(0, 22)})`
+      : '✅ 连接正常, 云端暂无备份'
+  } catch (e: any) {
+    davInfo.value = `❌ ${e?.message}`
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function davBackup() {
+  busy.value = '准备备份…'
+  try {
+    await backupToWebdav(msg => (busy.value = msg))
+    toast('已备份到云端', 'success')
+    davInfo.value = ''
+  } catch (e: any) {
+    toast(`云备份失败: ${e?.message}`, 'error', 6000)
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function davRestore() {
+  if (!confirm('从云端备份恢复？已有书籍会保留, 仅补充缺失的。')) return
+  busy.value = '连接云端…'
+  try {
+    const result = await restoreFromWebdav(msg => (busy.value = msg))
+    await library.refresh()
+    toast(`恢复完成: ${result.books} 本书, ${result.annotations} 条标注`, 'success', 5000)
+  } catch (e: any) {
+    toast(`恢复失败: ${e?.message}`, 'error', 6000)
+  } finally {
+    busy.value = ''
+  }
+}
 
 // ---- 代理配置 (桌面端) ----
 const PROXY_SCHEMES = [
@@ -183,6 +229,26 @@ async function doImport(e: Event) {
           <input ref="backupInput" type="file" accept=".zip" hidden @change="doImport" />
         </div>
       </div>
+      <div class="row">
+        <div style="min-width: 0">
+          <div class="row-title">WebDAV 云备份</div>
+          <div class="row-desc">
+            备份到坚果云 / Nextcloud / Alist 等任意 WebDAV 服务, 换设备一键恢复。<br />
+            坚果云地址: <code>https://dav.jianguoyun.com/dav/</code> (密码用应用密码)
+          </div>
+        </div>
+      </div>
+      <div class="webdav-grid">
+        <input v-model="settings.webdavUrl" class="input" placeholder="https://dav.jianguoyun.com/dav/" />
+        <input v-model="settings.webdavUser" class="input" placeholder="账号" autocomplete="off" />
+        <input v-model="settings.webdavPass" class="input" type="password" placeholder="密码" autocomplete="new-password" />
+      </div>
+      <div class="webdav-actions">
+        <button class="btn btn-sm" :disabled="!!busy || !settings.webdavUrl" @click="davTest">测试连接</button>
+        <button class="btn btn-sm btn-primary" :disabled="!!busy || !settings.webdavUrl" @click="davBackup">备份到云端</button>
+        <button class="btn btn-sm" :disabled="!!busy || !settings.webdavUrl" @click="davRestore">从云端恢复</button>
+        <span v-if="davInfo" class="dav-info">{{ davInfo }}</span>
+      </div>
       <div v-if="busy" class="busy">{{ busy }}</div>
     </section>
 
@@ -312,6 +378,29 @@ h2 {
   font-size: 12px;
   color: var(--brand);
   padding-top: 6px;
+}
+.webdav-grid {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.webdav-grid .input:first-child {
+  flex: 2;
+}
+.webdav-grid .input {
+  flex: 1;
+  min-width: 0;
+}
+.webdav-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.dav-info {
+  font-size: 12px;
+  color: var(--text-3);
 }
 .proxy-input {
   width: 100%;

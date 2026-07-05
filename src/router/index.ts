@@ -8,6 +8,7 @@ export const router = createRouter({
     { path: '/library', component: () => import('../views/LibraryView.vue') },
     { path: '/read/:id', component: () => import('../views/ReaderView.vue') },
     { path: '/read-pdf/:id', component: () => import('../views/PdfReaderView.vue') },
+    { path: '/read-djvu/:id', component: () => import('../views/DjvuReaderView.vue') },
     { path: '/catalogs', component: () => import('../views/CatalogView.vue') },
     { path: '/settings', component: () => import('../views/SettingsView.vue') },
   ],

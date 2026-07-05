@@ -1,9 +1,9 @@
 [package]
 name = "lightread"
-version = "0.1.0"
+version = "0.2.0"
 description = "LightRead 轻阅 — 开源本地阅读器"
 authors = ["云中江树"]
-license = "CC-BY-NC-4.0"
+license = "MIT"
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
@@ -32,3 +32,7 @@ sha2 = "0.10.9"
 uuid = { version = "1.20.0", features = ["v4"] }
 tokio = { version = "1.52.3", features = ["macros", "rt"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
+sherpa-onnx = "1.13.3"
+ureq = "2"
+bzip2 = "0.5.2"
+tar = "0.4.46"

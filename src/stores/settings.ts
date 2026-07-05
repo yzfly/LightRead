@@ -32,14 +32,16 @@ interface SettingsState {
   pdf: PdfPrefs
   /** 自动阅读速度: 秒/页 (EPUB 与 PDF 共用) */
   autoReadSeconds: number
-  /** 听书引擎: edge 在线神经音色 (桌面版, 推荐) / system 系统语音 */
-  ttsEngine: 'edge' | 'system'
+  /** 听书引擎: edge 在线神经音色 / local 本地离线神经音色 / system 系统语音 */
+  ttsEngine: 'edge' | 'local' | 'system'
   /** 听书语速 (0.5 - 2) */
   ttsRate: number
   /** 系统语音音色名称, 空为自动匹配 (中文优先) */
   ttsVoice: string
   /** Edge 在线音色 id */
   edgeVoice: string
+  /** 本地音色编号 (Kokoro 0-102) */
+  localVoiceId: number
   /** Web 端跨域代理模板, {url} 为占位符; 桌面端走原生请求无需代理 */
   corsProxy: string
   /** 桌面端网络代理 (http:// 或 socks5://), 书源请求经此代理 */
@@ -48,6 +50,10 @@ interface SettingsState {
   calibrePath: string
   /** 书库存储根目录 (桌面端), 空为默认应用数据目录 */
   libraryRoot: string
+  /** WebDAV 云备份 */
+  webdavUrl: string
+  webdavUser: string
+  webdavPass: string
 }
 
 const STORAGE_KEY = 'lightread-settings'
@@ -74,10 +80,14 @@ const defaults: SettingsState = {
   ttsRate: 1,
   ttsVoice: '',
   edgeVoice: 'zh-CN-XiaoxiaoNeural',
+  localVoiceId: 50,
   corsProxy: '',
   httpProxy: '',
   calibrePath: '',
   libraryRoot: '',
+  webdavUrl: '',
+  webdavUser: '',
+  webdavPass: '',
 }
 
 function load(): SettingsState {

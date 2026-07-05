@@ -118,6 +118,16 @@ export async function importFile(
       if (m.title) meta.title = m.title
       meta.author = m.author
       cover = m.cover
+    } else if (format === 'cbr') {
+      // 转成 CBZ 后走 foliate 漫画解析取封面
+      const { cbrToCbz } = await import('./comic')
+      const cbz = await cbrToCbz(file)
+      const m = await extractFoliateMeta(new File([cbz], baseName + '.cbz'))
+      if (m.title) meta.title = m.title
+      cover = m.cover
+    } else if (format === 'djvu') {
+      const { djvuCover } = await import('./djvu')
+      cover = await djvuCover(file)
     } else if (isTextLike(format)) {
       // 仅取标题, 阅读时再实时转换
       const { title } = await convertToEpub(file, file.name, format as 'txt' | 'md' | 'html')

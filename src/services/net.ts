@@ -36,10 +36,23 @@ const STATUS_HINTS: Record<number, string> = {
   429: '请求过于频繁 (429), 请稍后再试',
 }
 
-export async function fetchRemote(url: string, auth?: RequestAuth): Promise<Response> {
+export interface RemoteRequestInit {
+  method?: string
+  body?: BodyInit
+  headers?: Record<string, string>
+  /** true 时不因非 2xx 抛错, 由调用方处理状态码 (WebDAV 探测等) */
+  raw?: boolean
+}
+
+export async function fetchRemote(
+  url: string,
+  auth?: RequestAuth,
+  init: RemoteRequestInit = {},
+): Promise<Response> {
   const headers = {
     accept: 'application/atom+xml, application/xml, text/xml, */*',
     ...authHeader(auth),
+    ...(init.headers ?? {}),
   }
 
   let res: Response
@@ -47,15 +60,21 @@ export async function fetchRemote(url: string, auth?: RequestAuth): Promise<Resp
     const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http')
     const proxyUrl = useSettings().httpProxy.trim()
     res = await tauriFetch(url, {
+      method: init.method ?? 'GET',
+      body: init.body,
       headers,
       connectTimeout: 30_000,
       ...(proxyUrl ? { proxy: { all: proxyUrl } } : {}),
     } as any)
   } else {
-    res = await fetch(applyCorsProxy(url), { headers })
+    res = await fetch(applyCorsProxy(url), {
+      method: init.method ?? 'GET',
+      body: init.body,
+      headers,
+    })
   }
 
-  if (!res.ok) {
+  if (!init.raw && !res.ok) {
     throw new Error(STATUS_HINTS[res.status] ?? `请求失败: ${res.status} ${res.statusText}`)
   }
   return res

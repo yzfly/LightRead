@@ -93,7 +93,10 @@ function onDrop(e: DragEvent) {
 }
 
 function openBook(book: BookMeta) {
-  router.push(book.format === 'pdf' ? `/read-pdf/${book.id}` : `/read/${book.id}`)
+  const route = book.format === 'pdf' ? `/read-pdf/${book.id}`
+    : book.format === 'djvu' ? `/read-djvu/${book.id}`
+      : `/read/${book.id}`
+  router.push(route)
 }
 
 async function removeBook(book: BookMeta) {

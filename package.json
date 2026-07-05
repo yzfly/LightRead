@@ -1,7 +1,7 @@
 {
   "name": "lightread",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,7 @@
     "fflate": "^0.8.3",
     "foliate-js": "^1.0.1",
     "marked": "^18.0.5",
+    "node-unrar-js": "^2.0.2",
     "pdfjs-dist": "^6.1.200",
     "pinia": "^3.0.4",
     "vue": "^3.5.39",
@@ -37,5 +38,6 @@
     "vite-plugin-pwa": "^1.3.0",
     "vue-tsc": "^3.3.5"
   },
-  "description": "LightRead 轻阅 — 开源本地阅读器"
+  "description": "LightRead 轻阅 — 开源本地阅读器",
+  "license": "MIT"
 }

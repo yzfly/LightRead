@@ -2,7 +2,7 @@
 
 export type BookFormat =
   | 'epub' | 'mobi' | 'azw3' | 'azw' | 'fb2' | 'fbz'
-  | 'cbz' | 'pdf' | 'txt' | 'html' | 'md'
+  | 'cbz' | 'cbr' | 'djvu' | 'pdf' | 'txt' | 'html' | 'md'
 
 export interface BookMeta {
   id: string

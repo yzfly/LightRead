@@ -8,8 +8,8 @@
 
 你的书、你的进度、你的批注，全部在你自己的设备上。<br/>没有账号，没有云端，没有追踪。
 
-[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Web%20(PWA)-1664FF)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Web-1664FF)
 ![Tauri](https://img.shields.io/badge/Tauri%202-Rust-orange)
 ![Vue 3](https://img.shields.io/badge/Vue%203-TypeScript-42b883)
 
@@ -21,7 +21,7 @@
 
 ## 为什么是轻阅
 
-- **全格式**：EPUB · MOBI · AZW / AZW3 · FB2 / FB2.zip · CBZ 漫画 · PDF · TXT · HTML · Markdown ——一个阅读器读完所有书
+- **全格式**：EPUB · MOBI · AZW / AZW3 · FB2 / FB2.zip · CBZ / CBR 漫画 · PDF · **DjVu** · TXT · HTML · Markdown ——一个阅读器读完所有书
 - **轻**：安装包仅 ~8MB（Tauri 2 / Rust），冷启动秒开
 - **本地优先**：书籍文件就在你选的文件夹里，Finder 可见、随时拿走；放进 iCloud / 网盘同步文件夹即可多设备共享
 - **认真做阅读**：对标微信读书的完整阅读体验，做给每天真的在读书的人
@@ -44,7 +44,8 @@
 <div align="center"><img src="docs/screenshots/tts.png" width="880" alt="听书 - 在线神经音色" /></div>
 
 - **在线神经音色**（微软 Edge 大声朗读服务）：晓晓、云希、东北话晓北、陕西话晓妮、粤语、台湾腔等 13 个音色，音质接近真人
-- 系统语音离线兜底，断网自动回退
+- **本地离线神经音色**（sherpa-onnx + Kokoro-82M v1.1-zh）：应用内一键下载 ~310MB 语音包，103 个中英音色完全离线合成，断网也是神经音质
+- 系统语音兜底，三层引擎自动降级
 - EPUB 听书**视图自动跟随**朗读进度；PDF 逐页朗读自动翻页
 - 语速 0.5–2x
 
@@ -65,13 +66,19 @@
 - **arXiv 论文**：12 个分类刷最新论文、全文搜索、一键下载入库即读
 - **Calibre 书库直读**：指向你的 Calibre 文件夹，书目封面即刻可见，点一本就读
 - **网络代理**：HTTP / HTTPS / SOCKS4 / SOCKS5，与 Clash 等工具直接配合
-- 一键 zip 备份 / 恢复，跨端迁移
+- 一键 zip 备份 / 恢复；**WebDAV 云备份**（坚果云 / Nextcloud / Alist），换设备一键恢复
 
 ## 📦 安装
 
-### macOS（Apple Silicon）
+从 [Releases](https://github.com/yzfly/LightRead/releases) 下载对应平台安装包：
 
-从 [Releases](https://github.com/yzfly/LightRead/releases) 下载最新 `LightRead_x.y.z_aarch64.dmg`，拖入应用程序文件夹。
+| 平台 | 文件 |
+|------|------|
+| macOS (Apple Silicon) | `LightRead_x.y.z_aarch64.dmg` |
+| macOS (Intel) | `LightRead_x.y.z_x64.dmg` |
+| Windows | `LightRead_x.y.z_x64-setup.exe` / `.msi` |
+| Linux | `.AppImage` / `.deb` / `.rpm` |
+| Android (实验性) | `LightRead_x.y.z_android_arm64.apk` |
 
 ### 网页版 / PWA
 
@@ -119,13 +126,14 @@ npm run tauri build    # 打包
 - [x] **M1**：全格式阅读、藏书管理、OPDS + arXiv 书源、备份、PWA、macOS 桌面
 - [x] **M2**：听书（Edge 神经音色）、想法批注、书签、阅读时长、自动阅读、PDF 双页
 - [x] **M2.5**：批量管理、Calibre 直读、网络代理、自选存储位置
-- [ ] **M3**：iOS / Android（Tauri Mobile）、本地离线神经语音（sherpa-onnx + Kokoro）、DjVu / CBR、WebDAV 同步、Windows / Linux 安装包
+- [x] **M3**：本地离线神经语音（sherpa-onnx + Kokoro）、DjVu / CBR、WebDAV 云备份、Windows / Linux 安装包（CI 多平台构建）、Android 实验性 APK
+- [ ] **M4**：iOS、Android 体验打磨、增量同步、更多本地音色引擎
 
 > KFX（新版 Kindle）为重 DRM 格式不支持，请先用 [Calibre](https://calibre-ebook.com/) 处理。
 
 ## 📄 协议
 
-[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)（署名-非商业性使用）
+[MIT](LICENSE)
 
 作者：**云中江树**（微信公众号：云中江树）
 

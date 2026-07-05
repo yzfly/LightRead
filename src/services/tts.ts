@@ -95,22 +95,38 @@ import { toast } from './toast'
 import {
   edgeAvailable, edgePause, edgeResume, edgeStop, edgeSynthesize, playAudio,
 } from './edgeTts'
+import { localTtsAvailable, localTtsSynthesize } from './localTts'
 
-/** Edge 失败后本次会话回退系统语音, 避免每段都等超时 */
-let edgeFailed = false
-export const resetEdgeFailure = () => { edgeFailed = false }
+/** 神经引擎失败后本次会话回退系统语音, 避免每段都等超时 */
+let neuralFailed = false
+export const resetEdgeFailure = () => { neuralFailed = false }
+
+/** 当前设置下的神经合成器 (edge 在线 / local 离线); 不可用返回 null */
+function neuralSynth(): ((text: string) => Promise<Blob>) | null {
+  const settings = useSettings()
+  if (neuralFailed) return null
+  if (settings.ttsEngine === 'edge' && edgeAvailable()) {
+    return text => edgeSynthesize(text, settings.edgeVoice, settings.ttsRate)
+  }
+  if (settings.ttsEngine === 'local' && localTtsAvailable()) {
+    return text => localTtsSynthesize(text, settings.localVoiceId, settings.ttsRate)
+  }
+  return null
+}
 
 const prefetchCache = new Map<string, Promise<Blob>>()
-const prefetchKey = (text: string, voice: string, rate: number) => `${voice}|${rate}|${text}`
+const prefetchKey = (text: string) => {
+  const s = useSettings()
+  return `${s.ttsEngine}|${s.edgeVoice}|${s.localVoiceId}|${s.ttsRate}|${text}`
+}
 
-/** 预取下一段合成结果 (在线引擎消除段间停顿) */
+/** 预取下一段合成结果 (消除段间停顿) */
 export function prefetchSpeech(text: string) {
-  const settings = useSettings()
-  if (settings.ttsEngine !== 'edge' || !edgeAvailable() || edgeFailed || !text) return
-  const key = prefetchKey(text, settings.edgeVoice, settings.ttsRate)
+  const synth = neuralSynth()
+  if (!synth || !text) return
+  const key = prefetchKey(text)
   if (!prefetchCache.has(key)) {
-    prefetchCache.set(key, edgeSynthesize(text, settings.edgeVoice, settings.ttsRate))
-    // 缓存别越积越多
+    prefetchCache.set(key, synth(text))
     if (prefetchCache.size > 4) {
       const first = prefetchCache.keys().next().value
       if (first) prefetchCache.delete(first)
@@ -118,20 +134,21 @@ export function prefetchSpeech(text: string) {
   }
 }
 
-/** 按设置选择引擎朗读一段文本; Edge 失败自动回退系统语音 */
+/** 按设置选择引擎朗读一段文本; 神经引擎失败自动回退系统语音 */
 export async function speakText(text: string): Promise<'end' | 'cancelled'> {
   const settings = useSettings()
-  if (settings.ttsEngine === 'edge' && edgeAvailable() && !edgeFailed) {
+  const synth = neuralSynth()
+  if (synth) {
     try {
-      const key = prefetchKey(text, settings.edgeVoice, settings.ttsRate)
+      const key = prefetchKey(text)
       const pending = prefetchCache.get(key)
       prefetchCache.delete(key)
-      const blob = pending ? await pending : await edgeSynthesize(text, settings.edgeVoice, settings.ttsRate)
+      const blob = pending ? await pending : await synth(text)
       return await playAudio(blob)
     } catch (e) {
       console.error(e)
-      edgeFailed = true
-      toast('在线音色暂不可用, 已回退到系统语音', 'error', 4000)
+      neuralFailed = true
+      toast('神经音色暂不可用, 已回退到系统语音', 'error', 4000)
     }
   }
   const voice = await pickVoice(settings.ttsVoice, text)

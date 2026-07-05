@@ -6,7 +6,8 @@ import { useLibrary } from '../stores/library'
 import { useSettings } from '../stores/settings'
 import { initPdfjs } from '../services/importer'
 import { speakText, prefetchSpeech, stopSpeech, pauseSpeech, resumeSpeech, resetEdgeFailure, listVoicesSorted } from '../services/tts'
-import { EDGE_VOICES, edgeAvailable } from '../services/edgeTts'
+import { EDGE_VOICES, edgeAvailable, playAudio } from '../services/edgeTts'
+import { localTtsAvailable, localTtsDownload, localTtsStatus, localTtsSynthesize } from '../services/localTts'
 import { useReadingTimer } from '../composables/useReadingTimer'
 import { toast } from '../services/toast'
 
@@ -364,9 +365,51 @@ const waitWhilePaused = async () => {
 /** await 期间状态可能被外部修改, 用函数取值绕开 TS 控制流收窄 */
 const ttsStopped = () => ttsState.value === 'stopped'
 
+
+// ---- 本地离线语音包 ----
+const localInstalled = ref(false)
+const localDownloading = ref(false)
+const localProgress = ref('')
+
+async function refreshLocalStatus() {
+  if (!localTtsAvailable()) return
+  try {
+    localInstalled.value = (await localTtsStatus()).installed
+  } catch {
+    localInstalled.value = false
+  }
+}
+
+async function downloadLocal() {
+  localDownloading.value = true
+  localProgress.value = '连接中…'
+  try {
+    await localTtsDownload(p => {
+      localProgress.value = p.phase === 'extracting'
+        ? '解压中…'
+        : `${(p.downloaded / 1048576).toFixed(0)}MB${p.total ? ' / ' + (p.total / 1048576).toFixed(0) + 'MB' : ''}`
+    })
+    localInstalled.value = true
+    toast('离线语音包已就绪', 'success')
+  } catch (e: any) {
+    toast(`语音包下载失败: ${e?.message ?? e}`, 'error', 6000)
+  } finally {
+    localDownloading.value = false
+  }
+}
+
+async function auditionLocal() {
+  try {
+    await playAudio(await localTtsSynthesize('夜色像一块浸了水的墨布，慢慢压下来。', settings.localVoiceId, settings.ttsRate))
+  } catch (e: any) {
+    toast(e?.message ?? '试听失败', 'error')
+  }
+}
+
 async function openTTSPanel() {
   ttsPanel.value = !ttsPanel.value
   if (ttsPanel.value) autoPanel.value = false
+  if (ttsPanel.value) refreshLocalStatus()
   if (ttsPanel.value && !ttsVoices.value.length) {
     ttsVoices.value = (await listVoicesSorted()).map(v => ({ name: v.name, lang: v.lang }))
   }
@@ -646,8 +689,9 @@ onBeforeUnmount(() => {
       <div v-if="edgeAvailable()" class="tts-row">
         <label>引擎</label>
         <div class="seg" style="flex: 1">
-          <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">在线神经音色</button>
-          <button :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">系统语音</button>
+          <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">在线神经</button>
+          <button :class="{ active: settings.ttsEngine === 'local' }" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">本地神经</button>
+          <button :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">系统</button>
         </div>
       </div>
       <div v-if="edgeAvailable() && settings.ttsEngine === 'edge'" class="tts-row">
@@ -656,6 +700,19 @@ onBeforeUnmount(() => {
           <option v-for="v in EDGE_VOICES" :key="v.id" :value="v.id">{{ v.label }}</option>
         </select>
       </div>
+      <div v-if="edgeAvailable() && settings.ttsEngine === 'local'" class="tts-row">
+        <label>音色</label>
+        <template v-if="localInstalled">
+          <select v-model.number="settings.localVoiceId" class="input">
+            <option v-for="n in 103" :key="n" :value="n - 1">音色 {{ n - 1 }}{{ n - 1 === 50 ? ' (默认·中文女声)' : '' }}</option>
+          </select>
+          <button class="btn btn-sm" :disabled="ttsState !== 'stopped'" @click="auditionLocal">试听</button>
+        </template>
+        <button v-else class="btn btn-sm btn-primary" :disabled="localDownloading" @click="downloadLocal">
+          {{ localDownloading ? localProgress : '下载离线语音包 (~310MB)' }}
+        </button>
+      </div>
+
       <div v-else class="tts-row">
         <label>音色</label>
         <select v-model="settings.ttsVoice" class="input">

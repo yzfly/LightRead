@@ -1,5 +1,6 @@
 mod calibre;
 mod edge_tts;
+mod local_tts;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -7,7 +8,11 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       edge_tts::edge_tts_synthesize,
       calibre::calibre_list_books,
-      calibre::calibre_read_file
+      calibre::calibre_read_file,
+      local_tts::local_tts_status,
+      local_tts::local_tts_download,
+      local_tts::local_tts_remove,
+      local_tts::local_tts_synthesize
     ])
     .plugin(tauri_plugin_sql::Builder::new().build())
     .plugin(tauri_plugin_fs::init())
