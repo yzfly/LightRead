@@ -44,9 +44,19 @@ export async function initPdfjs() {
   return pdfjs
 }
 
+// pdf.js 运行时资源 (由 vite-plugin-static-copy 从 pdfjs-dist 复制到 /pdfjs/):
+// wasm 含 JPEG 2000/JBIG2 解码器 (扫描版 PDF 缺它整页空白), cmaps 是 CJK 字体映射
+const PDF_ASSETS = `${import.meta.env.BASE_URL}pdfjs/`
+export const pdfAssetOptions = {
+  wasmUrl: `${PDF_ASSETS}wasm/`,
+  iccUrl: `${PDF_ASSETS}iccs/`,
+  cMapUrl: `${PDF_ASSETS}cmaps/`,
+  standardFontDataUrl: `${PDF_ASSETS}standard_fonts/`,
+}
+
 async function extractPdfMeta(file: File) {
   const pdfjs = await initPdfjs()
-  const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() })
+  const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer(), ...pdfAssetOptions })
   const pdf = await loadingTask.promise
   let title = ''
   let author = ''

@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getStorage, type BookMeta } from '../storage'
 import { useLibrary } from '../stores/library'
 import { useSettings } from '../stores/settings'
-import { initPdfjs } from '../services/importer'
+import { initPdfjs, pdfAssetOptions } from '../services/importer'
 import { speakText, prefetchSpeech, stopSpeech, pauseSpeech, resumeSpeech, resetEdgeFailure, listVoicesSorted } from '../services/tts'
 import { EDGE_VOICES, edgeAvailable, playAudio } from '../services/edgeTts'
 import { localTtsAvailable, localTtsDownload, localTtsStatus, localTtsSynthesize } from '../services/localTts'
@@ -530,7 +530,7 @@ onMounted(async () => {
     }
     const blob = await storage.getBookFile(bookId)
     const pdfjs = await initPdfjs()
-    loadingTask = pdfjs.getDocument({ data: await blob.arrayBuffer() })
+    loadingTask = pdfjs.getDocument({ data: await blob.arrayBuffer(), ...pdfAssetOptions })
     pdf = await loadingTask.promise
     pageCount.value = pdf.numPages
     currentPage.value = Math.min(parseInt(meta.value.location ?? '1', 10) || 1, pdf.numPages)

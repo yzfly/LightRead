@@ -107,7 +107,8 @@ await step('返回书架并打开 PDF', async () => {
   await page.click('button[title="返回藏书"]')
   await page.waitForSelector('.book-card', { timeout: 8000 })
   await page.click('.book-card:has-text("test-doc")')
-  await page.waitForSelector('.page-holder canvas', { timeout: 15000 })
+  // 翻页模式 canvas 在 .spread-host, 滚动模式在 .page-holder
+  await page.waitForSelector('.spread-host canvas, .page-holder canvas', { timeout: 15000 })
 })
 await page.screenshot({ path: join(TMP, 'shots', '06-pdf.png') })
 
