@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getStorage, type AnnotationRec, type BookMeta } from '../storage'
 import { useSettings } from '../stores/settings'
@@ -29,8 +29,16 @@ const currentTocHref = ref<string>()
 const fraction = ref(0)
 const chapterLabel = ref('')
 const panel = ref<'none' | 'toc' | 'annotations' | 'search'>('none')
+const panelEl = ref<HTMLElement>()
 const settingsOpen = ref(false)
 const barsVisible = ref(true)
+
+// 打开目录时把当前章节滚到可视区中间
+watch(panel, async p => {
+  if (p !== 'toc') return
+  await nextTick()
+  panelEl.value?.querySelector('.toc-item.active')?.scrollIntoView({ block: 'center' })
+})
 
 // 高亮选区
 const selection = ref<{ cfi: string; text: string } | null>(null)
@@ -277,11 +285,37 @@ function onSectionLoad(e: CustomEvent) {
   }
   doc.addEventListener('mouseup', () => setTimeout(updateSelection, 0))
   doc.addEventListener('touchend', () => setTimeout(updateSelection, 0))
-  // 点击正文时收起面板
+  // 点击正文时收起目录等侧栏和浮层; 若这一下是为了收面板, 不再触发翻页
   doc.addEventListener('mousedown', () => {
+    overlayDismissed = panel.value !== 'none' || settingsOpen.value || !!activeAnnotation.value
+    panel.value = 'none'
     settingsOpen.value = false
     activeAnnotation.value = null
   })
+  doc.addEventListener('click', (e: MouseEvent) => onContentClick(e, doc))
+}
+
+// 点正文左/右侧翻页
+let overlayDismissed = false
+
+function onContentClick(e: MouseEvent, doc: Document) {
+  if (overlayDismissed) {
+    overlayDismissed = false
+    return
+  }
+  if (settings.reader.flow !== 'paginated') return
+  // 正在选字或点了链接时不翻页
+  if (selection.value) return
+  const sel = doc.getSelection()
+  if (sel && !sel.isCollapsed) return
+  if ((e.target as Element)?.closest?.('a[href]')) return
+  // iframe 内坐标换算到窗口坐标 (分页模式下 iframe 比可视区宽且随翻页平移)
+  const frameRect = doc.defaultView?.frameElement?.getBoundingClientRect()
+  const contentRect = container.value?.getBoundingClientRect()
+  if (!frameRect || !contentRect) return
+  const x = frameRect.left + e.clientX - contentRect.left
+  if (x < contentRect.width / 3) view?.goLeft()
+  else if (x > contentRect.width * 2 / 3) view?.goRight()
 }
 
 function drawStoredAnnotations() {
@@ -672,7 +706,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 侧栏面板 -->
-    <aside v-if="panel !== 'none'" class="panel card">
+    <aside v-if="panel !== 'none'" ref="panelEl" class="panel card">
       <template v-if="panel === 'toc'">
         <h3>目录</h3>
         <div class="panel-body">
