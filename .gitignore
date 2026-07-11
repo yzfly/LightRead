@@ -28,3 +28,6 @@ src-tauri/target
 
 # PWA dev
 dev-dist
+
+# PDF 兼容性语料库 (本地下载, 不入库)
+.corpus
