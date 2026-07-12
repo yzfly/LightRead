@@ -736,7 +736,8 @@ onBeforeUnmount(() => {
           {{ ttsState === 'playing' ? '⏸ 暂停' : ttsState === 'paused' ? '▶ 继续' : '▶ 开始听书' }}
         </button>
         <button class="btn btn-sm" :disabled="ttsState === 'stopped'" @click="stopTTS">⏹ 停止</button>
-        <button class="icon-btn" title="收起 (继续朗读)" @click="ttsPanel = false">✕</button>
+        <span style="flex: 1" />
+        <button class="btn btn-sm" title="收起面板, 朗读继续" @click="ttsPanel = false">收起</button>
       </div>
       <div class="tts-row">
         <label>语速</label>
@@ -1257,11 +1258,10 @@ onBeforeUnmount(() => {
 }
 .tts-panel {
   position: absolute;
-  bottom: 56px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  width: min(400px, calc(100% - 40px));
+  top: 52px;
+  right: 12px;
+  z-index: 25;
+  width: min(400px, calc(100% - 24px));
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
@@ -1414,6 +1414,11 @@ onBeforeUnmount(() => {
     width: auto;
   }
   .settings-pop {
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+  .tts-panel {
     right: 8px;
     left: 8px;
     width: auto;
