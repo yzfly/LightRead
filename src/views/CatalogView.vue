@@ -12,7 +12,7 @@ import {
 } from '../services/calibre'
 import {
   searchGithubBooks, isValidRepo, fmtBytes, fetchCommunityRepos,
-  DEFAULT_COMMUNITY_REPOS, COMMUNITY_LIST_PAGE,
+  BUNDLED_COMMUNITY, COMMUNITY_LIST_PAGE,
   type GithubBookHit, type CommunityRepo,
 } from '../services/githubBooks'
 import { openDownload } from '../services/updater'
@@ -29,7 +29,9 @@ const settings = useSettings()
 const router = useRouter()
 
 // ---- GitHub 书库: 社区清单 + 用户自加 ----
-const communityRepos = ref<CommunityRepo[]>(DEFAULT_COMMUNITY_REPOS)
+const communityRepos = ref<CommunityRepo[]>(BUNDLED_COMMUNITY.repos)
+const communityUpdated = ref(BUNDLED_COMMUNITY.updated)
+const communityFromRemote = ref(false)
 const ghImporting = ref('')
 const ghProgress = ref('')
 const ghRepoDraft = ref('')
@@ -39,10 +41,16 @@ const allGhRepos = () => [
 ]
 
 async function refreshCommunity(force = false) {
-  try {
-    communityRepos.value = await fetchCommunityRepos(force)
-    if (force) toast(t('catalog.communityRefreshed', { n: communityRepos.value.length }), 'success')
-  } catch { /* 保持现值 */ }
+  const result = await fetchCommunityRepos(force)
+  communityRepos.value = result.repos
+  communityUpdated.value = result.updated
+  communityFromRemote.value = result.fromRemote
+  if (!force) return
+  if (result.fromRemote) {
+    toast(t('catalog.communityRefreshed', { n: result.repos.length, date: result.updated }), 'success')
+  } else {
+    toast(t('catalog.communityRefreshFailed', { date: result.updated }), 'error', 5000)
+  }
 }
 
 function addGhRepo() {
@@ -506,8 +514,9 @@ async function removeSource(s: CatalogSourceRec) {
       <section class="gh-section">
         <header class="toolbar">
           <h2>{{ t('catalog.ghListTitle') }}</h2>
+          <span class="gh-updated">{{ t('catalog.communityMeta', { date: communityUpdated, n: communityRepos.length }) }}{{ communityFromRemote ? '' : t('catalog.communityBundled') }}</span>
           <div class="spacer" />
-          <button class="btn btn-sm" @click="refreshCommunity(true)">{{ t('common.refresh') }}</button>
+          <button class="btn btn-sm" @click="refreshCommunity(true)">{{ t('catalog.updateList') }}</button>
           <button class="btn btn-sm" @click="openDownload(COMMUNITY_LIST_PAGE)">{{ t('catalog.contribute') }}</button>
         </header>
         <p class="intro">{{ t('catalog.ghListIntro') }}</p>
@@ -1120,6 +1129,11 @@ async function removeSource(s: CatalogSourceRec) {
   display: flex;
   gap: 6px;
   margin-top: 4px;
+}
+.gh-updated {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-left: 10px;
 }
 .gh-repo-chip.community {
   background: var(--brand-light);

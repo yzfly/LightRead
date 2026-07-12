@@ -363,5 +363,9 @@ export default {
   'catalog.ghListTitle': 'GitHub 书源列表 (社区共建)',
   'catalog.ghListIntro': '蓝色为社区共建书源 (悬停看简介), 白色为你自己添加的仓库。欢迎点「推荐书源」提交 PR, 分享你发现的书籍仓库。',
   'catalog.contribute': '推荐书源',
-  'catalog.communityRefreshed': '社区书源已更新, 共 {n} 个仓库',
+  'catalog.communityRefreshed': '清单已更新到 {date}, 共 {n} 个仓库',
+  'catalog.communityMeta': '{date} · {n} 个仓库',
+  'catalog.communityBundled': ' · 内置版本',
+  'catalog.updateList': '更新清单',
+  'catalog.communityRefreshFailed': '无法获取最新清单, 已使用应用内置版本 ({date})',
 } as Record<string, string>

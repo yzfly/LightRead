@@ -5,6 +5,7 @@
  */
 import { fetchRemote } from './net'
 import { detectFormat } from './format'
+import bundledSources from '../../booksources.json'
 
 export interface GithubBookHit {
   repo: string
@@ -105,48 +106,54 @@ export interface CommunityRepo {
   note?: string
 }
 
-/** 打包内置的清单副本, 远程拉取失败时兜底 (与仓库根目录 booksources.json 保持同步) */
-export const DEFAULT_COMMUNITY_REPOS: CommunityRepo[] = [
-  { repo: '0voice/expert_readed_books', note: '计算机 / 历史 / 文学综合书库, 560+ 本' },
-  { repo: 'LeungGeorge/grimoire-kindle', note: '综合电子书库, 700+ 本' },
-  { repo: 'elain/mybooks', note: '综合书库, 140+ 本' },
-  { repo: 'Mikoto10032/DeepLearning', note: '深度学习 / 机器学习, 130+ 本' },
-  { repo: 'jugetaozi/ibooks', note: '综合电子书, 120+ 本' },
-  { repo: 'Dujltqzv/Some-Many-Books', note: '综合书库, 100+ 本' },
-  { repo: 'guanpengchn/awesome-books', note: '编程书籍, 90+ 本' },
-  { repo: 'baykier/books', note: '综合 / 技术, 70+ 本' },
-  { repo: 'ixinzhi/tianya-x', note: '天涯神贴合集, 60+ 本' },
-  { repo: 'singgel/JAVA', note: 'Java / 技术书籍, 40+ 本' },
-  { repo: 'jyfc/ebook', note: '编程电子书, 30+ 本' },
-  { repo: 'fengdu78/deeplearning_ai_books', note: '吴恩达深度学习课程笔记, 20+ 本' },
-  { repo: 'zxysilent/books', note: '编程 / 技术, 20+ 本' },
-]
+/** 解析清单 JSON (远程与内置共用) */
+function parseSourceList(data: any): { repos: CommunityRepo[]; updated: string } {
+  const repos: CommunityRepo[] = (data?.githubRepos ?? [])
+    .filter((r: any) => isValidRepo(String(r?.repo ?? '')))
+    .map((r: any) => ({ repo: String(r.repo), note: r.note ? String(r.note) : undefined }))
+  return { repos, updated: String(data?.updated ?? '') }
+}
+
+/** 应用自带的清单 (随安装包分发, 即仓库根目录 booksources.json 本体) */
+export const BUNDLED_COMMUNITY = parseSourceList(bundledSources)
 
 /** 社区清单源文件 (欢迎 PR): https://github.com/yzfly/LightRead/blob/main/booksources.json */
 export const COMMUNITY_LIST_PAGE = 'https://github.com/yzfly/LightRead/blob/main/booksources.json'
 const COMMUNITY_LIST_RAW = 'https://raw.githubusercontent.com/yzfly/LightRead/main/booksources.json'
 const COMMUNITY_CACHE_KEY = 'lightread-community-sources'
 
-/** 拉取社区书源清单, 24 小时缓存, 失败回退内置副本 */
-export async function fetchCommunityRepos(force = false): Promise<CommunityRepo[]> {
+export interface CommunityList {
+  repos: CommunityRepo[]
+  /** 清单日期 (booksources.json 的 updated 字段) */
+  updated: string
+  /** 本次数据是否来自远程 (或有效远程缓存); false = 回退到应用自带清单 */
+  fromRemote: boolean
+}
+
+/** 拉取社区书源清单: 24 小时缓存; force 跳过缓存; 拉取失败回退应用自带清单 */
+export async function fetchCommunityRepos(force = false): Promise<CommunityList> {
   if (!force) {
     try {
       const cached = JSON.parse(localStorage.getItem(COMMUNITY_CACHE_KEY) ?? '')
       if (cached.at > Date.now() - CACHE_TTL && Array.isArray(cached.repos) && cached.repos.length) {
-        return cached.repos
+        return { repos: cached.repos, updated: cached.updated ?? '', fromRemote: true }
       }
     } catch { /* 无缓存 */ }
   }
   try {
     const res = await fetchRemote(COMMUNITY_LIST_RAW, undefined, { headers: { accept: 'application/json' } })
-    const data = await res.json()
-    const repos: CommunityRepo[] = (data.githubRepos ?? [])
-      .filter((r: any) => isValidRepo(String(r?.repo ?? '')))
-      .map((r: any) => ({ repo: String(r.repo), note: r.note ? String(r.note) : undefined }))
+    const { repos, updated } = parseSourceList(await res.json())
     if (repos.length) {
-      localStorage.setItem(COMMUNITY_CACHE_KEY, JSON.stringify({ at: Date.now(), repos }))
-      return repos
+      localStorage.setItem(COMMUNITY_CACHE_KEY, JSON.stringify({ at: Date.now(), repos, updated }))
+      return { repos, updated, fromRemote: true }
     }
-  } catch { /* 网络失败回退内置 */ }
-  return DEFAULT_COMMUNITY_REPOS
+  } catch { /* 网络失败 */ }
+  // 远程不可达: 先用仍然有效的旧缓存, 再退到应用自带清单
+  try {
+    const cached = JSON.parse(localStorage.getItem(COMMUNITY_CACHE_KEY) ?? '')
+    if (Array.isArray(cached.repos) && cached.repos.length) {
+      return { repos: cached.repos, updated: cached.updated ?? '', fromRemote: !force }
+    }
+  } catch { /* 无缓存 */ }
+  return { ...BUNDLED_COMMUNITY, fromRemote: false }
 }

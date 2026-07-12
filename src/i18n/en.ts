@@ -363,5 +363,9 @@ export default {
   'catalog.ghListTitle': 'GitHub Book Sources (community)',
   'catalog.ghListIntro': 'Blue chips are community-maintained sources (hover for notes); white ones are yours. Click "Suggest a source" to open a PR and share book repos you found.',
   'catalog.contribute': 'Suggest a source',
-  'catalog.communityRefreshed': 'Community sources updated: {n} repos',
+  'catalog.communityRefreshed': 'List updated to {date}: {n} repos',
+  'catalog.communityMeta': '{date} · {n} repos',
+  'catalog.communityBundled': ' · bundled',
+  'catalog.updateList': 'Update List',
+  'catalog.communityRefreshFailed': 'Could not fetch the latest list; using the bundled copy ({date})',
 } as Record<string, string>
