@@ -745,6 +745,16 @@ onBeforeUnmount(() => {
     <div v-if="!barsVisible" class="bar-peek top" @mouseenter="showBars()" />
     <div v-if="!barsVisible" class="bar-peek bottom" @mouseenter="showBars()" />
 
+    <!-- 全屏时右上角悬浮退出按钮 -->
+    <button
+      v-if="isFullscreen && !barsVisible"
+      class="fs-exit"
+      :title="t('reader.exitFullscreen')"
+      @click="toggleFullscreen"
+    >
+      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 3a1 1 0 0 1 1 1v3a2 2 0 0 1-2 2H4a1 1 0 0 1 0-2h3V4a1 1 0 0 1 1-1zm8 0a1 1 0 0 1 1 1v3h3a1 1 0 1 1 0 2h-3a2 2 0 0 1-2-2V4a1 1 0 0 1 1-1zM4 15h3a2 2 0 0 1 2 2v3a1 1 0 1 1-2 0v-3H4a1 1 0 0 1 0-2zm13 0h3a1 1 0 1 1 0 2h-3v3a1 1 0 1 1-2 0v-3a2 2 0 0 1 2-2z"/></svg>
+    </button>
+
     <!-- 顶栏 -->
     <header class="bar top" :class="{ hidden: !barsVisible }" @mouseenter="cancelBarsTimer">
       <button class="icon-btn" :title="t('reader.backToLibrary')" @click="router.push('/library')">
@@ -1095,6 +1105,31 @@ onBeforeUnmount(() => {
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   transition: transform 0.25s, opacity 0.25s;
+  color: var(--text);
+}
+/* 全屏时的悬浮退出按钮: 平时低调, 悬停清晰 */
+.fs-exit {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 12;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text-3);
+  opacity: 0.45;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+.fs-exit:hover {
+  opacity: 1;
   color: var(--text);
 }
 /* 工具栏隐藏时的边缘呼出热区 */
