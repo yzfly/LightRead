@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getStorage, type AnnotationRec, type BookMeta } from '../storage'
 import { useSettings } from '../stores/settings'
@@ -15,6 +15,7 @@ import { localTtsAvailable, localTtsDownload, localTtsStatus, localTtsSynthesize
 import { useReadingTimer } from '../composables/useReadingTimer'
 import { toast } from '../services/toast'
 import { t } from '../i18n'
+import { searchBook, type SearchHit } from '../services/bookSearch'
 import TocList, { type TocItem } from '../components/TocList.vue'
 
 const route = useRoute()
@@ -117,11 +118,14 @@ let sectionLoadResolvers: Array<() => void> = []
 
 useReadingTimer(bookId)
 
-// 书内搜索
+// 书内搜索 (VSCode 风格: 多关键词 / 正则 / 大小写 / 全词)
 const searchQuery = ref('')
-const searchResults = ref<Array<{ cfi: string; excerpt: { pre: string; match: string; post: string } }>>([])
+const searchResults = ref<SearchHit[]>([])
 const searchProgress = ref(0)
 const searching = ref(false)
+const searchTruncated = ref(false)
+const searchOpts = reactive({ caseSensitive: false, wholeWord: false, regex: false })
+let searchSession = 0
 
 // 自动阅读
 const autoPanel = ref(false)
@@ -613,28 +617,44 @@ async function gotoAnnotation(a: AnnotationRec) {
 
 async function runSearch() {
   const query = searchQuery.value.trim()
-  if (!query || !view || searching.value) return
+  if (!query || !view) return
+  const session = ++searchSession
   searching.value = true
   searchResults.value = []
+  searchTruncated.value = false
   searchProgress.value = 0
   try {
-    for await (const result of view.search({ query, matchCase: false, matchDiacritics: false, matchWholeWords: false })) {
-      if (result === 'done') break
-      if (result.progress != null) searchProgress.value = result.progress
-      if (result.subitems) searchResults.value.push(...result.subitems)
+    for await (const ev of searchBook(view, query, searchOpts)) {
+      if (session !== searchSession) return
+      searchProgress.value = ev.progress
+      if (ev.hits.length) searchResults.value.push(...ev.hits)
+      if (ev.truncated) searchTruncated.value = true
     }
   } catch (e) {
     console.error(e)
-    toast(t('reader.searchFailed'), 'error')
+    toast(searchOpts.regex ? t('reader.invalidRegex') : t('reader.searchFailed'), 'error')
   } finally {
-    searching.value = false
+    if (session === searchSession) searching.value = false
   }
 }
 
+/** 切换搜索选项后, 若已有关键词则立即重搜 */
+function toggleSearchOpt(key: 'caseSensitive' | 'wholeWord' | 'regex') {
+  searchOpts[key] = !searchOpts[key]
+  if (searchQuery.value.trim()) runSearch()
+}
+
+function gotoSearchHit(hit: SearchHit) {
+  panel.value = 'none'
+  interruptTTSForReposition()
+  view?.goTo(hit.cfi).catch(() => toast(t('reader.cantGoto'), 'error'))
+}
+
 function closeSearch() {
+  searchSession++
+  searching.value = false
   panel.value = 'none'
   searchResults.value = []
-  view?.clearSearch?.()
 }
 
 /** 打开书的瞬间 view.init 尚未归位, 此时跳转会被 init 落点覆盖 — 等它完成 */
@@ -1002,16 +1022,25 @@ onBeforeUnmount(() => {
         <form class="search-form" @submit.prevent="runSearch">
           <input v-model="searchQuery" class="input" type="search" :placeholder="t('reader.searchPlaceholder')" />
         </form>
-        <div v-if="searching" class="panel-tip">{{ t('reader.searching') }} {{ Math.round(searchProgress * 100) }}%</div>
+        <div class="search-opts">
+          <button type="button" class="search-opt" :class="{ active: searchOpts.caseSensitive }" :title="t('reader.matchCase')" @click="toggleSearchOpt('caseSensitive')">Aa</button>
+          <button type="button" class="search-opt" :class="{ active: searchOpts.wholeWord }" :title="t('reader.wholeWord')" @click="toggleSearchOpt('wholeWord')">\b</button>
+          <button type="button" class="search-opt" :class="{ active: searchOpts.regex }" :title="t('reader.useRegex')" @click="toggleSearchOpt('regex')">.*</button>
+          <span v-if="searching" class="search-count">{{ Math.round(searchProgress * 100) }}%</span>
+          <span v-else-if="searchQuery && searchResults.length" class="search-count">
+            {{ t('reader.resultCount', { n: searchResults.length }) }}{{ searchTruncated ? '+' : '' }}
+          </span>
+        </div>
         <div class="panel-body">
-          <div
-            v-for="(r, i) in searchResults"
-            :key="i"
-            class="search-item"
-            @click="view?.goTo(r.cfi); panel = 'none'"
-          >
-            {{ r.excerpt.pre }}<mark>{{ r.excerpt.match }}</mark>{{ r.excerpt.post }}
-          </div>
+          <template v-for="(r, i) in searchResults" :key="i">
+            <div
+              v-if="i === 0 || r.chapter !== searchResults[i - 1].chapter"
+              class="search-chapter"
+            >{{ r.chapter || '·' }}</div>
+            <div class="search-item" @click="gotoSearchHit(r)">
+              {{ r.excerpt.pre }}<mark>{{ r.excerpt.match }}</mark>{{ r.excerpt.post }}
+            </div>
+          </template>
           <p v-if="!searching && searchQuery && !searchResults.length" class="panel-empty">{{ t('reader.noResults') }}</p>
         </div>
         <button class="btn btn-sm" style="margin-top: 8px" @click="closeSearch">{{ t('reader.clearAndClose') }}</button>
@@ -1517,7 +1546,47 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 .search-form {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+}
+.search-opts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.search-opt {
+  height: 24px;
+  min-width: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card);
+  color: var(--text-3);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.search-opt.active {
+  background: var(--brand-light);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.search-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.search-chapter {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  padding: 6px 8px 4px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .search-form .input {
   width: 100%;

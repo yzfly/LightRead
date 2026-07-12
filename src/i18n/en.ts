@@ -253,7 +253,7 @@ export default {
   'reader.bookmarksTab': 'Bookmarks',
   'reader.highlightEmptyHint': 'Select text to highlight it or add a note',
   'reader.bookmarkEmptyHint': 'Tap the bookmark icon in the top bar to save this spot',
-  'reader.searchPlaceholder': 'Type a keyword, press Enter',
+  'reader.searchPlaceholder': 'Keywords (space-separated), Enter to search',
   'reader.searching': 'Searching…',
   'reader.noResults': 'No results found',
   'reader.clearAndClose': 'Clear & Close',
@@ -333,4 +333,9 @@ export default {
   'library.noTags': 'No tags yet. Assign tags to books in batch manage mode.',
   'reader.fullscreen': 'Fullscreen',
   'reader.exitFullscreen': 'Exit Fullscreen',
+  'reader.matchCase': 'Match Case',
+  'reader.wholeWord': 'Whole Word',
+  'reader.useRegex': 'Regular Expression',
+  'reader.resultCount': '{n} results',
+  'reader.invalidRegex': 'Invalid regular expression',
 } as Record<string, string>

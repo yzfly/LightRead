@@ -253,7 +253,7 @@ export default {
   'reader.bookmarksTab': '书签',
   'reader.highlightEmptyHint': '选中正文文字即可划线、写想法',
   'reader.bookmarkEmptyHint': '点击顶栏书签图标, 收藏当前位置',
-  'reader.searchPlaceholder': '输入关键词, 回车搜索',
+  'reader.searchPlaceholder': '关键词 (空格分隔多个), 回车搜索',
   'reader.searching': '搜索中…',
   'reader.noResults': '没有找到结果',
   'reader.clearAndClose': '清除并关闭',
@@ -333,4 +333,9 @@ export default {
   'library.noTags': '还没有分类, 在批量管理中给书籍设置分类标签',
   'reader.fullscreen': '全屏阅读',
   'reader.exitFullscreen': '退出全屏',
+  'reader.matchCase': '区分大小写',
+  'reader.wholeWord': '全词匹配',
+  'reader.useRegex': '正则表达式',
+  'reader.resultCount': '{n} 个结果',
+  'reader.invalidRegex': '正则表达式无效',
 } as Record<string, string>
