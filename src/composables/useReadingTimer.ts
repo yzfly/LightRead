@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import { useLibrary } from '../stores/library'
+import { t } from '../i18n'
 
 /** 阅读时长统计: 页面可见时每 15s 累计一次, 每分钟落库, 离开时冲账 */
 export function useReadingTimer(bookId: string) {
@@ -27,11 +28,11 @@ export function useReadingTimer(bookId: string) {
   })
 }
 
-/** 秒 → "X 小时 Y 分钟" */
+/** 秒 → "X 小时 Y 分钟" (随界面语言) */
 export function formatReadingTime(seconds: number): string {
   const mins = Math.round(seconds / 60)
-  if (mins < 1) return '不足 1 分钟'
+  if (mins < 1) return t('time.lessThanMinute')
   const h = Math.floor(mins / 60)
   const m = mins % 60
-  return h > 0 ? `${h} 小时 ${m} 分钟` : `${m} 分钟`
+  return h > 0 ? t('time.hoursMinutes', { h, m }) : t('time.minutes', { m })
 }

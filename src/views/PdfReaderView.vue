@@ -10,6 +10,7 @@ import { EDGE_VOICES, edgeAvailable, playAudio } from '../services/edgeTts'
 import { localTtsAvailable, localTtsDownload, localTtsStatus, localTtsSynthesize } from '../services/localTts'
 import { useReadingTimer } from '../composables/useReadingTimer'
 import { toast } from '../services/toast'
+import { t } from '../i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -382,17 +383,17 @@ async function refreshLocalStatus() {
 
 async function downloadLocal() {
   localDownloading.value = true
-  localProgress.value = '连接中…'
+  localProgress.value = t('common.connecting')
   try {
     await localTtsDownload(p => {
       localProgress.value = p.phase === 'extracting'
-        ? '解压中…'
+        ? t('reader.extracting')
         : `${(p.downloaded / 1048576).toFixed(0)}MB${p.total ? ' / ' + (p.total / 1048576).toFixed(0) + 'MB' : ''}`
     })
     localInstalled.value = true
-    toast('离线语音包已就绪', 'success')
+    toast(t('tts.localReady'), 'success')
   } catch (e: any) {
-    toast(`语音包下载失败: ${e?.message ?? e}`, 'error', 6000)
+    toast(t('tts.localDownloadFailed', { msg: e?.message ?? e }), 'error', 6000)
   } finally {
     localDownloading.value = false
   }
@@ -400,9 +401,9 @@ async function downloadLocal() {
 
 async function auditionLocal() {
   try {
-    await playAudio(await localTtsSynthesize('夜色像一块浸了水的墨布，慢慢压下来。', settings.localVoiceId, settings.ttsRate))
+    await playAudio(await localTtsSynthesize(t('tts.sampleText'), settings.localVoiceId, settings.ttsRate))
   } catch (e: any) {
-    toast(e?.message ?? '试听失败', 'error')
+    toast(e?.message ?? t('tts.auditionFailed'), 'error')
   }
 }
 
@@ -445,11 +446,11 @@ async function startTTS() {
       await new Promise(r => setTimeout(r, 300))
     }
     if (!spokeAnything && session === ttsSession) {
-      toast('此 PDF 没有可朗读的文本 (可能是扫描版)', 'error', 4000)
+      toast(t('tts.pdfNoText'), 'error', 4000)
     }
   } catch (e) {
     console.error(e)
-    toast('听书出错', 'error')
+    toast(t('tts.error'), 'error')
   }
   if (session === ttsSession) ttsState.value = 'stopped'
 }
@@ -525,7 +526,7 @@ onMounted(async () => {
     const storage = await getStorage()
     meta.value = await storage.getBook(bookId)
     if (!meta.value) {
-      error.value = '书籍不存在'
+      error.value = t('reader.bookNotFound')
       return
     }
     const blob = await storage.getBookFile(bookId)
@@ -567,7 +568,7 @@ onMounted(async () => {
     }
   } catch (e: any) {
     console.error(e)
-    error.value = e?.message ?? '无法打开 PDF'
+    error.value = e?.message ?? t('reader.cantOpenPdf')
     loading.value = false
   }
 })
@@ -588,43 +589,43 @@ onBeforeUnmount(() => {
 <template>
   <div class="pdf-reader">
     <header class="bar">
-      <button class="icon-btn" title="返回藏书" @click="router.push('/library')">
+      <button class="icon-btn" :title="t('reader.backToLibrary')" @click="router.push('/library')">
         <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M14.7 5.3a1 1 0 0 1 0 1.4L9.42 12l5.3 5.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.42 0z"/></svg>
       </button>
       <strong class="title">{{ meta?.title }}</strong>
       <div class="controls">
         <!-- 模式切换 -->
         <div class="seg">
-          <button :class="{ active: mode === 'paged' }" @click="switchMode('paged')">翻页</button>
-          <button :class="{ active: mode === 'scroll' }" @click="switchMode('scroll')">滚动</button>
+          <button :class="{ active: mode === 'paged' }" @click="switchMode('paged')">{{ t('reader.paginated') }}</button>
+          <button :class="{ active: mode === 'scroll' }" @click="switchMode('scroll')">{{ t('reader.scrolled') }}</button>
         </div>
 
         <!-- 翻页模式工具 -->
         <template v-if="mode === 'paged'">
           <div class="seg">
-            <button :class="{ active: pagedFit === 'fitH' }" @click="setPagedFit('fitH')">适高</button>
-            <button :class="{ active: pagedFit === 'fitW' }" @click="setPagedFit('fitW')">适宽</button>
+            <button :class="{ active: pagedFit === 'fitH' }" @click="setPagedFit('fitH')">{{ t('reader.fitHeight') }}</button>
+            <button :class="{ active: pagedFit === 'fitW' }" @click="setPagedFit('fitW')">{{ t('reader.fitWidth') }}</button>
           </div>
           <button class="btn btn-sm" :class="{ active: spread }" @click="toggleSpread">
-            {{ spread ? '双页 ✓' : '双页' }}
+            {{ spread ? t('reader.twoPage') + ' ✓' : t('reader.twoPage') }}
           </button>
         </template>
 
         <!-- 滚动模式工具 -->
         <template v-else>
-          <button class="icon-btn" title="缩小" @click="scrollZoomStep(-1)">−</button>
-          <button class="btn btn-sm" :class="{ active: scrollZoom === 'fit' }" @click="applyScrollZoom('fit')">适宽</button>
-          <button class="icon-btn" title="放大" @click="scrollZoomStep(1)">＋</button>
+          <button class="icon-btn" :title="t('reader.zoomOut')" @click="scrollZoomStep(-1)">−</button>
+          <button class="btn btn-sm" :class="{ active: scrollZoom === 'fit' }" @click="applyScrollZoom('fit')">{{ t('reader.fitWidth') }}</button>
+          <button class="icon-btn" :title="t('reader.zoomIn')" @click="scrollZoomStep(1)">＋</button>
         </template>
 
         <!-- 自动翻页 -->
         <button class="btn btn-sm" :class="{ active: autoReading }" @click="autoPanel = !autoPanel; if (autoPanel) ttsPanel = false">
-          {{ autoReading ? '自动阅读中' : '自动阅读' }}
+          {{ autoReading ? t('reader.autoReading') : t('reader.autoRead') }}
         </button>
 
         <!-- 听书 -->
         <button class="btn btn-sm" :class="{ active: ttsState !== 'stopped' }" @click="openTTSPanel">
-          {{ ttsState !== 'stopped' ? '听书中' : '听书' }}
+          {{ ttsState !== 'stopped' ? t('tts.readingNow') : t('tts.title') }}
         </button>
 
         <span class="page-indicator">
@@ -638,10 +639,10 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <div v-if="loading" class="state">正在打开…</div>
+    <div v-if="loading" class="state">{{ t('reader.opening') }}</div>
     <div v-if="error" class="state">
       <p>{{ error }}</p>
-      <button class="btn" @click="router.push('/library')">返回藏书</button>
+      <button class="btn" @click="router.push('/library')">{{ t('reader.backToLibrary') }}</button>
     </div>
 
     <!-- 翻页模式 -->
@@ -654,10 +655,10 @@ onBeforeUnmount(() => {
       @touchend.passive="onTouchEnd"
     >
       <div ref="spreadHost" class="spread-host" />
-      <button class="nav prev" title="上一页" @click="pagedPrev">
+      <button class="nav prev" :title="t('reader.prevPage')" @click="pagedPrev">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M14.7 5.3a1 1 0 0 1 0 1.4L9.42 12l5.3 5.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.42 0z"/></svg>
       </button>
-      <button class="nav next" title="下一页" @click="pagedNext">
+      <button class="nav next" :title="t('reader.nextPage')" @click="pagedNext">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M9.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 0 1-1.4-1.4l5.29-5.3-5.3-5.3a1 1 0 0 1 0-1.4z"/></svg>
       </button>
     </div>
@@ -676,47 +677,47 @@ onBeforeUnmount(() => {
           class="btn btn-sm btn-primary"
           @click="ttsState === 'playing' ? pauseTTS() : ttsState === 'paused' ? resumeTTS() : startTTS()"
         >
-          {{ ttsState === 'playing' ? '⏸ 暂停' : ttsState === 'paused' ? '▶ 继续' : '▶ 开始听书' }}
+          {{ ttsState === 'playing' ? '⏸ ' + t('common.pause') : ttsState === 'paused' ? '▶ ' + t('common.resume') : '▶ ' + t('tts.startReading') }}
         </button>
-        <button class="btn btn-sm" :disabled="ttsState === 'stopped'" @click="stopTTS">⏹ 停止</button>
-        <button class="icon-btn" title="关闭" @click="ttsPanel = false; stopTTS()">✕</button>
+        <button class="btn btn-sm" :disabled="ttsState === 'stopped'" @click="stopTTS">⏹ {{ t('common.stop') }}</button>
+        <button class="icon-btn" :title="t('common.close')" @click="ttsPanel = false; stopTTS()">✕</button>
       </div>
       <div class="tts-row">
-        <label>语速</label>
+        <label>{{ t('tts.rate') }}</label>
         <input v-model.number="settings.ttsRate" type="range" min="0.5" max="2" step="0.1" />
         <span class="tts-value">{{ settings.ttsRate.toFixed(1) }}x</span>
       </div>
       <div v-if="edgeAvailable()" class="tts-row">
-        <label>引擎</label>
+        <label>{{ t('tts.engine') }}</label>
         <div class="seg" style="flex: 1">
-          <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">在线神经</button>
-          <button :class="{ active: settings.ttsEngine === 'local' }" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">本地神经</button>
-          <button :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">系统</button>
+          <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">{{ t('tts.engineEdge') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'local' }" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">{{ t('tts.engineLocal') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">{{ t('tts.engineSystem') }}</button>
         </div>
       </div>
       <div v-if="edgeAvailable() && settings.ttsEngine === 'edge'" class="tts-row">
-        <label>音色</label>
+        <label>{{ t('tts.voice') }}</label>
         <select v-model="settings.edgeVoice" class="input">
           <option v-for="v in EDGE_VOICES" :key="v.id" :value="v.id">{{ v.label }}</option>
         </select>
       </div>
       <div v-if="edgeAvailable() && settings.ttsEngine === 'local'" class="tts-row">
-        <label>音色</label>
+        <label>{{ t('tts.voice') }}</label>
         <template v-if="localInstalled">
           <select v-model.number="settings.localVoiceId" class="input">
-            <option v-for="n in 103" :key="n" :value="n - 1">音色 {{ n - 1 }}{{ n - 1 === 50 ? ' (默认·中文女声)' : '' }}</option>
+            <option v-for="n in 103" :key="n" :value="n - 1">{{ t('tts.voiceN', { n: n - 1 }) }}{{ n - 1 === 50 ? t('tts.voiceDefault') : '' }}</option>
           </select>
-          <button class="btn btn-sm" :disabled="ttsState !== 'stopped'" @click="auditionLocal">试听</button>
+          <button class="btn btn-sm" :disabled="ttsState !== 'stopped'" @click="auditionLocal">{{ t('tts.audition') }}</button>
         </template>
         <button v-else class="btn btn-sm btn-primary" :disabled="localDownloading" @click="downloadLocal">
-          {{ localDownloading ? localProgress : '下载离线语音包 (~310MB)' }}
+          {{ localDownloading ? localProgress : t('tts.downloadLocal') }}
         </button>
       </div>
 
       <div v-else class="tts-row">
-        <label>音色</label>
+        <label>{{ t('tts.voice') }}</label>
         <select v-model="settings.ttsVoice" class="input">
-          <option value="">自动 (中文优先)</option>
+          <option value="">{{ t('tts.autoVoice') }}</option>
           <option v-for="v in ttsVoices" :key="v.name" :value="v.name">{{ v.name }} ({{ v.lang }})</option>
         </select>
       </div>
@@ -725,9 +726,9 @@ onBeforeUnmount(() => {
     <!-- 自动阅读控制条 -->
     <div v-if="autoPanel" class="auto-panel card">
       <button class="btn btn-sm" :class="{ active: autoReading }" @click="autoReading ? stopAutoRead() : startAutoRead()">
-        {{ autoReading ? '⏸ 暂停' : '▶ 开始' }}
+        {{ autoReading ? '⏸ ' + t('common.pause') : '▶ ' + t('common.start') }}
       </button>
-      <label>速度</label>
+      <label>{{ t('reader.speed') }}</label>
       <input
         v-model.number="settings.autoReadSeconds"
         type="range"
@@ -735,8 +736,8 @@ onBeforeUnmount(() => {
         max="60"
         step="1"
       />
-      <span class="auto-speed">{{ settings.autoReadSeconds }} 秒/页</span>
-      <button class="icon-btn" title="关闭" @click="autoPanel = false; stopAutoRead()">✕</button>
+      <span class="auto-speed">{{ t('reader.secPerPage', { n: settings.autoReadSeconds }) }}</span>
+      <button class="icon-btn" :title="t('common.close')" @click="autoPanel = false; stopAutoRead()">✕</button>
     </div>
   </div>
 </template>

@@ -26,10 +26,19 @@ export interface PdfPrefs {
 /** 结构版本: 修正历史默认值时递增 */
 const SETTINGS_VERSION = 2
 
+export interface CustomFontRec {
+  name: string
+  file: string
+}
+
 interface SettingsState {
   version?: number
+  /** 界面语言 */
+  language: 'zh' | 'en'
   reader: ReaderPrefs
   pdf: PdfPrefs
+  /** 导入的自定义字体 (桌面端) */
+  customFonts: CustomFontRec[]
   /** 自动阅读速度: 秒/页 (EPUB 与 PDF 共用) */
   autoReadSeconds: number
   /** 听书引擎: edge 在线神经音色 / local 本地离线神经音色 / system 系统语音 */
@@ -60,6 +69,8 @@ const STORAGE_KEY = 'lightread-settings'
 
 const defaults: SettingsState = {
   version: SETTINGS_VERSION,
+  language: 'zh',
+  customFonts: [],
   reader: {
     fontSize: 18,
     lineHeight: 1.8,

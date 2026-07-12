@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '../i18n'
+
 export interface TocItem {
   label: string
   href?: string
@@ -24,7 +26,7 @@ defineEmits<{
         :class="{ active: item.href && item.href === currentHref, disabled: !item.href }"
         @click="item.href && $emit('navigate', item.href)"
       >
-        {{ item.label?.trim() || '(未命名)' }}
+        {{ item.label?.trim() || t('reader.untitled') }}
       </button>
       <TocList
         v-if="item.subitems?.length"

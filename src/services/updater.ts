@@ -6,6 +6,7 @@
  */
 import { isTauri } from '../storage/types'
 import { fetchRemote } from './net'
+import { t } from '../i18n'
 
 const REPO = 'yzfly/LightRead'
 export const RELEASES_URL = `https://github.com/${REPO}/releases`
@@ -62,7 +63,7 @@ export async function checkUpdate(force = false): Promise<UpdateInfo> {
   })
   const data = await res.json()
   const version = String(data.tag_name ?? '').replace(/^v/, '')
-  if (!version) throw new Error('未能获取最新版本信息')
+  if (!version) throw new Error(t('update.fetchFailed'))
 
   const info: UpdateInfo = {
     version,
@@ -100,7 +101,7 @@ export function pickDownloads(assets: ReleaseAsset[]): DownloadOption[] {
   const rules: Array<{ match: RegExp; label: string; on: string }> = [
     { match: /aarch64\.dmg$/, label: 'macOS (Apple Silicon)', on: 'mac' },
     { match: /x64\.dmg$/, label: 'macOS (Intel)', on: 'mac' },
-    { match: /setup\.exe$/, label: 'Windows 安装包', on: 'windows' },
+    { match: /setup\.exe$/, label: t('update.windowsInstaller'), on: 'windows' },
     { match: /\.msi$/, label: 'Windows (MSI)', on: 'windows' },
     { match: /\.AppImage$/, label: 'Linux (AppImage)', on: 'linux' },
     { match: /\.deb$/, label: 'Linux (deb)', on: 'linux' },

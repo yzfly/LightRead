@@ -5,6 +5,7 @@ import { getStorage, type BookMeta } from '../storage'
 import { useLibrary } from '../stores/library'
 import { useReadingTimer } from '../composables/useReadingTimer'
 import { openDjvu, type DjvuDoc } from '../services/djvu'
+import { t } from '../i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -126,7 +127,7 @@ onMounted(async () => {
     const storage = await getStorage()
     meta.value = await storage.getBook(bookId)
     if (!meta.value) {
-      error.value = '书籍不存在'
+      error.value = t('reader.bookNotFound')
       return
     }
     const blob = await storage.getBookFile(bookId)
@@ -143,7 +144,7 @@ onMounted(async () => {
     resizeObserver.observe(box.value!)
   } catch (e: any) {
     console.error(e)
-    error.value = e?.message ?? '无法打开 DjVu 文件'
+    error.value = e?.message ?? t('reader.cantOpenDjvu')
     loading.value = false
   }
 })
@@ -160,14 +161,14 @@ onBeforeUnmount(() => {
 <template>
   <div class="djvu-reader">
     <header class="bar">
-      <button class="icon-btn" title="返回藏书" @click="router.push('/library')">
+      <button class="icon-btn" :title="t('reader.backToLibrary')" @click="router.push('/library')">
         <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M14.7 5.3a1 1 0 0 1 0 1.4L9.42 12l5.3 5.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.42 0z"/></svg>
       </button>
       <strong class="title">{{ meta?.title }}</strong>
       <div class="controls">
         <div class="seg">
-          <button :class="{ active: fit === 'fitH' }" @click="fit = 'fitH'; render()">适高</button>
-          <button :class="{ active: fit === 'fitW' }" @click="fit = 'fitW'; render()">适宽</button>
+          <button :class="{ active: fit === 'fitH' }" @click="fit = 'fitH'; render()">{{ t('reader.fitHeight') }}</button>
+          <button :class="{ active: fit === 'fitW' }" @click="fit = 'fitW'; render()">{{ t('reader.fitWidth') }}</button>
         </div>
         <span class="page-indicator">
           <input
@@ -180,10 +181,10 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <div v-if="loading" class="state">正在解码…</div>
+    <div v-if="loading" class="state">{{ t('reader.decoding') }}</div>
     <div v-if="error" class="state">
       <p>{{ error }}</p>
-      <button class="btn" @click="router.push('/library')">返回藏书</button>
+      <button class="btn" @click="router.push('/library')">{{ t('reader.backToLibrary') }}</button>
     </div>
 
     <div
@@ -194,10 +195,10 @@ onBeforeUnmount(() => {
       @touchend.passive="onTouchEnd"
     >
       <div ref="host" class="page-host" />
-      <button class="nav prev" title="上一页" @click="prev">
+      <button class="nav prev" :title="t('reader.prevPage')" @click="prev">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M14.7 5.3a1 1 0 0 1 0 1.4L9.42 12l5.3 5.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.42 0z"/></svg>
       </button>
-      <button class="nav next" title="下一页" @click="next">
+      <button class="nav next" :title="t('reader.nextPage')" @click="next">
         <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M9.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 0 1-1.4-1.4l5.29-5.3-5.3-5.3a1 1 0 0 1 0-1.4z"/></svg>
       </button>
     </div>

@@ -14,6 +14,7 @@ import { useSettings } from '../stores/settings'
 import { useLibrary } from '../stores/library'
 import { useRouter } from 'vue-router'
 import { toast } from '../services/toast'
+import { t } from '../i18n'
 
 const library = useLibrary()
 const settings = useSettings()
@@ -93,7 +94,7 @@ async function refreshCalibre() {
     })
     Promise.all(workers)
   } catch (e: any) {
-    toast(e?.message ?? '读取 Calibre 书库失败', 'error', 5000)
+    toast(e?.message ?? t('catalog.calibreReadFailed'), 'error', 5000)
     calibreBooks.value = []
   } finally {
     calibreLoading.value = false
@@ -118,10 +119,10 @@ async function calibreImport(book: CalibreBook, thenOpen = false) {
       const imported = library.books.find(b => b.id === result.bookId)
       router.push(imported?.format === 'pdf' ? `/read-pdf/${result.bookId}` : `/read/${result.bookId}`)
     } else {
-      toast(`《${book.title}》已入库`, 'success')
+      toast(t('catalog.bookImported', { title: book.title }), 'success')
     }
   } catch (e: any) {
-    toast(`导入失败: ${e?.message}`, 'error', 5000)
+    toast(t('catalog.importFailed', { msg: e?.message }), 'error', 5000)
   } finally {
     calibreBusy.value.delete(book.id)
   }
@@ -136,10 +137,10 @@ function openImported(book: CalibreBook) {
 async function calibreImportAllNew() {
   const fresh = calibreBooks.value.filter(b => !importedTitles.value.has(b.title) && pickBestFormat(b))
   if (!fresh.length) {
-    toast('没有新书需要导入')
+    toast(t('catalog.noNewBooks'))
     return
   }
-  if (!confirm(`导入 ${fresh.length} 本新书到藏书？`)) return
+  if (!confirm(t('catalog.importNewConfirm', { count: fresh.length }))) return
   calibreBatchBusy.value = true
   let ok = 0
   for (const book of fresh) {
@@ -148,7 +149,7 @@ async function calibreImportAllNew() {
   }
   calibreBatchBusy.value = false
   await library.refresh()
-  toast(`同步完成: 导入 ${ok}/${fresh.length} 本`, 'success', 4000)
+  toast(t('catalog.syncDone', { ok, total: fresh.length }), 'success', 4000)
 }
 
 async function openUrl(url: string, title: string, pushCrumb = true) {
@@ -159,9 +160,9 @@ async function openUrl(url: string, title: string, pushCrumb = true) {
     page.value = result
     if (pushCrumb) breadcrumbs.value.push({ title: title || result.title, url })
   } catch (e: any) {
-    loadError.value = e?.message ?? '加载失败'
+    loadError.value = e?.message ?? t('catalog.loadFailed')
     if (!isTauri()) {
-      loadError.value += '。网页版受浏览器跨域限制, 建议使用桌面版, 或在设置中配置跨域代理。'
+      loadError.value += t('catalog.corsHint')
     }
   } finally {
     loading.value = false
@@ -203,13 +204,13 @@ async function runSearch() {
   const query = searchQuery.value.trim()
   if (!query || !page.value?.searchUrl) return
   if (page.value.searchUrl === 'arxiv-search') {
-    openUrl(arxivSearchUrl(query), `搜索: ${query}`)
+    openUrl(arxivSearchUrl(query), t('catalog.searchCrumb', { query }))
     return
   }
   const template = page.value.searchUrl
   if (template.includes('{searchTerms}')) {
     // 直接内联的 OpenSearch 模板
-    openUrl(fillSearchTemplate(template, query), `搜索: ${query}`)
+    openUrl(fillSearchTemplate(template, query), t('catalog.searchCrumb', { query }))
     return
   }
   // 指向 OpenSearch description 文档
@@ -219,9 +220,9 @@ async function runSearch() {
     const doc = await fetchXml(template)
     const os = getOpenSearch(doc)
     const url = os.search(new Map([[null, new Map([['searchTerms', query]])]]))
-    openUrl(new URL(url, template).href, `搜索: ${query}`)
+    openUrl(new URL(url, template).href, t('catalog.searchCrumb', { query }))
   } catch (e: any) {
-    toast(`搜索失败: ${e?.message ?? '未知错误'}`, 'error')
+    toast(t('catalog.searchFailed', { msg: e?.message ?? t('common.unknownError') }), 'error')
   }
 }
 
@@ -238,7 +239,7 @@ async function loadMore() {
       searchUrl: page.value.searchUrl ?? nextPage.searchUrl,
     }
   } catch (e: any) {
-    toast(e?.message ?? '加载更多失败', 'error')
+    toast(e?.message ?? t('catalog.loadMoreFailed'), 'error')
   } finally {
     appendLoading.value = false
   }
@@ -251,9 +252,9 @@ async function download(pub: OpdsPublication, acq: OpdsPublication['acquisitions
   try {
     await downloadToLibrary(pub, acq, activeSource.value?.title ?? 'OPDS', sourceAuth())
     await library.refresh()
-    toast(`《${pub.title}》已入库`, 'success')
+    toast(t('catalog.bookImported', { title: pub.title }), 'success')
   } catch (e: any) {
-    toast(`下载失败: ${e?.message ?? '未知错误'}`, 'error', 5000)
+    toast(t('catalog.downloadFailed', { msg: e?.message ?? t('common.unknownError') }), 'error', 5000)
   } finally {
     downloading.value.delete(key)
   }
@@ -278,11 +279,11 @@ async function addSource() {
   newUsername.value = ''
   newPassword.value = ''
   await refreshSources()
-  toast('书源已添加', 'success')
+  toast(t('catalog.sourceAdded'), 'success')
 }
 
 async function removeSource(s: CatalogSourceRec) {
-  if (!confirm(`删除书源「${s.title}」？`)) return
+  if (!confirm(t('catalog.deleteSourceConfirm', { title: s.title }))) return
   const storage = await getStorage()
   await storage.deleteSource(s.id)
   await refreshSources()
@@ -294,21 +295,20 @@ async function removeSource(s: CatalogSourceRec) {
     <!-- 书源列表 -->
     <template v-if="!activeSource">
       <header class="toolbar">
-        <h1>书源</h1>
+        <h1>{{ t('catalog.title') }}</h1>
         <div class="spacer" />
-        <button class="btn btn-primary" @click="showAdd = true">添加书源</button>
+        <button class="btn btn-primary" @click="showAdd = true">{{ t('catalog.add') }}</button>
       </header>
       <p class="intro">
-        书源使用开放的 <strong>OPDS</strong> 协议——电子书界的 RSS。可接入古登堡计划、Standard Ebooks
-        等公版书站点, 也可以连接你自己的 Calibre 内容服务器 (calibre-server / calibre-web)。
+        {{ t('catalog.intro') }}
       </p>
       <div class="source-grid">
         <div v-for="s in sources" :key="s.id" class="source-card card" @click="openSource(s)">
           <div class="source-title">{{ s.title }}</div>
           <div class="source-url">{{ s.url }}</div>
           <div class="source-foot">
-            <span v-if="s.builtin" class="tag">内置</span>
-            <button v-else class="btn btn-sm btn-danger" @click.stop="removeSource(s)">删除</button>
+            <span v-if="s.builtin" class="tag">{{ t('catalog.builtin') }}</span>
+            <button v-else class="btn btn-sm btn-danger" @click.stop="removeSource(s)">{{ t('common.delete') }}</button>
           </div>
         </div>
       </div>
@@ -316,49 +316,48 @@ async function removeSource(s: CatalogSourceRec) {
       <!-- Calibre 书库直读 (桌面版) -->
       <section v-if="calibreAvailable()" class="calibre-section">
         <header class="toolbar">
-          <h2>Calibre 书库</h2>
+          <h2>{{ t('catalog.calibreTitle') }}</h2>
           <div class="spacer" />
           <template v-if="settings.calibrePath">
             <span class="calibre-path" :title="settings.calibrePath">{{ settings.calibrePath }}</span>
-            <button class="btn btn-sm" :disabled="calibreLoading" @click="refreshCalibre">刷新</button>
+            <button class="btn btn-sm" :disabled="calibreLoading" @click="refreshCalibre">{{ t('common.refresh') }}</button>
             <button class="btn btn-sm btn-primary" :disabled="calibreBatchBusy" @click="calibreImportAllNew">
-              {{ calibreBatchBusy ? '同步中…' : '导入全部新书' }}
+              {{ calibreBatchBusy ? t('catalog.syncing') : t('catalog.importAllNew') }}
             </button>
-            <button class="btn btn-sm btn-danger" @click="disconnectCalibre">断开</button>
+            <button class="btn btn-sm btn-danger" @click="disconnectCalibre">{{ t('catalog.disconnect') }}</button>
           </template>
-          <button v-else class="btn btn-primary" @click="connectCalibre">连接 Calibre 书库</button>
+          <button v-else class="btn btn-primary" @click="connectCalibre">{{ t('catalog.connectCalibre') }}</button>
         </header>
         <p v-if="!settings.calibrePath" class="intro">
-          直接读取本机 Calibre 书库文件夹 (含 metadata.db 的目录), 书目、作者、封面即刻可见,
-          点一本即可开始阅读, 也可以一键把新书同步进藏书。
+          {{ t('catalog.calibreIntro') }}
         </p>
-        <div v-if="calibreLoading" class="empty">读取书库中…</div>
+        <div v-if="calibreLoading" class="empty">{{ t('catalog.readingLibrary') }}</div>
         <div v-else-if="settings.calibrePath && calibreBooks.length" class="calibre-grid">
           <div v-for="book in calibreBooks" :key="book.id" class="calibre-card card">
             <img v-if="calibreCovers[book.id]" class="calibre-cover" :src="calibreCovers[book.id]" loading="lazy" decoding="async" alt="" />
             <div v-else class="calibre-cover placeholder">📕</div>
             <div class="calibre-info">
               <div class="calibre-title" :title="book.title">{{ book.title }}</div>
-              <div class="calibre-authors">{{ book.authors || '佚名' }}</div>
+              <div class="calibre-authors">{{ book.authors || t('common.anonymous') }}</div>
               <div class="calibre-formats">
                 <span v-for="f in book.formats" :key="f.format" class="tag">{{ f.format.toUpperCase() }}</span>
               </div>
               <div class="calibre-actions">
                 <template v-if="importedTitles.has(book.title)">
-                  <button class="btn btn-sm btn-primary" @click="openImported(book)">继续阅读</button>
+                  <button class="btn btn-sm btn-primary" @click="openImported(book)">{{ t('catalog.continueReading') }}</button>
                 </template>
                 <template v-else-if="pickBestFormat(book)">
                   <button class="btn btn-sm btn-primary" :disabled="calibreBusy.has(book.id)" @click="calibreImport(book, true)">
-                    {{ calibreBusy.has(book.id) ? '打开中…' : '阅读' }}
+                    {{ calibreBusy.has(book.id) ? t('catalog.opening') : t('catalog.read') }}
                   </button>
-                  <button class="btn btn-sm" :disabled="calibreBusy.has(book.id)" @click="calibreImport(book)">导入</button>
+                  <button class="btn btn-sm" :disabled="calibreBusy.has(book.id)" @click="calibreImport(book)">{{ t('catalog.import') }}</button>
                 </template>
-                <span v-else class="no-acq">无可读格式</span>
+                <span v-else class="no-acq">{{ t('catalog.noReadableFormat') }}</span>
               </div>
             </div>
           </div>
         </div>
-        <div v-else-if="settings.calibrePath" class="empty"><p>书库是空的</p></div>
+        <div v-else-if="settings.calibrePath" class="empty"><p>{{ t('catalog.libraryEmpty') }}</p></div>
       </section>
     </template>
 
@@ -366,10 +365,10 @@ async function removeSource(s: CatalogSourceRec) {
     <template v-else>
       <header class="toolbar">
         <button class="btn btn-sm" @click="breadcrumbs.length > 1 ? gotoCrumb(breadcrumbs.length - 2) : backToSources()">
-          ← 返回
+          ← {{ t('common.back') }}
         </button>
         <nav class="crumbs">
-          <button class="crumb" @click="backToSources">书源</button>
+          <button class="crumb" @click="backToSources">{{ t('catalog.title') }}</button>
           <template v-for="(c, i) in breadcrumbs" :key="i">
             <span class="crumb-sep">/</span>
             <button class="crumb" :class="{ current: i === breadcrumbs.length - 1 }" @click="gotoCrumb(i)">
@@ -379,15 +378,15 @@ async function removeSource(s: CatalogSourceRec) {
         </nav>
         <div class="spacer" />
         <form v-if="page?.searchUrl" @submit.prevent="runSearch">
-          <input v-model="searchQuery" class="input" type="search" placeholder="搜索此书源" />
+          <input v-model="searchQuery" class="input" type="search" :placeholder="t('catalog.searchThisSource')" />
         </form>
       </header>
 
-      <div v-if="loading" class="empty">加载中…</div>
+      <div v-if="loading" class="empty">{{ t('common.loading') }}</div>
       <div v-else-if="loadError" class="empty">
         <div class="empty-icon">⚠️</div>
         <p style="max-width: 480px; text-align: center; line-height: 1.8">{{ loadError }}</p>
-        <button class="btn" @click="backToSources">返回书源列表</button>
+        <button class="btn" @click="backToSources">{{ t('catalog.backToSources') }}</button>
       </div>
 
       <template v-else-if="page">
@@ -411,7 +410,7 @@ async function removeSource(s: CatalogSourceRec) {
             <div v-else class="pub-cover placeholder">📖</div>
             <div class="pub-info">
               <div class="pub-title">{{ pub.title }}</div>
-              <div class="pub-author">{{ pub.author || '佚名' }}</div>
+              <div class="pub-author">{{ pub.author || t('common.anonymous') }}</div>
               <p v-if="pub.summary" class="pub-summary">{{ pub.summary }}</p>
               <div class="pub-actions">
                 <button
@@ -421,21 +420,21 @@ async function removeSource(s: CatalogSourceRec) {
                   :disabled="downloading.has(acq.href)"
                   @click="download(pub, acq)"
                 >
-                  {{ downloading.has(acq.href) ? '下载中…' : `下载 ${acq.label}` }}
+                  {{ downloading.has(acq.href) ? t('catalog.downloading') : t('catalog.download', { label: acq.label }) }}
                 </button>
-                <span v-if="!pub.acquisitions.length" class="no-acq">无可下载格式</span>
+                <span v-if="!pub.acquisitions.length" class="no-acq">{{ t('catalog.noDownloadFormat') }}</span>
               </div>
             </div>
           </div>
         </div>
 
         <div v-if="!page.navigation.length && !page.publications.length" class="empty">
-          <p>此目录为空</p>
+          <p>{{ t('catalog.thisDirEmpty') }}</p>
         </div>
 
         <div v-if="page.next" class="load-more">
           <button class="btn" :disabled="appendLoading" @click="loadMore">
-            {{ appendLoading ? '加载中…' : '加载更多' }}
+            {{ appendLoading ? t('common.loading') : t('catalog.loadMore') }}
           </button>
         </div>
       </template>
@@ -444,33 +443,32 @@ async function removeSource(s: CatalogSourceRec) {
     <!-- 添加书源弹窗 -->
     <div v-if="showAdd" class="modal-mask" @click.self="showAdd = false">
       <div class="modal">
-        <h3>添加 OPDS 书源</h3>
+        <h3>{{ t('catalog.addModalTitle') }}</h3>
         <div class="form-row">
-          <label>名称</label>
-          <input v-model="newTitle" class="input" placeholder="如: 我的 Calibre 书库" />
+          <label>{{ t('catalog.name') }}</label>
+          <input v-model="newTitle" class="input" :placeholder="t('catalog.namePlaceholder')" />
         </div>
         <div class="form-row">
-          <label>OPDS 地址</label>
+          <label>{{ t('catalog.opdsUrl') }}</label>
           <input v-model="newUrl" class="input" placeholder="https://example.com/opds" />
         </div>
         <div class="form-row-pair">
           <div class="form-row">
-            <label>用户名 (可选)</label>
+            <label>{{ t('common.usernameOptional') }}</label>
             <input v-model="newUsername" class="input" autocomplete="off" />
           </div>
           <div class="form-row">
-            <label>密码 (可选)</label>
+            <label>{{ t('common.passwordOptional') }}</label>
             <input v-model="newPassword" class="input" type="password" autocomplete="new-password" />
           </div>
         </div>
         <p class="form-hint">
-          常见地址: calibre-web 为 <code>http://主机:8083/opds</code>,
-          calibre 内容服务器为 <code>http://主机:8080/opds</code>。
-          需要登录的书源 (如 calibre-web) 填写用户名密码, 以 HTTP Basic 方式鉴权。
+          {{ t('catalog.hintCommon') }} <code>http://host:8083/opds</code>{{ t('catalog.hintServer') }}
+          <code>http://host:8080/opds</code>{{ t('catalog.hintAuth') }}
         </p>
         <div class="form-actions">
-          <button class="btn" @click="showAdd = false">取消</button>
-          <button class="btn btn-primary" :disabled="!newUrl.trim()" @click="addSource">添加</button>
+          <button class="btn" @click="showAdd = false">{{ t('common.cancel') }}</button>
+          <button class="btn btn-primary" :disabled="!newUrl.trim()" @click="addSource">{{ t('common.add') }}</button>
         </div>
       </div>
     </div>

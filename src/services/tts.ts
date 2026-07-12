@@ -92,6 +92,7 @@ export function ssmlToText(ssml: string): string {
 // ================= 引擎调度 =================
 import { useSettings } from '../stores/settings'
 import { toast } from './toast'
+import { t } from '../i18n'
 import {
   edgeAvailable, edgePause, edgeResume, edgeStop, edgeSynthesize, playAudio,
 } from './edgeTts'
@@ -148,7 +149,7 @@ export async function speakText(text: string): Promise<'end' | 'cancelled'> {
     } catch (e) {
       console.error(e)
       neuralFailed = true
-      toast('神经音色暂不可用, 已回退到系统语音', 'error', 4000)
+      toast(t('tts.neuralUnavailable'), 'error', 4000)
     }
   }
   const voice = await pickVoice(settings.ttsVoice, text)

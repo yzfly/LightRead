@@ -8,6 +8,7 @@ import { toast } from '../services/toast'
 import { formatReadingTime } from '../composables/useReadingTimer'
 import BookCard from '../components/BookCard.vue'
 import type { BookMeta } from '../storage'
+import { t } from '../i18n'
 
 const router = useRouter()
 const library = useLibrary()
@@ -77,7 +78,7 @@ async function handleFiles(files: FileList | File[]) {
   await library.refresh()
   const okCount = results.filter(r => r.ok).length
   const failed = results.filter(r => !r.ok)
-  if (okCount) toast(`成功导入 ${okCount} 本书`, 'success')
+  if (okCount) toast(t('library.importSuccess', { count: okCount }), 'success')
   for (const f of failed) toast(`${f.fileName}: ${f.error}`, 'error', 5000)
 }
 
@@ -100,9 +101,9 @@ function openBook(book: BookMeta) {
 }
 
 async function removeBook(book: BookMeta) {
-  if (!confirm(`确定从藏书中删除《${book.title}》吗？文件将一并移除。`)) return
+  if (!confirm(t('library.deleteConfirm', { title: book.title }))) return
   await library.removeBook(book.id)
-  toast('已删除', 'success')
+  toast(t('library.deleted'), 'success')
 }
 
 // ---- 批量管理 ----
@@ -126,10 +127,10 @@ function selectAll() {
 
 async function batchDelete() {
   const count = selectedIds.value.size
-  if (!count || !confirm(`确定删除选中的 ${count} 本书吗？文件将一并移除。`)) return
+  if (!count || !confirm(t('library.batchDeleteConfirm', { count }))) return
   for (const id of selectedIds.value) await library.removeBook(id)
   selectedIds.value = new Set()
-  toast(`已删除 ${count} 本`, 'success')
+  toast(t('library.batchDeleted', { count }), 'success')
 }
 
 async function batchTag() {
@@ -144,7 +145,7 @@ async function batchTag() {
   }
   showTagModal.value = false
   tagDraft.value = ''
-  toast(`已为 ${selectedIds.value.size} 本书添加标签`, 'success')
+  toast(t('library.tagsAdded', { count: selectedIds.value.size }), 'success')
 }
 
 async function batchClearTags() {
@@ -156,7 +157,7 @@ async function batchClearTags() {
     book.tags = []
   }
   showTagModal.value = false
-  toast('已清空所选书籍的标签', 'success')
+  toast(t('library.tagsCleared'), 'success')
 }
 </script>
 
@@ -169,31 +170,31 @@ async function batchClearTags() {
     @drop.prevent="onDrop"
   >
     <header class="toolbar">
-      <h1>藏书</h1>
+      <h1>{{ t('library.title') }}</h1>
       <span v-if="library.loaded" class="count">
-        {{ library.books.length }} 本<template v-if="totalReadingTime"> · 累计阅读 {{ totalReadingTime }}</template>
+        {{ t('library.bookCount', { count: library.books.length }) }}<template v-if="totalReadingTime"> · {{ t('library.totalReading', { time: totalReadingTime }) }}</template>
       </span>
       <div class="spacer" />
-      <input v-model="keyword" class="input search" type="search" placeholder="搜索书名 / 作者 / 标签" />
+      <input v-model="keyword" class="input search" type="search" :placeholder="t('library.searchPlaceholder')" />
       <select v-model="sortBy" class="input">
-        <option value="recent">最近阅读</option>
-        <option value="added">最近添加</option>
-        <option value="title">书名</option>
-        <option value="author">作者</option>
+        <option value="recent">{{ t('library.sortRecent') }}</option>
+        <option value="added">{{ t('library.sortAdded') }}</option>
+        <option value="title">{{ t('library.sortTitle') }}</option>
+        <option value="author">{{ t('library.sortAuthor') }}</option>
       </select>
       <button v-if="library.books.length" class="btn" :class="{ 'btn-primary': manageMode }" @click="toggleManage">
-        {{ manageMode ? '完成' : '管理' }}
+        {{ manageMode ? t('common.done') : t('library.manage') }}
       </button>
       <button class="btn btn-primary" @click="fileInput?.click()">
         <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M11 13H5a1 1 0 1 1 0-2h6V5a1 1 0 1 1 2 0v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6z"/></svg>
-        导入书籍
+        {{ t('library.import') }}
       </button>
       <input ref="fileInput" type="file" multiple :accept="ACCEPT" hidden @change="onPick" />
     </header>
 
     <!-- 标签筛选 -->
     <div v-if="allTags.length" class="tag-row">
-      <button class="tag-chip" :class="{ active: !tagFilter }" @click="tagFilter = ''">全部</button>
+      <button class="tag-chip" :class="{ active: !tagFilter }" @click="tagFilter = ''">{{ t('library.filterAll') }}</button>
       <button
         v-for="t in allTags"
         :key="t"
@@ -205,7 +206,7 @@ async function batchClearTags() {
 
     <div v-if="importing" class="import-bar card">
       <div class="import-text">
-        正在导入 {{ importState.current }} ({{ importState.done + 1 }}/{{ importState.total }})
+        {{ t('library.importing', { name: importState.current, done: importState.done + 1, total: importState.total }) }}
       </div>
       <div class="import-track">
         <div class="import-fill" :style="{ width: `${(importState.done / Math.max(importState.total, 1)) * 100}%` }" />
@@ -214,8 +215,8 @@ async function batchClearTags() {
 
     <div v-if="library.loaded && !library.books.length" class="empty">
       <div class="empty-icon">📚</div>
-      <p>书架还是空的</p>
-      <p class="hint">点击「导入书籍」或直接把文件拖进来<br />支持 {{ SUPPORTED_EXTS.join(' / ') }}</p>
+      <p>{{ t('library.emptyTitle') }}</p>
+      <p class="hint">{{ t('library.emptyHint') }}<br />{{ t('library.supportedFormats', { formats: SUPPORTED_EXTS.join(' / ') }) }}</p>
     </div>
 
     <div v-else class="grid">
@@ -234,29 +235,29 @@ async function batchClearTags() {
 
     <!-- 批量操作栏 -->
     <div v-if="manageMode" class="batch-bar card">
-      <span class="batch-count">已选 {{ selectedIds.size }} 本</span>
+      <span class="batch-count">{{ t('library.selectedCount', { count: selectedIds.size }) }}</span>
       <button class="btn btn-sm" @click="selectAll">
-        {{ selectedIds.size === filtered.length && filtered.length ? '取消全选' : '全选' }}
+        {{ selectedIds.size === filtered.length && filtered.length ? t('library.deselectAll') : t('library.selectAll') }}
       </button>
-      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="showTagModal = true">设置标签</button>
-      <button class="btn btn-sm btn-danger" :disabled="!selectedIds.size" @click="batchDelete">删除</button>
-      <button class="btn btn-sm" @click="toggleManage">完成</button>
+      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="showTagModal = true">{{ t('library.setTags') }}</button>
+      <button class="btn btn-sm btn-danger" :disabled="!selectedIds.size" @click="batchDelete">{{ t('common.delete') }}</button>
+      <button class="btn btn-sm" @click="toggleManage">{{ t('common.done') }}</button>
     </div>
 
     <!-- 批量标签弹窗 -->
     <div v-if="showTagModal" class="modal-mask" @click.self="showTagModal = false">
       <div class="modal">
-        <h3>为 {{ selectedIds.size }} 本书设置标签</h3>
-        <input v-model="tagDraft" class="input" style="width: 100%" placeholder="多个标签用逗号分隔, 如: 科幻, 待读" @keyup.enter="batchTag" />
+        <h3>{{ t('library.tagModalTitle', { count: selectedIds.size }) }}</h3>
+        <input v-model="tagDraft" class="input" style="width: 100%" :placeholder="t('library.tagPlaceholder')" @keyup.enter="batchTag" />
         <div class="form-actions" style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px">
-          <button class="btn btn-sm" @click="batchClearTags">清空标签</button>
-          <button class="btn btn-sm" @click="showTagModal = false">取消</button>
-          <button class="btn btn-sm btn-primary" :disabled="!tagDraft.trim()" @click="batchTag">添加</button>
+          <button class="btn btn-sm" @click="batchClearTags">{{ t('library.clearTags') }}</button>
+          <button class="btn btn-sm" @click="showTagModal = false">{{ t('common.cancel') }}</button>
+          <button class="btn btn-sm btn-primary" :disabled="!tagDraft.trim()" @click="batchTag">{{ t('common.add') }}</button>
         </div>
       </div>
     </div>
 
-    <div v-if="dragging" class="drop-hint">松开导入书籍</div>
+    <div v-if="dragging" class="drop-hint">{{ t('library.dropHint') }}</div>
   </div>
 </template>
 

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { BookMeta } from '../storage'
 import { FORMAT_LABELS } from '../services/format'
 import { formatReadingTime } from '../composables/useReadingTimer'
+import { t } from '../i18n'
 
 const props = defineProps<{
   book: BookMeta
@@ -27,7 +28,7 @@ const progressText = computed(() => {
 const tooltip = computed(() => {
   const parts = [props.book.title]
   if (props.book.readingSeconds && props.book.readingSeconds >= 60) {
-    parts.push(`已读 ${formatReadingTime(props.book.readingSeconds)}`)
+    parts.push(t('book.readTime', { time: formatReadingTime(props.book.readingSeconds) }))
   }
   return parts.join('\n')
 })
@@ -57,12 +58,12 @@ const fallbackHue = computed(() => {
       </div>
       <span class="format">{{ FORMAT_LABELS[book.format] }}</span>
       <span v-if="progressText" class="progress">{{ progressText }}</span>
-      <button v-if="!selectable" class="remove" title="从藏书中删除" @click.stop="$emit('remove')">
+      <button v-if="!selectable" class="remove" :title="t('book.removeFromLibrary')" @click.stop="$emit('remove')">
         <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1v12a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1zm1 6a1 1 0 0 1 2 0v8a1 1 0 1 1-2 0V9zm4 0a1 1 0 0 1 2 0v8a1 1 0 1 1-2 0V9z"/></svg>
       </button>
     </div>
     <div class="title" :title="book.title">{{ book.title }}</div>
-    <div class="author">{{ book.author || '佚名' }}</div>
+    <div class="author">{{ book.author || t('common.anonymous') }}</div>
   </div>
 </template>
 

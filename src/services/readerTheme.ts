@@ -14,10 +14,10 @@ export const READER_THEMES: Record<ReaderPrefs['theme'], ReaderThemeColors> = {
 }
 
 export const FONT_FAMILIES = [
-  { label: '默认', value: '' },
-  { label: '宋体', value: '"Songti SC", "Noto Serif SC", SimSun, serif' },
-  { label: '黑体', value: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif' },
-  { label: '楷体', value: '"Kaiti SC", KaiTi, "Noto Serif SC", serif' },
+  { labelKey: 'reader.fontDefault', value: '' },
+  { labelKey: 'reader.fontSongti', value: '"Songti SC", "Noto Serif SC", SimSun, serif' },
+  { labelKey: 'reader.fontHeiti', value: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif' },
+  { labelKey: 'reader.fontKaiti', value: '"Kaiti SC", KaiTi, "Noto Serif SC", serif' },
 ]
 
 /** 注入到 foliate 渲染 iframe 的样式 */

@@ -33,6 +33,15 @@
         },
         {
           "path": "/Volumes/**"
+        },
+        {
+          "path": "/Library/Fonts/**"
+        },
+        {
+          "path": "/System/Library/Fonts/**"
+        },
+        {
+          "path": "C:/Windows/Fonts/**"
         }
       ]
     },

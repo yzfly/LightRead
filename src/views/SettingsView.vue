@@ -13,6 +13,7 @@ import {
   downloadInstaller, openInstaller, copyLink,
   type UpdateInfo, type DownloadOption,
 } from '../services/updater'
+import { t } from '../i18n'
 
 const settings = useSettings()
 const library = useLibrary()
@@ -25,13 +26,13 @@ const backupInput = ref<HTMLInputElement>()
 const davInfo = ref('')
 
 async function davTest() {
-  busy.value = '测试连接…'
+  busy.value = t('settings.testing')
   try {
     await testWebdav()
     const info = await webdavBackupInfo()
     davInfo.value = info
-      ? `✅ 连接正常, 云端备份: ${(info.size / 1024 / 1024).toFixed(1)}MB (${info.modified.slice(0, 22)})`
-      : '✅ 连接正常, 云端暂无备份'
+      ? t('settings.davOk', { size: (info.size / 1024 / 1024).toFixed(1), date: info.modified.slice(0, 22) })
+      : t('settings.davOkEmpty')
   } catch (e: any) {
     davInfo.value = `❌ ${e?.message}`
   } finally {
@@ -40,39 +41,39 @@ async function davTest() {
 }
 
 async function davBackup() {
-  busy.value = '准备备份…'
+  busy.value = t('settings.preparingBackup')
   try {
     await backupToWebdav(msg => (busy.value = msg))
-    toast('已备份到云端', 'success')
+    toast(t('settings.backedUp'), 'success')
     davInfo.value = ''
   } catch (e: any) {
-    toast(`云备份失败: ${e?.message}`, 'error', 6000)
+    toast(t('settings.cloudBackupFailed', { msg: e?.message }), 'error', 6000)
   } finally {
     busy.value = ''
   }
 }
 
 async function davRestore() {
-  if (!confirm('从云端备份恢复？已有书籍会保留, 仅补充缺失的。')) return
-  busy.value = '连接云端…'
+  if (!confirm(t('settings.restoreConfirm'))) return
+  busy.value = t('settings.connectingCloud')
   try {
     const result = await restoreFromWebdav(msg => (busy.value = msg))
     await library.refresh()
-    toast(`恢复完成: ${result.books} 本书, ${result.annotations} 条标注`, 'success', 5000)
+    toast(t('settings.restoreDone', { books: result.books, annotations: result.annotations }), 'success', 5000)
   } catch (e: any) {
-    toast(`恢复失败: ${e?.message}`, 'error', 6000)
+    toast(t('settings.restoreFailed', { msg: e?.message }), 'error', 6000)
   } finally {
     busy.value = ''
   }
 }
 
 // ---- 代理配置 (桌面端) ----
-const PROXY_SCHEMES = [
-  { label: '不使用代理', value: '' },
+const PROXY_SCHEMES: Array<{ label?: string; labelKey?: string; value: string }> = [
+  { labelKey: 'settings.proxyNone', value: '' },
   { label: 'HTTP', value: 'http' },
   { label: 'HTTPS', value: 'https' },
   { label: 'SOCKS5', value: 'socks5' },
-  { label: 'SOCKS5 (代理端解析域名)', value: 'socks5h' },
+  { labelKey: 'settings.proxySocks5h', value: 'socks5h' },
   { label: 'SOCKS4', value: 'socks4' },
 ]
 
@@ -112,9 +113,9 @@ async function testProxy() {
   const start = performance.now()
   try {
     await fetchRemote('https://www.google.com/generate_204')
-    testResult.value = `✅ 连接正常 (${Math.round(performance.now() - start)} ms, 经 google.com 探测)`
+    testResult.value = t('settings.proxyOk', { ms: Math.round(performance.now() - start) })
   } catch (e: any) {
-    testResult.value = `❌ ${e?.message ?? '连接失败'}`
+    testResult.value = `❌ ${e?.message ?? t('settings.connectionFailed')}`
   } finally {
     testing.value = false
   }
@@ -124,9 +125,7 @@ onMounted(async () => {
   parseProxyUrl(settings.httpProxy)
   doCheckUpdate(false)
   const storage = await getStorage()
-  storageKind.value = storage.kind === 'filesystem'
-    ? '文件系统 + SQLite (桌面)'
-    : '浏览器 IndexedDB'
+  storageKind.value = storage.kind
 })
 
 // ---- 版本与更新 ----
@@ -145,7 +144,7 @@ async function doCheckUpdate(manual = true) {
   try {
     updateInfo.value = await checkUpdate(manual)
   } catch (e: any) {
-    if (manual) checkError.value = e?.message ?? '检查失败, 请稍后再试'
+    if (manual) checkError.value = e?.message ?? t('update.checkFailed')
   } finally {
     checking.value = false
   }
@@ -157,7 +156,7 @@ async function download(url: string) {
   try {
     await openDownload(url)
   } catch {
-    toast('无法打开链接', 'error')
+    toast(t('update.cannotOpenLink'), 'error')
   }
 }
 
@@ -168,32 +167,32 @@ const installedPath = ref('')
 async function downloadOption(d: DownloadOption) {
   if (!canInAppInstall()) {
     await download(d.url)
-    toast('已在浏览器中开始下载', 'success')
+    toast(t('update.browserDownloadStarted'), 'success')
     return
   }
   if (installing.value) return
-  installing.value = '连接中…'
+  installing.value = t('common.connecting')
   installedPath.value = ''
   try {
     const fileName = decodeURIComponent(d.url.split('/').pop() ?? 'LightRead-installer')
     const path = await downloadInstaller(d.url, fileName, p => {
       installing.value = p.fraction != null
-        ? `下载中 ${(p.fraction * 100).toFixed(0)}% · ${p.receivedMB} / ${p.totalMB} MB`
-        : `下载中 ${p.receivedMB} MB`
+        ? t('update.downloadingPct', { pct: (p.fraction * 100).toFixed(0), received: p.receivedMB, total: p.totalMB })
+        : t('update.downloadingMB', { received: p.receivedMB })
     })
     installing.value = ''
     installedPath.value = path
-    toast('下载完成, 正在打开安装包', 'success')
+    toast(t('update.downloadDoneOpening'), 'success')
     await openInstaller(path)
   } catch (e: any) {
     installing.value = ''
-    toast(`下载失败: ${e?.message ?? e}`, 'error', 6000)
+    toast(t('update.downloadFailed', { msg: e?.message ?? e }), 'error', 6000)
   }
 }
 
 async function doCopyLink(url: string) {
   const ok = await copyLink(url)
-  toast(ok ? '下载链接已复制, 可粘贴到浏览器下载' : '复制失败', ok ? 'success' : 'error')
+  toast(ok ? t('update.linkCopied') : t('common.copyFailed'), ok ? 'success' : 'error')
 }
 
 // ---- 存储位置 (桌面端) ----
@@ -201,38 +200,38 @@ const migrating = ref('')
 
 async function changeLibraryRoot() {
   const { open } = await import('@tauri-apps/plugin-dialog')
-  const picked = await open({ directory: true, title: '选择书库存储文件夹' })
+  const picked = await open({ directory: true, title: t('settings.pickLibraryFolder') })
   if (typeof picked !== 'string') return
   const { hasLibraryAt, migrateLibraryTo } = await import('../storage/tauri')
 
   try {
     if (await hasLibraryAt(picked)) {
-      if (!confirm(`该文件夹已有一个轻阅书库，直接使用它？\n\n${picked}`)) return
+      if (!confirm(t('settings.useExistingLibrary', { path: picked }))) return
     } else {
-      if (!confirm(`将当前书库复制到该文件夹并切换？\n\n${picked}\n\n原位置的数据会保留不动。`)) return
-      migrating.value = '准备迁移…'
+      if (!confirm(t('settings.migrateConfirm', { path: picked }))) return
+      migrating.value = t('settings.preparingMigration')
       await migrateLibraryTo(picked, msg => (migrating.value = msg))
     }
     settings.libraryRoot = picked
     // 设置持久化有 300ms 防抖, 直接落盘后重载
     localStorage.setItem('lightread-settings', JSON.stringify(settings.$state))
-    toast('存储位置已切换, 即将重新加载', 'success')
+    toast(t('settings.locationSwitched'), 'success')
     setTimeout(() => location.reload(), 800)
   } catch (e: any) {
     migrating.value = ''
-    toast(`切换失败: ${e?.message ?? '未知错误'}`, 'error', 6000)
+    toast(t('settings.switchFailed', { msg: e?.message ?? t('common.unknownError') }), 'error', 6000)
   }
 }
 
 function resetLibraryRoot() {
-  if (!confirm('恢复到默认存储位置（应用数据目录）？\n\n当前位置的数据会保留不动。')) return
+  if (!confirm(t('settings.resetLocationConfirm'))) return
   settings.libraryRoot = ''
   localStorage.setItem('lightread-settings', JSON.stringify(settings.$state))
   setTimeout(() => location.reload(), 300)
 }
 
 async function doExport() {
-  busy.value = '准备导出…'
+  busy.value = t('settings.preparingExport')
   try {
     const blob = await exportBackup(msg => (busy.value = msg))
     const a = document.createElement('a')
@@ -240,9 +239,9 @@ async function doExport() {
     a.download = `lightread-backup-${new Date().toISOString().slice(0, 10)}.zip`
     a.click()
     URL.revokeObjectURL(a.href)
-    toast('备份已导出', 'success')
+    toast(t('settings.backupExported'), 'success')
   } catch (e: any) {
-    toast(`导出失败: ${e?.message}`, 'error', 5000)
+    toast(t('settings.exportFailed', { msg: e?.message }), 'error', 5000)
   } finally {
     busy.value = ''
   }
@@ -253,13 +252,13 @@ async function doImport(e: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
-  busy.value = '读取备份…'
+  busy.value = t('settings.readingBackup')
   try {
     const result = await importBackup(file, msg => (busy.value = msg))
     await library.refresh()
-    toast(`恢复完成: ${result.books} 本书, ${result.annotations} 条标注, ${result.sources} 个书源`, 'success', 5000)
+    toast(t('settings.importDone', { books: result.books, annotations: result.annotations, sources: result.sources }), 'success', 5000)
   } catch (e: any) {
-    toast(`恢复失败: ${e?.message}`, 'error', 5000)
+    toast(t('settings.restoreFailed', { msg: e?.message }), 'error', 5000)
   } finally {
     busy.value = ''
   }
@@ -268,101 +267,113 @@ async function doImport(e: Event) {
 
 <template>
   <div class="settings">
-    <h1>设置</h1>
+    <h1>{{ t('settings.title') }}</h1>
 
     <section class="card section">
-      <h2>数据</h2>
+      <h2>{{ t('settings.general') }}</h2>
       <div class="row">
         <div>
-          <div class="row-title">存储后端</div>
-          <div class="row-desc">{{ storageKind }}</div>
+          <div class="row-title">{{ t('settings.language') }}</div>
+        </div>
+        <div class="seg">
+          <button :class="{ active: settings.language === 'zh' }" @click="settings.language = 'zh'">中文</button>
+          <button :class="{ active: settings.language === 'en' }" @click="settings.language = 'en'">English</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card section">
+      <h2>{{ t('settings.data') }}</h2>
+      <div class="row">
+        <div>
+          <div class="row-title">{{ t('settings.storageBackend') }}</div>
+          <div class="row-desc">{{ storageKind === 'filesystem' ? t('settings.storageDesktop') : t('settings.storageWeb') }}</div>
         </div>
       </div>
       <div v-if="isTauri()" class="row">
         <div style="min-width: 0">
-          <div class="row-title">存储位置</div>
+          <div class="row-title">{{ t('settings.storageLocation') }}</div>
           <div class="row-desc">
-            书籍文件、封面与索引数据库的存放位置。放到 iCloud / 网盘同步文件夹即可多设备共享。<br />
-            当前: <code>{{ settings.libraryRoot || '默认 (应用数据目录)' }}</code>
+            {{ t('settings.storageLocationDesc') }}<br />
+            {{ t('common.current') }}: <code>{{ settings.libraryRoot || t('settings.defaultAppData') }}</code>
           </div>
         </div>
         <div class="row-actions">
-          <button class="btn" :disabled="!!migrating" @click="changeLibraryRoot">更改位置</button>
-          <button v-if="settings.libraryRoot" class="btn" :disabled="!!migrating" @click="resetLibraryRoot">恢复默认</button>
+          <button class="btn" :disabled="!!migrating" @click="changeLibraryRoot">{{ t('settings.changeLocation') }}</button>
+          <button v-if="settings.libraryRoot" class="btn" :disabled="!!migrating" @click="resetLibraryRoot">{{ t('settings.restoreDefault') }}</button>
         </div>
       </div>
       <div v-if="migrating" class="busy">{{ migrating }}</div>
       <div class="row">
         <div>
-          <div class="row-title">备份与恢复</div>
-          <div class="row-desc">将全部藏书、阅读进度、标注和书源打包为 zip, 可在任意端恢复</div>
+          <div class="row-title">{{ t('settings.backupRestore') }}</div>
+          <div class="row-desc">{{ t('settings.backupDesc') }}</div>
         </div>
         <div class="row-actions">
-          <button class="btn" :disabled="!!busy" @click="doExport">导出备份</button>
-          <button class="btn" :disabled="!!busy" @click="backupInput?.click()">恢复备份</button>
+          <button class="btn" :disabled="!!busy" @click="doExport">{{ t('settings.exportBackup') }}</button>
+          <button class="btn" :disabled="!!busy" @click="backupInput?.click()">{{ t('settings.importBackup') }}</button>
           <input ref="backupInput" type="file" accept=".zip" hidden @change="doImport" />
         </div>
       </div>
       <div class="row">
         <div style="min-width: 0">
-          <div class="row-title">WebDAV 云备份</div>
+          <div class="row-title">{{ t('settings.webdavTitle') }}</div>
           <div class="row-desc">
-            备份到坚果云 / Nextcloud / Alist 等任意 WebDAV 服务, 换设备一键恢复。<br />
-            坚果云地址: <code>https://dav.jianguoyun.com/dav/</code> (密码用应用密码)
+            {{ t('settings.webdavDesc') }}<br />
+            {{ t('settings.webdavExample') }}: <code>https://dav.jianguoyun.com/dav/</code> {{ t('settings.webdavPassHint') }}
           </div>
         </div>
       </div>
       <div class="webdav-grid">
         <input v-model="settings.webdavUrl" class="input" placeholder="https://dav.jianguoyun.com/dav/" />
-        <input v-model="settings.webdavUser" class="input" placeholder="账号" autocomplete="off" />
-        <input v-model="settings.webdavPass" class="input" type="password" placeholder="密码" autocomplete="new-password" />
+        <input v-model="settings.webdavUser" class="input" :placeholder="t('settings.account')" autocomplete="off" />
+        <input v-model="settings.webdavPass" class="input" type="password" :placeholder="t('settings.password')" autocomplete="new-password" />
       </div>
       <div class="webdav-actions">
-        <button class="btn btn-sm" :disabled="!!busy || !settings.webdavUrl" @click="davTest">测试连接</button>
-        <button class="btn btn-sm btn-primary" :disabled="!!busy || !settings.webdavUrl" @click="davBackup">备份到云端</button>
-        <button class="btn btn-sm" :disabled="!!busy || !settings.webdavUrl" @click="davRestore">从云端恢复</button>
+        <button class="btn btn-sm" :disabled="!!busy || !settings.webdavUrl" @click="davTest">{{ t('settings.testConnection') }}</button>
+        <button class="btn btn-sm btn-primary" :disabled="!!busy || !settings.webdavUrl" @click="davBackup">{{ t('settings.backupToCloud') }}</button>
+        <button class="btn btn-sm" :disabled="!!busy || !settings.webdavUrl" @click="davRestore">{{ t('settings.restoreFromCloud') }}</button>
         <span v-if="davInfo" class="dav-info">{{ davInfo }}</span>
       </div>
       <div v-if="busy" class="busy">{{ busy }}</div>
     </section>
 
     <section class="card section">
-      <h2>网络</h2>
+      <h2>{{ t('settings.network') }}</h2>
       <template v-if="isTauri()">
         <div class="row">
           <div>
-            <div class="row-title">代理服务器</div>
+            <div class="row-title">{{ t('settings.proxyTitle') }}</div>
             <div class="row-desc">
-              书源浏览与下载请求经此代理访问, 适合直连不畅的网络环境。
-              支持 HTTP / HTTPS / SOCKS5 / SOCKS4, 与 Clash 等工具的本地端口直接配合
-              (如 Clash 默认混合端口 <code>7890</code>)。
+              {{ t('settings.proxyDesc') }}
+              ({{ t('settings.proxyDescPort') }} <code>7890</code>)
             </div>
           </div>
         </div>
         <div class="proxy-grid">
           <select v-model="proxy.scheme" class="input">
-            <option v-for="s in PROXY_SCHEMES" :key="s.value" :value="s.value">{{ s.label }}</option>
+            <option v-for="s in PROXY_SCHEMES" :key="s.value" :value="s.value">{{ s.labelKey ? t(s.labelKey) : s.label }}</option>
           </select>
-          <input v-model="proxy.host" class="input" placeholder="服务器, 如 127.0.0.1" :disabled="!proxy.scheme" />
-          <input v-model="proxy.port" class="input port" placeholder="端口" :disabled="!proxy.scheme" />
+          <input v-model="proxy.host" class="input" :placeholder="t('settings.proxyHostPlaceholder')" :disabled="!proxy.scheme" />
+          <input v-model="proxy.port" class="input port" :placeholder="t('settings.proxyPort')" :disabled="!proxy.scheme" />
         </div>
         <div v-if="proxy.scheme" class="proxy-grid">
-          <input v-model="proxy.username" class="input" placeholder="用户名 (可选)" autocomplete="off" />
-          <input v-model="proxy.password" class="input" type="password" placeholder="密码 (可选)" autocomplete="new-password" />
+          <input v-model="proxy.username" class="input" :placeholder="t('common.usernameOptional')" autocomplete="off" />
+          <input v-model="proxy.password" class="input" type="password" :placeholder="t('common.passwordOptional')" autocomplete="new-password" />
           <button class="btn port" :disabled="testing" @click="testProxy">
-            {{ testing ? '测试中…' : '测试连接' }}
+            {{ testing ? t('settings.testingProxy') : t('settings.testConnection') }}
           </button>
         </div>
-        <div v-if="settings.httpProxy" class="proxy-current">当前: <code>{{ settings.httpProxy }}</code></div>
+        <div v-if="settings.httpProxy" class="proxy-current">{{ t('common.current') }}: <code>{{ settings.httpProxy }}</code></div>
         <div v-if="testResult" class="proxy-result">{{ testResult }}</div>
       </template>
       <template v-else>
         <div class="row">
           <div>
-            <div class="row-title">跨域代理 (仅网页版需要)</div>
+            <div class="row-title">{{ t('settings.corsTitle') }}</div>
             <div class="row-desc">
-              浏览器受同源策略限制, 部分 OPDS 书源无法直接访问。桌面版无此问题。<br />
-              如需在网页版使用书源, 可自建代理并填入模板, 用 <code>{url}</code> 表示目标地址。
+              {{ t('settings.corsDesc1') }}<br />
+              {{ t('settings.corsDesc2pre') }} <code>{url}</code> {{ t('settings.corsDesc2post') }}
             </div>
           </div>
         </div>
@@ -375,18 +386,18 @@ async function doImport(e: Event) {
     </section>
 
     <section class="card section">
-      <h2>阅读偏好</h2>
+      <h2>{{ t('settings.reading') }}</h2>
       <div class="row">
         <div>
-          <div class="row-title">恢复默认排版</div>
-          <div class="row-desc">字号、行距、主题等阅读设置在阅读页右上角调整, 全局生效</div>
+          <div class="row-title">{{ t('settings.resetTypography') }}</div>
+          <div class="row-desc">{{ t('settings.resetTypographyDesc') }}</div>
         </div>
-        <button class="btn" @click="settings.resetReader(); toast('已恢复默认', 'success')">恢复默认</button>
+        <button class="btn" @click="settings.resetReader(); toast(t('settings.resetDone'), 'success')">{{ t('settings.restoreDefault') }}</button>
       </div>
     </section>
 
     <section class="card section">
-      <h2>关于</h2>
+      <h2>{{ t('settings.about') }}</h2>
 
       <div class="app-identity">
         <img class="app-icon" src="/icon-192.png" alt="LightRead" />
@@ -394,25 +405,25 @@ async function doImport(e: Event) {
           <div class="app-name">
             LightRead 轻阅
             <span class="version-chip">v{{ CURRENT_VERSION }}</span>
-            <span class="env-chip">{{ isTauri() ? '桌面版' : '网页版' }}</span>
+            <span class="env-chip">{{ isTauri() ? t('settings.desktopVersion') : t('settings.webVersion') }}</span>
           </div>
-          <div class="app-tagline">开源本地阅读器, 给爱读书的人。所有数据保存在你自己的设备上。</div>
+          <div class="app-tagline">{{ t('settings.tagline') }}</div>
         </div>
         <button class="btn" :disabled="checking" @click="doCheckUpdate()">
-          {{ checking ? '检查中…' : '检查更新' }}
+          {{ checking ? t('update.checking') : t('update.check') }}
         </button>
       </div>
 
       <!-- 检查结果 -->
       <div v-if="checkError" class="update-state error">❌ {{ checkError }}</div>
       <div v-else-if="checkedManually && !checking && updateInfo && !updateInfo.hasUpdate" class="update-state ok">
-        ✅ 当前已是最新版本
+        ✅ {{ t('update.latest') }}
       </div>
 
       <!-- 新版本卡片 -->
       <div v-if="updateInfo?.hasUpdate" class="update-card">
         <div class="update-head">
-          <span class="update-badge">发现新版本</span>
+          <span class="update-badge">{{ t('update.newVersion') }}</span>
           <strong>v{{ updateInfo.version }}</strong>
           <span class="update-date">{{ updateInfo.publishedAt }}</span>
         </div>
@@ -427,41 +438,39 @@ async function doImport(e: Event) {
             >
               ⬇ {{ d.label }} · {{ fmtSize(d.size) }}
             </button>
-            <button class="copy-link-btn" title="复制下载链接, 可在浏览器中下载" @click="doCopyLink(d.url)">
+            <button class="copy-link-btn" :title="t('update.copyLinkTitle')" @click="doCopyLink(d.url)">
               <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M8 5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-2v-2h2a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-8a1 1 0 0 0-1 1v2H8V5zM2 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3v-8zm3-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H5z"/></svg>
             </button>
           </template>
           <a class="all-downloads" href="javascript:void 0" @click="download(updateInfo.pageUrl)">
-            全部平台安装包 →
+            {{ t('update.allPlatforms') }}
           </a>
         </div>
         <div v-if="installing" class="install-progress">
           {{ installing }}
-          <span v-if="settings.httpProxy" class="install-hint">经代理 {{ settings.httpProxy }}</span>
+          <span v-if="settings.httpProxy" class="install-hint">{{ t('update.viaProxy', { proxy: settings.httpProxy }) }}</span>
         </div>
         <div v-else-if="installedPath" class="install-done">
-          ✅ 已下载到 <code>{{ installedPath }}</code>
-          <button class="btn btn-sm" @click="openInstaller(installedPath)">打开安装包</button>
+          ✅ {{ t('update.downloadedTo') }} <code>{{ installedPath }}</code>
+          <button class="btn btn-sm" @click="openInstaller(installedPath)">{{ t('update.openInstaller') }}</button>
         </div>
         <p v-else-if="canInAppInstall()" class="install-tip">
-          点击直接在应用内下载并打开安装包{{ settings.httpProxy ? ' (走「网络」中配置的代理)' : ', 网络不畅可在「网络」中配置代理' }};
-          或复制链接用浏览器下载。
+          {{ t('update.installTipMain') }}{{ settings.httpProxy ? t('update.installTipProxied') : t('update.installTipNoProxy') }}{{ t('update.installTipEnd') }}
         </p>
       </div>
 
       <div class="about">
         <p>
-          支持 EPUB / MOBI / AZW / AZW3 / FB2 / CBZ / CBR / DjVu / PDF / TXT / HTML / Markdown,
-          藏书管理、OPDS 开放书源与 WebDAV 云备份。
+          {{ t('settings.aboutFormats') }}
         </p>
         <p class="about-links">
-          <a href="javascript:void 0" @click="download(REPO_URL)">GitHub 仓库</a>
-          <a href="javascript:void 0" @click="download(ISSUES_URL)">问题反馈</a>
-          <a href="javascript:void 0" @click="download(RELEASES_URL)">版本历史</a>
+          <a href="javascript:void 0" @click="download(REPO_URL)">{{ t('settings.repoLink') }}</a>
+          <a href="javascript:void 0" @click="download(ISSUES_URL)">{{ t('settings.issuesLink') }}</a>
+          <a href="javascript:void 0" @click="download(RELEASES_URL)">{{ t('settings.releasesLink') }}</a>
         </p>
         <p class="muted">
-          作者: 云中江树 (微信公众号: 云中江树) · 开源协议: CC BY-NC 4.0 ·
-          阅读引擎: <a href="https://github.com/johnfactotum/foliate-js" target="_blank" rel="noopener">foliate-js</a>
+          {{ t('settings.author') }}: 云中江树 ({{ t('settings.wechat') }}: 云中江树) · {{ t('settings.license') }}: CC BY-NC 4.0 ·
+          {{ t('settings.engine') }}: <a href="https://github.com/johnfactotum/foliate-js" target="_blank" rel="noopener">foliate-js</a>
           / <a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a>
         </p>
       </div>
@@ -513,6 +522,27 @@ h2 {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+}
+/* 语言切换按钮组 (与阅读器工具栏 seg 同款) */
+.seg {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.seg button {
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.seg button.active {
+  background: var(--brand-light);
+  color: var(--brand);
+  font-weight: 500;
 }
 .busy {
   font-size: 12px;
