@@ -24,7 +24,16 @@ export interface PdfPrefs {
 }
 
 /** 结构版本: 修正历史默认值时递增 */
-const SETTINGS_VERSION = 2
+const SETTINGS_VERSION = 3
+
+/** 内置 GitHub 书库 (真实书籍文件仓库, 经文件数验证) */
+const BUILTIN_BOOK_REPOS = [
+  '0voice/expert_readed_books',
+  'Mikoto10032/DeepLearning',
+  'guanpengchn/awesome-books',
+  'singgel/JAVA',
+  'jyfc/ebook',
+]
 
 export interface CustomFontRec {
   name: string
@@ -73,7 +82,7 @@ const defaults: SettingsState = {
   version: SETTINGS_VERSION,
   language: 'zh',
   customFonts: [],
-  githubBookRepos: ['0voice/expert_readed_books'],
+  githubBookRepos: [...BUILTIN_BOOK_REPOS],
   reader: {
     fontSize: 18,
     lineHeight: 1.8,
@@ -119,6 +128,10 @@ function load(): SettingsState {
     if ((saved.version ?? 1) < 2) {
       merged.pdf.mode = 'paged'
       merged.pdf.fit = 'fitH'
+    }
+    // v3: 合并新增的内置 GitHub 书库 (保留用户自行添加/删除后的自定义项)
+    if ((saved.version ?? 1) < 3) {
+      merged.githubBookRepos = [...new Set([...(saved.githubBookRepos ?? []), ...BUILTIN_BOOK_REPOS])]
     }
     merged.version = SETTINGS_VERSION
     return merged
