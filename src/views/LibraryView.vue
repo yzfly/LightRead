@@ -65,7 +65,11 @@ const filtered = computed(() => {
       sorted.sort((a, b) => a.author.localeCompare(b.author, 'zh'))
       break
   }
-  return sorted
+  // 置顶的书永远排最前 (按置顶时间新→旧)
+  return [
+    ...sorted.filter(b => b.pinnedAt).sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0)),
+    ...sorted.filter(b => !b.pinnedAt),
+  ]
 })
 
 async function handleFiles(files: FileList | File[]) {
@@ -148,6 +152,70 @@ async function batchTag() {
   toast(t('library.tagsAdded', { count: selectedIds.value.size }), 'success')
 }
 
+async function togglePin(book: BookMeta) {
+  const storage = await (await import('../storage')).getStorage()
+  const pinnedAt = book.pinnedAt ? 0 : Date.now()
+  await storage.updateBook(book.id, { pinnedAt })
+  book.pinnedAt = pinnedAt || undefined
+  toast(pinnedAt ? t('library.pinned') : t('library.unpinned'), 'success')
+}
+
+async function batchPin(pin: boolean) {
+  const storage = await (await import('../storage')).getStorage()
+  let stamp = Date.now()
+  for (const id of selectedIds.value) {
+    const book = library.books.find(b => b.id === id)
+    if (!book) continue
+    const pinnedAt = pin ? stamp-- : 0
+    await storage.updateBook(id, { pinnedAt })
+    book.pinnedAt = pinnedAt || undefined
+  }
+  toast(pin ? t('library.pinned') : t('library.unpinned'), 'success')
+}
+
+// ---- 分类 (标签) 管理: 重命名 / 删除 ----
+const showTagManage = ref(false)
+const tagRenames = ref<Record<string, string>>({})
+
+function openTagManage() {
+  tagRenames.value = Object.fromEntries(allTags.value.map(tag => [tag, tag]))
+  showTagManage.value = true
+}
+
+function tagCount(tag: string) {
+  return library.books.filter(b => b.tags.includes(tag)).length
+}
+
+async function renameTag(oldName: string) {
+  const newName = tagRenames.value[oldName]?.trim()
+  if (!newName || newName === oldName) return
+  const storage = await (await import('../storage')).getStorage()
+  for (const book of library.books) {
+    if (!book.tags.includes(oldName)) continue
+    const tags = [...new Set(book.tags.map(x => (x === oldName ? newName : x)))]
+    await storage.updateBook(book.id, { tags })
+    book.tags = tags
+  }
+  if (tagFilter.value === oldName) tagFilter.value = newName
+  delete tagRenames.value[oldName]
+  tagRenames.value[newName] = newName
+  toast(t('library.tagRenamed'), 'success')
+}
+
+async function deleteTag(tag: string) {
+  if (!confirm(t('library.deleteTagConfirm', { tag }))) return
+  const storage = await (await import('../storage')).getStorage()
+  for (const book of library.books) {
+    if (!book.tags.includes(tag)) continue
+    const tags = book.tags.filter(x => x !== tag)
+    await storage.updateBook(book.id, { tags })
+    book.tags = tags
+  }
+  if (tagFilter.value === tag) tagFilter.value = ''
+  delete tagRenames.value[tag]
+  toast(t('library.tagDeleted'), 'success')
+}
+
 async function batchClearTags() {
   const storage = await (await import('../storage')).getStorage()
   for (const id of selectedIds.value) {
@@ -202,6 +270,10 @@ async function batchClearTags() {
         :class="{ active: tagFilter === t }"
         @click="tagFilter = tagFilter === t ? '' : t"
       >{{ t }}</button>
+      <button class="tag-chip tag-manage" :title="t('library.manageTags')" @click="openTagManage">
+        <svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M16.9 3.1a2.5 2.5 0 0 1 3.54 0l.46.46a2.5 2.5 0 0 1 0 3.54L9.83 18.17a2 2 0 0 1-.9.52l-3.67 1a1 1 0 0 1-1.23-1.23l1-3.67a2 2 0 0 1 .52-.9L16.9 3.1zm2.12 1.42a.5.5 0 0 0-.7 0l-1.1 1.08 1.17 1.18 1.09-1.1a.5.5 0 0 0 0-.7l-.46-.46zM16.97 8.2 15.8 7.03 7 15.84l-.59 2.16 2.16-.59 8.4-9.2z"/></svg>
+        {{ t('library.manageTags') }}
+      </button>
     </div>
 
     <div v-if="importing" class="import-bar card">
@@ -230,6 +302,7 @@ async function batchClearTags() {
         @open="openBook(book)"
         @remove="removeBook(book)"
         @toggle-select="toggleSelect(book.id)"
+        @toggle-pin="togglePin(book)"
       />
     </div>
 
@@ -239,6 +312,8 @@ async function batchClearTags() {
       <button class="btn btn-sm" @click="selectAll">
         {{ selectedIds.size === filtered.length && filtered.length ? t('library.deselectAll') : t('library.selectAll') }}
       </button>
+      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPin(true)">{{ t('library.pin') }}</button>
+      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPin(false)">{{ t('library.unpin') }}</button>
       <button class="btn btn-sm" :disabled="!selectedIds.size" @click="showTagModal = true">{{ t('library.setTags') }}</button>
       <button class="btn btn-sm btn-danger" :disabled="!selectedIds.size" @click="batchDelete">{{ t('common.delete') }}</button>
       <button class="btn btn-sm" @click="toggleManage">{{ t('common.done') }}</button>
@@ -253,6 +328,29 @@ async function batchClearTags() {
           <button class="btn btn-sm" @click="batchClearTags">{{ t('library.clearTags') }}</button>
           <button class="btn btn-sm" @click="showTagModal = false">{{ t('common.cancel') }}</button>
           <button class="btn btn-sm btn-primary" :disabled="!tagDraft.trim()" @click="batchTag">{{ t('common.add') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 分类管理弹窗 -->
+    <div v-if="showTagManage" class="modal-mask" @click.self="showTagManage = false">
+      <div class="modal">
+        <h3>{{ t('library.manageTags') }}</h3>
+        <div class="tag-manage-list">
+          <div v-for="tag in allTags" :key="tag" class="tag-manage-row">
+            <input v-model="tagRenames[tag]" class="input" @keyup.enter="renameTag(tag)" />
+            <span class="tag-book-count">{{ t('library.tagBooks', { count: tagCount(tag) }) }}</span>
+            <button
+              class="btn btn-sm"
+              :disabled="!tagRenames[tag]?.trim() || tagRenames[tag].trim() === tag"
+              @click="renameTag(tag)"
+            >{{ t('common.save') }}</button>
+            <button class="btn btn-sm btn-danger" @click="deleteTag(tag)">{{ t('common.delete') }}</button>
+          </div>
+          <p v-if="!allTags.length" class="tag-manage-empty">{{ t('library.noTags') }}</p>
+        </div>
+        <div style="margin-top: 16px; display: flex; justify-content: flex-end">
+          <button class="btn btn-sm" @click="showTagManage = false">{{ t('common.close') }}</button>
         </div>
       </div>
     </div>
@@ -334,6 +432,46 @@ async function batchClearTags() {
   background: var(--brand-light);
   border-color: var(--brand);
   color: var(--brand);
+}
+.tag-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-style: dashed;
+  color: var(--text-3);
+}
+.tag-manage:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+.tag-manage-list {
+  max-height: 320px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.tag-manage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tag-manage-row .input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+}
+.tag-book-count {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.tag-manage-empty {
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+  padding: 16px 0;
 }
 .batch-bar {
   position: sticky;

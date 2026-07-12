@@ -29,6 +29,7 @@ interface BookRow {
   source: string | null
   has_cover: number
   reading_seconds: number | null
+  pinned_at: number | null
 }
 
 const rowToMeta = (r: BookRow): BookMeta => ({
@@ -47,6 +48,7 @@ const rowToMeta = (r: BookRow): BookMeta => ({
   source: r.source ?? undefined,
   hasCover: !!r.has_cover,
   readingSeconds: r.reading_seconds ?? 0,
+  pinnedAt: r.pinned_at ?? undefined,
 })
 
 const META_COLUMNS: Record<string, string> = {
@@ -60,6 +62,7 @@ const META_COLUMNS: Record<string, string> = {
   progress: 'progress',
   source: 'source',
   readingSeconds: 'reading_seconds',
+  pinnedAt: 'pinned_at',
 }
 
 export class TauriStorage implements LibraryStorage {
@@ -137,6 +140,7 @@ export class TauriStorage implements LibraryStorage {
       'ALTER TABLE sources ADD COLUMN password TEXT',
       "ALTER TABLE annotations ADD COLUMN kind TEXT NOT NULL DEFAULT 'highlight'",
       'ALTER TABLE books ADD COLUMN reading_seconds INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE books ADD COLUMN pinned_at INTEGER',
     ]) {
       await this.db.execute(ddl).catch(() => { /* 列已存在 */ })
     }

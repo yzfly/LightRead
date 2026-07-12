@@ -17,6 +17,7 @@ defineEmits<{
   open: []
   remove: []
   toggleSelect: []
+  togglePin: []
 }>()
 
 const progressText = computed(() => {
@@ -58,6 +59,15 @@ const fallbackHue = computed(() => {
       </div>
       <span class="format">{{ FORMAT_LABELS[book.format] }}</span>
       <span v-if="progressText" class="progress">{{ progressText }}</span>
+      <button
+        v-if="!selectable"
+        class="pin"
+        :class="{ pinned: !!book.pinnedAt }"
+        :title="book.pinnedAt ? t('library.unpin') : t('library.pin')"
+        @click.stop="$emit('togglePin')"
+      >
+        <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M14.6 2.6a2 2 0 0 1 2.83 0l4 4a2 2 0 0 1 0 2.82l-3.18 3.18.35 2.47a2 2 0 0 1-.56 1.7l-1.1 1.1a1 1 0 0 1-1.42 0L11.6 13.9l-5.9 5.9a1 1 0 0 1-1.4-1.42l5.88-5.89-3.95-3.95a1 1 0 0 1 0-1.41l1.1-1.1a2 2 0 0 1 1.7-.57l2.47.35 3.1-3.2z"/></svg>
+      </button>
       <button v-if="!selectable" class="remove" :title="t('book.removeFromLibrary')" @click.stop="$emit('remove')">
         <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1v12a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1zm1 6a1 1 0 0 1 2 0v8a1 1 0 1 1-2 0V9zm4 0a1 1 0 0 1 2 0v8a1 1 0 1 1-2 0V9z"/></svg>
       </button>
@@ -158,6 +168,31 @@ const fallbackHue = computed(() => {
 }
 .cover:hover .remove {
   display: flex;
+}
+.pin {
+  position: absolute;
+  right: 6px;
+  top: 36px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(29, 33, 41, 0.55);
+  color: #fff;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.cover:hover .pin {
+  display: flex;
+}
+/* 已置顶: 常显徽标 */
+.pin.pinned {
+  display: flex;
+  background: var(--brand);
+}
+.pin:hover {
+  background: var(--brand);
 }
 .remove:hover {
   background: var(--danger);

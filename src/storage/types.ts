@@ -24,6 +24,8 @@ export interface BookMeta {
   hasCover: boolean
   /** 累计阅读时长 (秒) */
   readingSeconds?: number
+  /** 置顶时间戳, 0/缺省为未置顶; 越新越靠前 */
+  pinnedAt?: number
 }
 
 export type NewBookMeta = Omit<BookMeta, 'id' | 'hasCover'>
