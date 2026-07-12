@@ -109,9 +109,37 @@ function onRelocate(e: CustomEvent) {
   }, 600)
 }
 
+/**
+ * 手动翻页/跳转与听书的协调: 听书播放时视图会跟随朗读句滚动,
+ * 若不打断, 用户翻过去的页面会在下一句读完时被拉回朗读位置。
+ * 策略: 立即终止当前朗读循环, 定位动作落定后从新位置重新开始读。
+ */
+let ttsResyncTimer: ReturnType<typeof setTimeout> | undefined
+let ttsInterrupted = false
+
+function interruptTTSForReposition() {
+  if (ttsState.value === 'stopped') return
+  ttsSession++          // 旧循环在下一个检查点退出, 不再调用 next(true) 拉回视图
+  stopSpeech()
+  ttsInterrupted = true
+  clearTimeout(ttsResyncTimer)
+  ttsResyncTimer = setTimeout(() => {
+    // 连续翻页时防抖, 落定后从当前页重新开始; 暂停中不自动恢复, 等用户点继续
+    if (ttsState.value === 'playing') {
+      ttsInterrupted = false
+      startTTS()
+    }
+  }, 800)
+}
+
+function turnPage(dir: 'left' | 'right') {
+  interruptTTSForReposition()
+  dir === 'left' ? view?.goLeft() : view?.goRight()
+}
+
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'ArrowLeft' || e.key === 'PageUp') view?.goLeft()
-  else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') view?.goRight()
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') turnPage('left')
+  else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') turnPage('right')
   else if (e.key === 'Escape') {
     panel.value = 'none'
     settingsOpen.value = false
@@ -128,7 +156,7 @@ function startAutoRead() {
       stopAutoRead()
       return
     }
-    view?.goRight()
+    turnPage('right')
   }, settings.autoReadSeconds * 1000)
 }
 
@@ -154,6 +182,26 @@ const waitWhilePaused = async () => {
 
 /** await 期间状态可能被外部修改, 用函数取值绕开 TS 控制流收窄 */
 const ttsStopped = () => ttsState.value === 'stopped'
+
+/**
+ * 取当前可视位置的第一段朗读 SSML。
+ * foliate 的 tts.from() 在找不到起始朗读块时会抛错 (内部 list.find 无空值
+ * 保护, 如段落跨页的章节末页), 逐级回退: 完整可视范围 → 页首点 → 章首。
+ */
+function ttsFirstSsml(): string | undefined {
+  const range = view.lastLocation?.range
+  if (range) {
+    try {
+      return view.tts.from(range)
+    } catch { /* 回退下一级 */ }
+    try {
+      const collapsed = range.cloneRange()
+      collapsed.collapse(true)
+      return view.tts.from(collapsed)
+    } catch { /* 回退章首 */ }
+  }
+  return view.tts.start()
+}
 
 
 // ---- 本地离线语音包 ----
@@ -207,15 +255,14 @@ async function openTTSPanel() {
 
 async function startTTS() {
   const session = ++ttsSession
+  ttsInterrupted = false
   stopSpeech()
   resetEdgeFailure()
   ttsState.value = 'playing'
   try {
     await view.initTTS('sentence')
     // 从当前可视位置开始朗读, 而不是本章开头; 无定位信息时回退到章首
-    let ssml: string | undefined = view.lastLocation?.range
-      ? view.tts.from(view.lastLocation.range)
-      : view.tts.start()
+    let ssml: string | undefined = ttsFirstSsml()
     while (session === ttsSession && !ttsStopped()) {
       await waitWhilePaused()
       if (session !== ttsSession) break
@@ -255,12 +302,20 @@ function pauseTTS() {
 
 function resumeTTS() {
   ttsState.value = 'playing'
+  // 暂停期间翻过页: 原朗读循环已终止, 从当前页面重新开始
+  if (ttsInterrupted) {
+    ttsInterrupted = false
+    startTTS()
+    return
+  }
   resumeSpeech()
 }
 
 function stopTTS() {
   ttsSession++
   ttsState.value = 'stopped'
+  clearTimeout(ttsResyncTimer)
+  ttsInterrupted = false
   stopSpeech()
 }
 
@@ -306,6 +361,8 @@ function onContentClick(e: MouseEvent, doc: Document) {
     overlayDismissed = false
     return
   }
+  // 开书未就绪时点击会被 view.init 的落点覆盖, 表现为翻过去又弹回
+  if (loading.value) return
   if (settings.reader.flow !== 'paginated') return
   // 正在选字或点了链接时不翻页
   if (selection.value) return
@@ -317,8 +374,8 @@ function onContentClick(e: MouseEvent, doc: Document) {
   const contentRect = container.value?.getBoundingClientRect()
   if (!frameRect || !contentRect) return
   const x = frameRect.left + e.clientX - contentRect.left
-  if (x < contentRect.width / 3) view?.goLeft()
-  else if (x > contentRect.width * 2 / 3) view?.goRight()
+  if (x < contentRect.width / 3) turnPage('left')
+  else if (x > contentRect.width * 2 / 3) turnPage('right')
 }
 
 function drawStoredAnnotations() {
@@ -402,6 +459,7 @@ async function removeAnnotation(a: AnnotationRec) {
 
 async function gotoAnnotation(a: AnnotationRec) {
   panel.value = 'none'
+  interruptTTSForReposition()
   await untilLoaded()
   view?.goTo(a.cfi).catch(() => toast('无法跳转到该标注', 'error'))
 }
@@ -441,12 +499,14 @@ async function untilLoaded() {
 
 async function navigateToc(href: string) {
   panel.value = 'none'
+  interruptTTSForReposition()
   await untilLoaded()
   view?.goTo(href).catch(() => toast('无法跳转', 'error'))
 }
 
 function onSlide(e: Event) {
   const value = parseFloat((e.target as HTMLInputElement).value)
+  interruptTTSForReposition()
   view?.goToFraction(value)
 }
 
@@ -586,10 +646,10 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 翻页按钮 -->
-    <button v-if="!loading && !error" class="nav prev" title="上一页" @click="view?.goLeft()">
+    <button v-if="!loading && !error" class="nav prev" title="上一页" @click="turnPage('left')">
       <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M14.7 5.3a1 1 0 0 1 0 1.4L9.42 12l5.3 5.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.42 0z"/></svg>
     </button>
-    <button v-if="!loading && !error" class="nav next" title="下一页" @click="view?.goRight()">
+    <button v-if="!loading && !error" class="nav next" title="下一页" @click="turnPage('right')">
       <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M9.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 0 1-1.4-1.4l5.29-5.3-5.3-5.3a1 1 0 0 1 0-1.4z"/></svg>
     </button>
 
