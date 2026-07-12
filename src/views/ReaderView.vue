@@ -162,6 +162,13 @@ function applyPrefs() {
   } catch { /* 章节切换瞬间 iframe 文档可能已卸载, 下次 relocate 会重新应用 */ }
 }
 
+/** 精准输入字号, 越界收敛到 8-64 */
+function setFontSize(raw: string) {
+  const n = Math.round(Number(raw))
+  if (!Number.isFinite(n)) return
+  settings.reader.fontSize = Math.min(64, Math.max(8, n))
+}
+
 // ---- 字体选择 ----
 const systemFonts = ref<string[]>([])
 
@@ -1049,8 +1056,16 @@ onBeforeUnmount(() => {
     <div v-if="settingsOpen" class="settings-pop card">
       <div class="set-row">
         <label>{{ t('reader.fontSize') }}</label>
-        <input v-model.number="settings.reader.fontSize" type="range" min="12" max="32" step="1" />
-        <span>{{ settings.reader.fontSize }}px</span>
+        <input v-model.number="settings.reader.fontSize" type="range" min="12" max="64" step="1" />
+        <input
+          class="input set-num"
+          type="number"
+          min="8"
+          max="64"
+          step="1"
+          :value="settings.reader.fontSize"
+          @change="setFontSize(($event.target as HTMLInputElement).value)"
+        />
       </div>
       <div class="set-row">
         <label>{{ t('reader.lineHeight') }}</label>
@@ -1635,6 +1650,14 @@ onBeforeUnmount(() => {
   text-align: right;
   color: var(--text-3);
   font-size: 12px;
+}
+.set-num {
+  width: 58px !important;
+  flex: none !important;
+  height: 26px;
+  font-size: 12px;
+  text-align: center;
+  padding: 0 4px;
 }
 .set-row .input {
   flex: 1;
