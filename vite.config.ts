@@ -22,6 +22,10 @@ export default defineConfig({
       ],
     }),
     VitePWA({
+      // 桌面/移动端 (Tauri) 资源都在本地, 不需要 PWA 离线缓存; Windows WebView2
+      // 会把 Service Worker 缓存的旧版界面存进用户数据目录, 升级后仍加载旧代码。
+      // 自毁型 SW 让已装机器上的旧 SW 在更新检查时自动注销并清缓存。
+      selfDestroying: !!process.env.TAURI_ENV_PLATFORM,
       registerType: 'autoUpdate',
       workbox: {
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
