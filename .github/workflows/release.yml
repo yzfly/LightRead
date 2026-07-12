@@ -61,6 +61,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'LightRead 轻阅 ${{ github.ref_name }}'
+          releaseBody: ${{ toJSON(github.event.head_commit.message) }}
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

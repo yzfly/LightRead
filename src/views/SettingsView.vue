@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { getStorage, isTauri } from '../storage'
 import { useSettings } from '../stores/settings'
 import { useLibrary } from '../stores/library'
@@ -7,6 +7,10 @@ import { exportBackup, importBackup } from '../services/backup'
 import { backupToWebdav, restoreFromWebdav, testWebdav, webdavBackupInfo } from '../services/webdav'
 import { fetchRemote } from '../services/net'
 import { toast } from '../services/toast'
+import {
+  CURRENT_VERSION, RELEASES_URL, REPO_URL, ISSUES_URL,
+  checkUpdate, pickDownloads, openDownload, type UpdateInfo,
+} from '../services/updater'
 
 const settings = useSettings()
 const library = useLibrary()
@@ -116,11 +120,45 @@ async function testProxy() {
 
 onMounted(async () => {
   parseProxyUrl(settings.httpProxy)
+  doCheckUpdate(false)
   const storage = await getStorage()
   storageKind.value = storage.kind === 'filesystem'
     ? '文件系统 + SQLite (桌面)'
     : '浏览器 IndexedDB'
 })
+
+// ---- 版本与更新 ----
+const updateInfo = ref<UpdateInfo | null>(null)
+const checking = ref(false)
+const checkError = ref('')
+/** 手动检查过才显示"已是最新", 静默检查只在有新版时提示 */
+const checkedManually = ref(false)
+const downloads = computed(() => updateInfo.value ? pickDownloads(updateInfo.value.assets) : [])
+
+async function doCheckUpdate(manual = true) {
+  if (checking.value) return
+  checking.value = true
+  checkError.value = ''
+  if (manual) checkedManually.value = true
+  try {
+    updateInfo.value = await checkUpdate(manual)
+  } catch (e: any) {
+    if (manual) checkError.value = e?.message ?? '检查失败, 请稍后再试'
+  } finally {
+    checking.value = false
+  }
+}
+
+const fmtSize = (bytes: number) => `${(bytes / 1048576).toFixed(0)} MB`
+
+async function download(url: string) {
+  try {
+    await openDownload(url)
+    toast('已在浏览器中开始下载', 'success')
+  } catch {
+    toast('无法打开下载链接', 'error')
+  }
+}
 
 // ---- 存储位置 (桌面端) ----
 const migrating = ref('')
@@ -313,11 +351,61 @@ async function doImport(e: Event) {
 
     <section class="card section">
       <h2>关于</h2>
+
+      <div class="app-identity">
+        <img class="app-icon" src="/icon-192.png" alt="LightRead" />
+        <div class="app-meta">
+          <div class="app-name">
+            LightRead 轻阅
+            <span class="version-chip">v{{ CURRENT_VERSION }}</span>
+            <span class="env-chip">{{ isTauri() ? '桌面版' : '网页版' }}</span>
+          </div>
+          <div class="app-tagline">开源本地阅读器, 给爱读书的人。所有数据保存在你自己的设备上。</div>
+        </div>
+        <button class="btn" :disabled="checking" @click="doCheckUpdate()">
+          {{ checking ? '检查中…' : '检查更新' }}
+        </button>
+      </div>
+
+      <!-- 检查结果 -->
+      <div v-if="checkError" class="update-state error">❌ {{ checkError }}</div>
+      <div v-else-if="checkedManually && !checking && updateInfo && !updateInfo.hasUpdate" class="update-state ok">
+        ✅ 当前已是最新版本
+      </div>
+
+      <!-- 新版本卡片 -->
+      <div v-if="updateInfo?.hasUpdate" class="update-card">
+        <div class="update-head">
+          <span class="update-badge">发现新版本</span>
+          <strong>v{{ updateInfo.version }}</strong>
+          <span class="update-date">{{ updateInfo.publishedAt }}</span>
+        </div>
+        <pre v-if="updateInfo.notes" class="update-notes">{{ updateInfo.notes }}</pre>
+        <div class="update-actions">
+          <button
+            v-for="(d, i) in downloads.filter(x => x.recommended)"
+            :key="d.url"
+            class="btn btn-sm"
+            :class="{ 'btn-primary': i === 0 }"
+            @click="download(d.url)"
+          >
+            ⬇ {{ d.label }} · {{ fmtSize(d.size) }}
+          </button>
+          <a class="all-downloads" href="javascript:void 0" @click="download(updateInfo.pageUrl)">
+            全部平台安装包 →
+          </a>
+        </div>
+      </div>
+
       <div class="about">
-        <p><strong>LightRead 轻阅</strong> — 开源本地阅读器, 给爱读书的人。</p>
         <p>
-          支持 EPUB / MOBI / AZW / AZW3 / FB2 / CBZ / PDF / TXT / HTML / Markdown,
-          藏书管理与 OPDS 开放书源。所有数据保存在你自己的设备上。
+          支持 EPUB / MOBI / AZW / AZW3 / FB2 / CBZ / CBR / DjVu / PDF / TXT / HTML / Markdown,
+          藏书管理、OPDS 开放书源与 WebDAV 云备份。
+        </p>
+        <p class="about-links">
+          <a href="javascript:void 0" @click="download(REPO_URL)">GitHub 仓库</a>
+          <a href="javascript:void 0" @click="download(ISSUES_URL)">问题反馈</a>
+          <a href="javascript:void 0" @click="download(RELEASES_URL)">版本历史</a>
         </p>
         <p class="muted">
           作者: 云中江树 (微信公众号: 云中江树) · 开源协议: CC BY-NC 4.0 ·
@@ -438,11 +526,123 @@ h2 {
   margin-top: 6px;
   font-size: 13px;
 }
+.app-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 0 14px;
+}
+.app-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  flex-shrink: 0;
+}
+.app-meta {
+  flex: 1;
+  min-width: 0;
+}
+.app-name {
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.version-chip {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--brand);
+  background: var(--brand-light);
+  border-radius: 999px;
+  padding: 1px 10px;
+}
+.env-chip {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-3);
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 1px 10px;
+}
+.app-tagline {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+.update-state {
+  font-size: 13px;
+  padding: 8px 0;
+}
+.update-state.error {
+  color: #d54941;
+}
+.update-card {
+  border: 1px solid var(--brand-light);
+  background: linear-gradient(135deg, var(--brand-light), transparent 70%);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.update-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+.update-badge {
+  font-size: 12px;
+  color: #fff;
+  background: var(--brand);
+  border-radius: 999px;
+  padding: 1px 10px;
+}
+.update-date {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.update-notes {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  max-height: 160px;
+  overflow: auto;
+  margin: 10px 0 0;
+}
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.all-downloads {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.all-downloads:hover {
+  color: var(--brand);
+}
+.about {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
 .about p {
   font-size: 13px;
   line-height: 1.9;
   color: var(--text-2);
   margin-bottom: 8px;
+}
+.about-links {
+  display: flex;
+  gap: 16px;
+}
+.about-links a {
+  color: var(--brand);
 }
 .muted {
   color: var(--text-3);

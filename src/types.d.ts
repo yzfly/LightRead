@@ -1,3 +1,6 @@
+/** 构建期由 vite define 注入的应用版本号 (取自 package.json) */
+declare const __APP_VERSION__: string
+
 // foliate-js 无类型定义, 按需声明
 declare module 'foliate-js/view.js' {
   export function makeBook(file: File | string): Promise<any>
