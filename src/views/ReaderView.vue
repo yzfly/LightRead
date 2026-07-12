@@ -212,7 +212,10 @@ async function startTTS() {
   ttsState.value = 'playing'
   try {
     await view.initTTS('sentence')
-    let ssml: string | undefined = view.tts.start()
+    // 从当前可视位置开始朗读, 而不是本章开头; 无定位信息时回退到章首
+    let ssml: string | undefined = view.lastLocation?.range
+      ? view.tts.from(view.lastLocation.range)
+      : view.tts.start()
     while (session === ttsSession && !ttsStopped()) {
       await waitWhilePaused()
       if (session !== ttsSession) break
