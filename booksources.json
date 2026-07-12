@@ -1,0 +1,20 @@
+{
+  "_": "LightRead 轻阅 · GitHub 书源列表 (社区共建)。欢迎提交 PR 添加你发现的书籍仓库: 仓库需直接存放书籍文件 (epub/pdf/mobi/azw3/txt 等), 纯链接聚合类仓库不收录。应用每 24 小时自动拉取本清单。",
+  "version": 1,
+  "updated": "2026-07-12",
+  "githubRepos": [
+    { "repo": "0voice/expert_readed_books", "note": "计算机 / 历史 / 文学综合书库, 560+ 本" },
+    { "repo": "LeungGeorge/grimoire-kindle", "note": "综合电子书库, 700+ 本" },
+    { "repo": "elain/mybooks", "note": "综合书库, 140+ 本" },
+    { "repo": "Mikoto10032/DeepLearning", "note": "深度学习 / 机器学习, 130+ 本" },
+    { "repo": "jugetaozi/ibooks", "note": "综合电子书, 120+ 本" },
+    { "repo": "Dujltqzv/Some-Many-Books", "note": "综合书库, 100+ 本" },
+    { "repo": "guanpengchn/awesome-books", "note": "编程书籍, 90+ 本" },
+    { "repo": "baykier/books", "note": "综合 / 技术, 70+ 本" },
+    { "repo": "ixinzhi/tianya-x", "note": "天涯神贴合集, 60+ 本" },
+    { "repo": "singgel/JAVA", "note": "Java / 技术书籍, 40+ 本" },
+    { "repo": "jyfc/ebook", "note": "编程电子书, 30+ 本" },
+    { "repo": "fengdu78/deeplearning_ai_books", "note": "吴恩达深度学习课程笔记, 20+ 本" },
+    { "repo": "zxysilent/books", "note": "编程 / 技术, 20+ 本" }
+  ]
+}

@@ -49,8 +49,10 @@ export async function fetchRemote(
   auth?: RequestAuth,
   init: RemoteRequestInit = {},
 ): Promise<Response> {
-  const headers = {
+  const headers: Record<string, string> = {
     accept: 'application/atom+xml, application/xml, text/xml, */*',
+    // 部分站点 (如古登堡) 拦截非浏览器 UA; 浏览器环境此头会被忽略, 桌面端由 Rust 发送
+    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 LightRead',
     ...authHeader(auth),
     ...(init.headers ?? {}),
   }

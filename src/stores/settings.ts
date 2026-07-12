@@ -24,9 +24,9 @@ export interface PdfPrefs {
 }
 
 /** 结构版本: 修正历史默认值时递增 */
-const SETTINGS_VERSION = 3
+const SETTINGS_VERSION = 4
 
-/** 内置 GitHub 书库 (真实书籍文件仓库, 经文件数验证) */
+/** v3 时代曾并入用户设置的内置书库 (v4 起社区清单独立远程拉取, 此表仅供迁移清理) */
 const BUILTIN_BOOK_REPOS = [
   '0voice/expert_readed_books',
   'Mikoto10032/DeepLearning',
@@ -48,7 +48,7 @@ interface SettingsState {
   pdf: PdfPrefs
   /** 导入的自定义字体 (桌面端) */
   customFonts: CustomFontRec[]
-  /** GitHub 书库仓库列表 (owner/repo) */
+  /** 用户自行添加的 GitHub 书库仓库 (owner/repo); 社区清单另行远程拉取 */
   githubBookRepos: string[]
   /** 自动阅读速度: 秒/页 (EPUB 与 PDF 共用) */
   autoReadSeconds: number
@@ -82,7 +82,7 @@ const defaults: SettingsState = {
   version: SETTINGS_VERSION,
   language: 'zh',
   customFonts: [],
-  githubBookRepos: [...BUILTIN_BOOK_REPOS],
+  githubBookRepos: [],
   reader: {
     fontSize: 18,
     lineHeight: 1.8,
@@ -129,9 +129,12 @@ function load(): SettingsState {
       merged.pdf.mode = 'paged'
       merged.pdf.fit = 'fitH'
     }
-    // v3: 合并新增的内置 GitHub 书库 (保留用户自行添加/删除后的自定义项)
-    if ((saved.version ?? 1) < 3) {
-      merged.githubBookRepos = [...new Set([...(saved.githubBookRepos ?? []), ...BUILTIN_BOOK_REPOS])]
+    // v3: 曾把内置书库并入用户设置; v4: 社区清单改为远程拉取,
+    // 用户设置只保留自行添加的仓库, 清掉当年并入的内置项
+    if ((saved.version ?? 1) < 4) {
+      merged.githubBookRepos = (saved.githubBookRepos ?? []).filter(
+        (r: string) => !BUILTIN_BOOK_REPOS.includes(r),
+      )
     }
     merged.version = SETTINGS_VERSION
     return merged

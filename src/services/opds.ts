@@ -168,3 +168,33 @@ export async function downloadToLibrary(
   if (!result.ok) throw new Error(result.error)
   return result
 }
+
+/**
+ * 古登堡计划搜索适配 (供统一搜书):
+ * 其 search.opds 根层返回的是导航 (分组 / 单本书节点), 而非直接的出版物 —
+ * 逐层跟随: 根层出版物 → 书节点列表 → titles 分组, 并行拉取书节点详情。
+ */
+export async function searchGutenberg(query: string, limit = 20): Promise<OpdsPublication[]> {
+  const searchUrl = `https://www.gutenberg.org/ebooks/search.opds/?query=${encodeURIComponent(query)}`
+  const root = await loadOpdsPage(searchUrl)
+  if (root.publications.length) return root.publications.slice(0, limit)
+
+  const bookNode = (href: string) => /\/ebooks\/\d+\.opds/.test(href)
+  let bookLinks = root.navigation.filter(n => bookNode(n.href))
+  if (!bookLinks.length) {
+    const titles = root.navigation.find(n => n.href.includes('/ebooks/titles/'))
+    if (titles) {
+      const next = await loadOpdsPage(titles.href)
+      if (next.publications.length) return next.publications.slice(0, limit)
+      bookLinks = next.navigation.filter(n => bookNode(n.href))
+    }
+  }
+  const pubs: OpdsPublication[] = []
+  await Promise.all(bookLinks.slice(0, limit).map(async n => {
+    try {
+      const detail = await loadOpdsPage(n.href)
+      if (detail.publications[0]) pubs.push(detail.publications[0])
+    } catch { /* 单本失败忽略 */ }
+  }))
+  return pubs
+}

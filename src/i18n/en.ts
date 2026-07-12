@@ -357,4 +357,11 @@ export default {
   'library.ghIntro': 'Search book files in the configured GitHub repos; click a result to download and import. Add any repo that hosts books.',
   'library.importLocal': 'Local files…',
   'library.moreImport': 'More import options',
+  'catalog.uniTitle': 'Search Everywhere',
+  'catalog.uniPlaceholder': 'Search title / author across platforms',
+  'catalog.gutenberg': 'Project Gutenberg',
+  'catalog.ghListTitle': 'GitHub Book Sources (community)',
+  'catalog.ghListIntro': 'Blue chips are community-maintained sources (hover for notes); white ones are yours. Click "Suggest a source" to open a PR and share book repos you found.',
+  'catalog.contribute': 'Suggest a source',
+  'catalog.communityRefreshed': 'Community sources updated: {n} repos',
 } as Record<string, string>

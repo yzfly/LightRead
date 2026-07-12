@@ -121,6 +121,17 @@ npm run tauri build    # 打包
 
 工程质量：44 项端到端回归测试 + Rust 单元测试 + WebKit 性能基准，每个版本全绿发布。
 
+## 📚 GitHub 书源列表 (社区共建)
+
+轻阅的「书源」页内置一份 GitHub 书库清单 ([booksources.json](booksources.json))，应用每 24 小时自动拉取最新版本。**欢迎共同维护**：
+
+- **推荐书源**：提交 PR 修改 [booksources.json](booksources.json)，添加你发现的书籍仓库
+- **收录标准**：仓库需直接存放书籍文件（epub / pdf / mobi / azw3 / txt 等）；纯链接聚合、网盘跳转类仓库不收录
+- **格式**：`{ "repo": "owner/repo", "note": "一句话简介, 大致册数" }`
+- 也可以在 [Issues](https://github.com/yzfly/LightRead/issues) 里分享你的书源清单，由维护者代为合入
+
+应用内「书源 → GitHub 书源列表」还支持添加私人仓库（仅保存在本地，不参与社区清单）。
+
 ## 🗺 路线图
 
 - [x] **M1**：全格式阅读、藏书管理、OPDS + arXiv 书源、备份、PWA、macOS 桌面

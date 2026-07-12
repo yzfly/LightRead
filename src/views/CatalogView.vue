@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { getStorage, type CatalogSourceRec, isTauri } from '../storage'
 import {
-  downloadToLibrary, fillSearchTemplate, loadOpdsPage,
+  downloadToLibrary, fillSearchTemplate, loadOpdsPage, searchGutenberg,
   type OpdsPage, type OpdsPublication,
 } from '../services/opds'
 import { arxivRootPage, arxivSearchUrl, isArxivUrl, loadArxivPage } from '../services/arxiv'
@@ -10,7 +10,13 @@ import {
   calibreAvailable, importCalibreBook, listCalibreBooks, pickCalibreLibrary,
   calibreCoverUrl, pickBestFormat, type CalibreBook,
 } from '../services/calibre'
-import { searchGithubBooks, isValidRepo, fmtBytes, type GithubBookHit } from '../services/githubBooks'
+import {
+  searchGithubBooks, isValidRepo, fmtBytes, fetchCommunityRepos,
+  DEFAULT_COMMUNITY_REPOS, COMMUNITY_LIST_PAGE,
+  type GithubBookHit, type CommunityRepo,
+} from '../services/githubBooks'
+import { openDownload } from '../services/updater'
+import { arxivSearchUrl as arxivSearchUrlOf, loadArxivPage as loadArxivPageOf } from '../services/arxiv'
 import { importFromUrl } from '../services/urlImport'
 import { useSettings } from '../stores/settings'
 import { useLibrary } from '../stores/library'
@@ -22,32 +28,21 @@ const library = useLibrary()
 const settings = useSettings()
 const router = useRouter()
 
-// ---- GitHub 书库 ----
-const ghKeyword = ref('')
-const ghResults = ref<GithubBookHit[]>([])
-const ghSearching = ref(false)
-const ghSearched = ref(false)
-const ghNotice = ref('')
+// ---- GitHub 书库: 社区清单 + 用户自加 ----
+const communityRepos = ref<CommunityRepo[]>(DEFAULT_COMMUNITY_REPOS)
 const ghImporting = ref('')
 const ghProgress = ref('')
 const ghRepoDraft = ref('')
 
-async function doGhSearch() {
-  if (ghSearching.value) return
-  ghSearching.value = true
-  ghNotice.value = ''
+const allGhRepos = () => [
+  ...new Set([...communityRepos.value.map(r => r.repo), ...settings.githubBookRepos]),
+]
+
+async function refreshCommunity(force = false) {
   try {
-    const result = await searchGithubBooks(settings.githubBookRepos, ghKeyword.value)
-    ghResults.value = result.hits
-    ghSearched.value = true
-    if (result.errors.length) {
-      ghNotice.value = result.errors.map(x => `${x.repo}: ${x.message}`).join('; ')
-    }
-  } catch (e: any) {
-    ghNotice.value = e?.message ?? String(e)
-  } finally {
-    ghSearching.value = false
-  }
+    communityRepos.value = await fetchCommunityRepos(force)
+    if (force) toast(t('catalog.communityRefreshed', { n: communityRepos.value.length }), 'success')
+  } catch { /* 保持现值 */ }
 }
 
 function addGhRepo() {
@@ -56,7 +51,9 @@ function addGhRepo() {
     toast(t('library.ghRepoInvalid'), 'error')
     return
   }
-  if (!settings.githubBookRepos.includes(repo)) settings.githubBookRepos.push(repo)
+  if (!settings.githubBookRepos.includes(repo) && !communityRepos.value.some(r => r.repo === repo)) {
+    settings.githubBookRepos.push(repo)
+  }
   ghRepoDraft.value = ''
 }
 
@@ -81,6 +78,68 @@ async function importGhBook(hit: GithubBookHit) {
   } finally {
     ghImporting.value = ''
     ghProgress.value = ''
+  }
+}
+
+// ---- 统一搜书: GitHub 书库 / 古登堡计划 / arXiv ----
+const uniQuery = ref('')
+const uniScopes = reactive({ github: true, gutenberg: true, arxiv: false })
+const uniSearching = ref(false)
+const uniSearched = ref(false)
+const uniErrors = ref<string[]>([])
+const uniGithub = ref<GithubBookHit[]>([])
+const uniGutenberg = ref<OpdsPublication[]>([])
+const uniArxiv = ref<OpdsPublication[]>([])
+let uniSession = 0
+
+async function uniSearch() {
+  const query = uniQuery.value.trim()
+  if (!query || uniSearching.value) return
+  const session = ++uniSession
+  uniSearching.value = true
+  uniErrors.value = []
+  uniGithub.value = []
+  uniGutenberg.value = []
+  uniArxiv.value = []
+  const jobs: Promise<void>[] = []
+  if (uniScopes.github) {
+    jobs.push(searchGithubBooks(allGhRepos(), query).then(r => {
+      if (session !== uniSession) return
+      uniGithub.value = r.hits
+      if (r.errors.length) uniErrors.value.push(...r.errors.map(x => `${x.repo}: ${x.message}`))
+    }).catch(e => { uniErrors.value.push(`GitHub: ${e?.message ?? e}`) }))
+  }
+  if (uniScopes.gutenberg) {
+    jobs.push(searchGutenberg(query, 24).then(pubs => {
+      if (session !== uniSession) return
+      uniGutenberg.value = pubs
+    }).catch(e => { uniErrors.value.push(`Gutenberg: ${e?.message ?? e}`) }))
+  }
+  if (uniScopes.arxiv) {
+    jobs.push(loadArxivPageOf(arxivSearchUrlOf(query)).then(p => {
+      if (session !== uniSession) return
+      uniArxiv.value = (p.publications ?? []).slice(0, 20)
+    }).catch(e => { uniErrors.value.push(`arXiv: ${e?.message ?? e}`) }))
+  }
+  await Promise.allSettled(jobs)
+  if (session === uniSession) {
+    uniSearched.value = true
+    uniSearching.value = false
+  }
+}
+
+/** 统一搜书里下载 OPDS/arXiv 出版物 */
+async function uniDownloadPub(pub: OpdsPublication, acq: OpdsPublication['acquisitions'][number], sourceTitle: string) {
+  if (downloading.value.has(acq.href)) return
+  downloading.value.add(acq.href)
+  try {
+    await downloadToLibrary(pub, acq, sourceTitle)
+    await library.refresh()
+    toast(t('library.importSuccess', { count: 1 }), 'success')
+  } catch (e: any) {
+    toast(t('library.urlImportFailed', { msg: e?.message ?? e }), 'error', 6000)
+  } finally {
+    downloading.value.delete(acq.href)
   }
 }
 
@@ -120,6 +179,7 @@ async function refreshSources() {
 
 onMounted(() => {
   refreshSources()
+  refreshCommunity()
   library.refresh()
   if (settings.calibrePath) refreshCalibre()
 })
@@ -377,22 +437,84 @@ async function removeSource(s: CatalogSourceRec) {
         </div>
       </div>
 
-      <!-- GitHub 书库 -->
-      <section class="gh-section">
-        <header class="toolbar">
-          <h2>{{ t('library.ghSearchTitle') }}</h2>
-        </header>
-        <p class="intro">{{ t('library.ghIntro') }}</p>
+      <!-- 统一搜书 -->
+      <section class="uni-section card">
+        <h2>{{ t('catalog.uniTitle') }}</h2>
         <div class="gh-search-row">
           <input
-            v-model="ghKeyword"
+            v-model="uniQuery"
             class="input"
-            :placeholder="t('library.ghKeywordPlaceholder')"
-            @keyup.enter="doGhSearch"
+            :placeholder="t('catalog.uniPlaceholder')"
+            @keyup.enter="uniSearch"
           />
-          <button class="btn btn-primary" :disabled="ghSearching" @click="doGhSearch">
-            {{ ghSearching ? t('library.ghSearching') : t('library.ghSearch') }}
+          <button class="btn btn-primary" :disabled="uniSearching" @click="uniSearch">
+            {{ uniSearching ? t('library.ghSearching') : t('library.ghSearch') }}
           </button>
+        </div>
+        <div class="uni-scopes">
+          <label><input v-model="uniScopes.github" type="checkbox" /> GitHub</label>
+          <label><input v-model="uniScopes.gutenberg" type="checkbox" /> {{ t('catalog.gutenberg') }}</label>
+          <label><input v-model="uniScopes.arxiv" type="checkbox" /> arXiv</label>
+        </div>
+        <div v-if="uniErrors.length" class="gh-notice">⚠️ {{ uniErrors.join('; ') }}</div>
+        <div v-if="ghProgress" class="gh-progress">{{ ghProgress }}</div>
+
+        <template v-if="uniSearched">
+          <div v-if="uniScopes.github" class="uni-group">
+            <div class="uni-group-head">GitHub · {{ t('reader.resultCount', { n: uniGithub.length }) }}</div>
+            <div v-for="hit in uniGithub.slice(0, 60)" :key="hit.url" class="gh-item" :class="{ busy: ghImporting === hit.url }" @click="importGhBook(hit)">
+              <span class="gh-name">{{ hit.name }}</span>
+              <span class="gh-meta">{{ hit.repo }}<template v-if="hit.size"> · {{ fmtBytes(hit.size) }}</template></span>
+            </div>
+          </div>
+          <div v-if="uniScopes.gutenberg" class="uni-group">
+            <div class="uni-group-head">{{ t('catalog.gutenberg') }} · {{ t('reader.resultCount', { n: uniGutenberg.length }) }}</div>
+            <div v-for="(pub, i) in uniGutenberg" :key="i" class="gh-item uni-pub">
+              <span class="gh-name">{{ pub.title }}</span>
+              <span class="gh-meta">{{ pub.author || t('common.anonymous') }}</span>
+              <span class="uni-acts">
+                <button
+                  v-for="acq in pub.acquisitions.slice(0, 2)"
+                  :key="acq.href"
+                  class="btn btn-sm"
+                  :disabled="downloading.has(acq.href)"
+                  @click.stop="uniDownloadPub(pub, acq, t('catalog.gutenberg'))"
+                >{{ downloading.has(acq.href) ? t('catalog.downloading') : acq.label }}</button>
+              </span>
+            </div>
+          </div>
+          <div v-if="uniScopes.arxiv" class="uni-group">
+            <div class="uni-group-head">arXiv · {{ t('reader.resultCount', { n: uniArxiv.length }) }}</div>
+            <div v-for="(pub, i) in uniArxiv" :key="i" class="gh-item uni-pub">
+              <span class="gh-name">{{ pub.title }}</span>
+              <span class="gh-meta">{{ pub.author || '' }}</span>
+              <span class="uni-acts">
+                <button
+                  v-for="acq in pub.acquisitions.slice(0, 1)"
+                  :key="acq.href"
+                  class="btn btn-sm"
+                  :disabled="downloading.has(acq.href)"
+                  @click.stop="uniDownloadPub(pub, acq, 'arXiv')"
+                >{{ downloading.has(acq.href) ? t('catalog.downloading') : acq.label }}</button>
+              </span>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- GitHub 书源列表 (社区共建) -->
+      <section class="gh-section">
+        <header class="toolbar">
+          <h2>{{ t('catalog.ghListTitle') }}</h2>
+          <div class="spacer" />
+          <button class="btn btn-sm" @click="refreshCommunity(true)">{{ t('common.refresh') }}</button>
+          <button class="btn btn-sm" @click="openDownload(COMMUNITY_LIST_PAGE)">{{ t('catalog.contribute') }}</button>
+        </header>
+        <p class="intro">{{ t('catalog.ghListIntro') }}</p>
+        <div class="gh-repos">
+          <span v-for="item in communityRepos" :key="item.repo" class="gh-repo-chip community" :title="item.note ?? ''">
+            {{ item.repo }}
+          </span>
         </div>
         <div class="gh-repos">
           <span v-for="repo in settings.githubBookRepos" :key="repo" class="gh-repo-chip">
@@ -405,22 +527,6 @@ async function removeSource(s: CatalogSourceRec) {
             :placeholder="t('library.ghAddRepo')"
             @keyup.enter="addGhRepo"
           />
-        </div>
-        <div v-if="ghNotice" class="gh-notice">⚠️ {{ ghNotice }}</div>
-        <div v-if="ghProgress" class="gh-progress">{{ ghProgress }}</div>
-        <div v-if="ghResults.length || ghSearched" class="gh-results card">
-          <div
-            v-for="hit in ghResults"
-            :key="hit.url"
-            class="gh-item"
-            :class="{ busy: ghImporting === hit.url }"
-            @click="importGhBook(hit)"
-          >
-            <span class="gh-name">{{ hit.name }}</span>
-            <span class="gh-meta">{{ hit.repo }}<template v-if="hit.path.includes('/')"> · {{ hit.path.slice(0, hit.path.lastIndexOf('/')) }}</template><template v-if="hit.size"> · {{ fmtBytes(hit.size) }}</template></span>
-          </div>
-          <p v-if="ghSearched && !ghSearching && !ghResults.length" class="gh-empty">{{ t('reader.noResults') }}</p>
-          <div v-if="ghResults.length" class="gh-count">{{ t('reader.resultCount', { n: ghResults.length }) }}</div>
         </div>
       </section>
 
@@ -966,5 +1072,58 @@ async function removeSource(s: CatalogSourceRec) {
   color: var(--text-3);
   padding: 8px 10px 2px;
   border-top: 1px solid var(--border);
+}
+
+.uni-section {
+  margin-top: 24px;
+  padding: 16px 18px;
+  max-width: 760px;
+}
+.uni-section h2 {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+.uni-scopes {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.uni-scopes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.uni-scopes input {
+  accent-color: var(--brand);
+}
+.uni-group {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  max-height: 300px;
+  overflow: auto;
+}
+.uni-group-head {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  padding: 8px 4px 4px;
+}
+.uni-pub {
+  position: relative;
+}
+.uni-acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.gh-repo-chip.community {
+  background: var(--brand-light);
+  border-color: transparent;
+  color: var(--brand);
 }
 </style>
