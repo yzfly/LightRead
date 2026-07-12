@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { useLibrary } from '../stores/library'
 import { importFiles } from '../services/importer'
 import { importFromUrl } from '../services/urlImport'
+import { searchGithubBooks, isValidRepo, fmtBytes, type GithubBookHit } from '../services/githubBooks'
+import { useSettings } from '../stores/settings'
 import { ACCEPT, SUPPORTED_EXTS } from '../services/format'
 import { toast } from '../services/toast'
 import { formatReadingTime } from '../composables/useReadingTimer'
@@ -13,6 +15,7 @@ import { t } from '../i18n'
 
 const router = useRouter()
 const library = useLibrary()
+const settings = useSettings()
 
 const keyword = ref('')
 const sortBy = ref<'recent' | 'added' | 'title' | 'author'>('recent')
@@ -138,6 +141,68 @@ async function doUrlImport() {
   } catch (e: any) {
     toast(t('library.urlImportFailed', { msg: e?.message ?? e }), 'error', 6000)
   } finally {
+    urlImporting.value = ''
+  }
+}
+
+// ---- GitHub 搜书 ----
+const urlTab = ref<'url' | 'github'>('url')
+const ghKeyword = ref('')
+const ghResults = ref<GithubBookHit[]>([])
+const ghSearching = ref(false)
+const ghSearched = ref(false)
+const ghNotice = ref('')
+const ghImporting = ref('')
+const ghRepoDraft = ref('')
+
+async function doGhSearch() {
+  if (ghSearching.value) return
+  ghSearching.value = true
+  ghNotice.value = ''
+  try {
+    const result = await searchGithubBooks(settings.githubBookRepos, ghKeyword.value)
+    ghResults.value = result.hits
+    ghSearched.value = true
+    if (result.errors.length) {
+      ghNotice.value = result.errors.map(x => `${x.repo}: ${x.message}`).join('; ')
+    }
+  } catch (e: any) {
+    ghNotice.value = e?.message ?? String(e)
+  } finally {
+    ghSearching.value = false
+  }
+}
+
+function addGhRepo() {
+  const repo = ghRepoDraft.value.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\/$/, '')
+  if (!isValidRepo(repo)) {
+    toast(t('library.ghRepoInvalid'), 'error')
+    return
+  }
+  if (!settings.githubBookRepos.includes(repo)) settings.githubBookRepos.push(repo)
+  ghRepoDraft.value = ''
+}
+
+function removeGhRepo(repo: string) {
+  settings.githubBookRepos = settings.githubBookRepos.filter(r => r !== repo)
+}
+
+async function importGhBook(hit: GithubBookHit) {
+  if (ghImporting.value) return
+  ghImporting.value = hit.url
+  try {
+    const result = await importFromUrl(hit.url, p => {
+      urlImporting.value = p.fraction != null
+        ? t('library.urlDownloading', { pct: (p.fraction * 100).toFixed(0), mb: p.receivedMB })
+        : t('library.urlDownloadingMB', { mb: p.receivedMB })
+    })
+    if (!result.ok) throw new Error(result.error)
+    await library.refresh()
+    toast(t('library.importSuccess', { count: 1 }), 'success')
+  } catch (e: any) {
+    toast(t('library.urlImportFailed', { msg: e?.message ?? e }), 'error', 6000)
+  } finally {
+    ghImporting.value = ''
     urlImporting.value = ''
   }
 }
@@ -368,26 +433,79 @@ async function batchClearTags() {
       </div>
     </div>
 
-    <!-- URL 导入弹窗 -->
-    <div v-if="showUrlModal" class="modal-mask" @click.self="!urlImporting && (showUrlModal = false)">
-      <div class="modal">
-        <h3>{{ t('library.urlImportTitle') }}</h3>
-        <input
-          v-model="urlDraft"
-          class="input"
-          style="width: 100%; margin-top: 12px"
-          :placeholder="t('library.urlPlaceholder')"
-          :disabled="!!urlImporting"
-          @keyup.enter="doUrlImport"
-        />
-        <p class="url-hint">{{ t('library.urlHint') }}</p>
-        <div v-if="urlImporting" class="url-progress">{{ urlImporting }}</div>
-        <div style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px">
-          <button class="btn btn-sm" :disabled="!!urlImporting" @click="showUrlModal = false">{{ t('common.cancel') }}</button>
-          <button class="btn btn-sm btn-primary" :disabled="!urlDraft.trim() || !!urlImporting" @click="doUrlImport">
-            {{ urlImporting ? t('common.loading') : t('library.urlDownloadImport') }}
-          </button>
+    <!-- URL 导入 / GitHub 搜书弹窗 -->
+    <div v-if="showUrlModal" class="modal-mask" @click.self="!urlImporting && !ghImporting && (showUrlModal = false)">
+      <div class="modal url-modal">
+        <div class="anno-tabs">
+          <button :class="{ active: urlTab === 'url' }" @click="urlTab = 'url'">{{ t('library.urlImportTitle') }}</button>
+          <button :class="{ active: urlTab === 'github' }" @click="urlTab = 'github'">{{ t('library.ghSearchTitle') }}</button>
         </div>
+
+        <template v-if="urlTab === 'url'">
+          <input
+            v-model="urlDraft"
+            class="input"
+            style="width: 100%; margin-top: 12px"
+            :placeholder="t('library.urlPlaceholder')"
+            :disabled="!!urlImporting"
+            @keyup.enter="doUrlImport"
+          />
+          <p class="url-hint">{{ t('library.urlHint') }}</p>
+          <div v-if="urlImporting" class="url-progress">{{ urlImporting }}</div>
+          <div style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px">
+            <button class="btn btn-sm" :disabled="!!urlImporting" @click="showUrlModal = false">{{ t('common.cancel') }}</button>
+            <button class="btn btn-sm btn-primary" :disabled="!urlDraft.trim() || !!urlImporting" @click="doUrlImport">
+              {{ urlImporting ? t('common.loading') : t('library.urlDownloadImport') }}
+            </button>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="gh-search-row">
+            <input
+              v-model="ghKeyword"
+              class="input"
+              :placeholder="t('library.ghKeywordPlaceholder')"
+              @keyup.enter="doGhSearch"
+            />
+            <button class="btn btn-sm btn-primary" :disabled="ghSearching" @click="doGhSearch">
+              {{ ghSearching ? t('library.ghSearching') : t('library.ghSearch') }}
+            </button>
+          </div>
+          <div class="gh-repos">
+            <span v-for="repo in settings.githubBookRepos" :key="repo" class="gh-repo-chip">
+              {{ repo }}
+              <button class="gh-repo-del" :title="t('common.delete')" @click="removeGhRepo(repo)">✕</button>
+            </span>
+            <input
+              v-model="ghRepoDraft"
+              class="input gh-repo-add"
+              :placeholder="t('library.ghAddRepo')"
+              @keyup.enter="addGhRepo"
+            />
+          </div>
+          <div v-if="ghNotice" class="url-hint">⚠️ {{ ghNotice }}</div>
+          <div v-if="urlImporting" class="url-progress">{{ urlImporting }}</div>
+          <div class="gh-results">
+            <div
+              v-for="hit in ghResults"
+              :key="hit.url"
+              class="gh-item"
+              :class="{ busy: ghImporting === hit.url }"
+              @click="importGhBook(hit)"
+            >
+              <span class="gh-name">{{ hit.name }}</span>
+              <span class="gh-meta">{{ hit.path.includes('/') ? hit.path.slice(0, hit.path.lastIndexOf('/')) : hit.repo }}<template v-if="hit.size"> · {{ fmtBytes(hit.size) }}</template></span>
+            </div>
+            <p v-if="ghSearched && !ghSearching && !ghResults.length" class="tag-manage-empty">{{ t('reader.noResults') }}</p>
+            <p v-if="!ghSearched && !ghSearching" class="tag-manage-empty">{{ t('library.ghIntro') }}</p>
+          </div>
+          <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center">
+            <span v-if="ghResults.length" class="url-hint" style="margin: 0">{{ t('reader.resultCount', { n: ghResults.length }) }}</span>
+            <span v-else />
+            <button class="btn btn-sm" @click="showUrlModal = false">{{ t('common.close') }}</button>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -525,6 +643,100 @@ async function batchClearTags() {
   font-size: 12px;
   color: var(--text-3);
   white-space: nowrap;
+}
+.url-modal {
+  width: min(560px, calc(100vw - 40px));
+}
+.anno-tabs {
+  display: flex;
+  gap: 4px;
+}
+.anno-tabs button {
+  flex: 1;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.anno-tabs button.active {
+  background: var(--brand-light);
+  color: var(--brand);
+  font-weight: 500;
+}
+.gh-search-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.gh-search-row .input {
+  flex: 1;
+}
+.gh-repos {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+.gh-repo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--bg);
+}
+.gh-repo-del {
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font-size: 10px;
+  padding: 0;
+}
+.gh-repo-del:hover {
+  color: var(--danger);
+}
+.gh-repo-add {
+  height: 24px;
+  width: 200px;
+  font-size: 12px;
+}
+.gh-results {
+  max-height: 320px;
+  overflow: auto;
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.gh-item {
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gh-item:hover {
+  background: var(--bg);
+}
+.gh-item.busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.gh-name {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+}
+.gh-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  word-break: break-all;
 }
 .url-hint {
   font-size: 12px;

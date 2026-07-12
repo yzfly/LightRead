@@ -348,4 +348,11 @@ export default {
   'library.urlUnsupported': 'Unrecognized book format: {name}',
   'library.urlImportFailed': 'URL import failed: {msg}',
   'library.urlSource': 'URL import',
+  'library.ghSearchTitle': 'GitHub Books',
+  'library.ghSearch': 'Search',
+  'library.ghSearching': 'Searching…',
+  'library.ghKeywordPlaceholder': 'Keywords (space-separated); empty lists all',
+  'library.ghAddRepo': '+ Add repo owner/repo',
+  'library.ghRepoInvalid': 'Repo should be owner/repo',
+  'library.ghIntro': 'Search book files in the configured GitHub repos; click a result to download and import. Add any repo that hosts books.',
 } as Record<string, string>

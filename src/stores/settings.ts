@@ -39,6 +39,8 @@ interface SettingsState {
   pdf: PdfPrefs
   /** 导入的自定义字体 (桌面端) */
   customFonts: CustomFontRec[]
+  /** GitHub 书库仓库列表 (owner/repo) */
+  githubBookRepos: string[]
   /** 自动阅读速度: 秒/页 (EPUB 与 PDF 共用) */
   autoReadSeconds: number
   /** 听书引擎: edge 在线神经音色 / local 本地离线神经音色 / system 系统语音 */
@@ -71,6 +73,7 @@ const defaults: SettingsState = {
   version: SETTINGS_VERSION,
   language: 'zh',
   customFonts: [],
+  githubBookRepos: ['0voice/expert_readed_books'],
   reader: {
     fontSize: 18,
     lineHeight: 1.8,

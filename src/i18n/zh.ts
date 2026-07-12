@@ -348,4 +348,11 @@ export default {
   'library.urlUnsupported': '无法识别的书籍格式: {name}',
   'library.urlImportFailed': 'URL 导入失败: {msg}',
   'library.urlSource': 'URL 导入',
+  'library.ghSearchTitle': 'GitHub 搜书',
+  'library.ghSearch': '搜索',
+  'library.ghSearching': '搜索中…',
+  'library.ghKeywordPlaceholder': '书名关键词, 空格分隔多个; 留空列出全部',
+  'library.ghAddRepo': '＋ 添加仓库 owner/repo',
+  'library.ghRepoInvalid': '仓库格式应为 owner/repo',
+  'library.ghIntro': '在左上方输入关键词搜索书库仓库中的书籍, 点击结果即下载导入。可添加任意存放书籍的 GitHub 仓库。',
 } as Record<string, string>
