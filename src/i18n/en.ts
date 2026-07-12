@@ -355,4 +355,6 @@ export default {
   'library.ghAddRepo': '+ Add repo owner/repo',
   'library.ghRepoInvalid': 'Repo should be owner/repo',
   'library.ghIntro': 'Search book files in the configured GitHub repos; click a result to download and import. Add any repo that hosts books.',
+  'library.importLocal': 'Local files…',
+  'library.moreImport': 'More import options',
 } as Record<string, string>

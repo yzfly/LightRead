@@ -355,4 +355,6 @@ export default {
   'library.ghAddRepo': '＋ 添加仓库 owner/repo',
   'library.ghRepoInvalid': '仓库格式应为 owner/repo',
   'library.ghIntro': '在左上方输入关键词搜索书库仓库中的书籍, 点击结果即下载导入。可添加任意存放书籍的 GitHub 仓库。',
+  'library.importLocal': '本地文件…',
+  'library.moreImport': '更多导入方式',
 } as Record<string, string>

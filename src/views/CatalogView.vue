@@ -10,6 +10,8 @@ import {
   calibreAvailable, importCalibreBook, listCalibreBooks, pickCalibreLibrary,
   calibreCoverUrl, pickBestFormat, type CalibreBook,
 } from '../services/calibre'
+import { searchGithubBooks, isValidRepo, fmtBytes, type GithubBookHit } from '../services/githubBooks'
+import { importFromUrl } from '../services/urlImport'
 import { useSettings } from '../stores/settings'
 import { useLibrary } from '../stores/library'
 import { useRouter } from 'vue-router'
@@ -19,6 +21,68 @@ import { t } from '../i18n'
 const library = useLibrary()
 const settings = useSettings()
 const router = useRouter()
+
+// ---- GitHub 书库 ----
+const ghKeyword = ref('')
+const ghResults = ref<GithubBookHit[]>([])
+const ghSearching = ref(false)
+const ghSearched = ref(false)
+const ghNotice = ref('')
+const ghImporting = ref('')
+const ghProgress = ref('')
+const ghRepoDraft = ref('')
+
+async function doGhSearch() {
+  if (ghSearching.value) return
+  ghSearching.value = true
+  ghNotice.value = ''
+  try {
+    const result = await searchGithubBooks(settings.githubBookRepos, ghKeyword.value)
+    ghResults.value = result.hits
+    ghSearched.value = true
+    if (result.errors.length) {
+      ghNotice.value = result.errors.map(x => `${x.repo}: ${x.message}`).join('; ')
+    }
+  } catch (e: any) {
+    ghNotice.value = e?.message ?? String(e)
+  } finally {
+    ghSearching.value = false
+  }
+}
+
+function addGhRepo() {
+  const repo = ghRepoDraft.value.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\/$/, '')
+  if (!isValidRepo(repo)) {
+    toast(t('library.ghRepoInvalid'), 'error')
+    return
+  }
+  if (!settings.githubBookRepos.includes(repo)) settings.githubBookRepos.push(repo)
+  ghRepoDraft.value = ''
+}
+
+function removeGhRepo(repo: string) {
+  settings.githubBookRepos = settings.githubBookRepos.filter(r => r !== repo)
+}
+
+async function importGhBook(hit: GithubBookHit) {
+  if (ghImporting.value) return
+  ghImporting.value = hit.url
+  try {
+    const result = await importFromUrl(hit.url, p => {
+      ghProgress.value = p.fraction != null
+        ? t('library.urlDownloading', { pct: (p.fraction * 100).toFixed(0), mb: p.receivedMB })
+        : t('library.urlDownloadingMB', { mb: p.receivedMB })
+    })
+    if (!result.ok) throw new Error(result.error)
+    await library.refresh()
+    toast(t('library.importSuccess', { count: 1 }), 'success')
+  } catch (e: any) {
+    toast(t('library.urlImportFailed', { msg: e?.message ?? e }), 'error', 6000)
+  } finally {
+    ghImporting.value = ''
+    ghProgress.value = ''
+  }
+}
 
 const sources = ref<CatalogSourceRec[]>([])
 const activeSource = ref<CatalogSourceRec | null>(null)
@@ -312,6 +376,53 @@ async function removeSource(s: CatalogSourceRec) {
           </div>
         </div>
       </div>
+
+      <!-- GitHub 书库 -->
+      <section class="gh-section">
+        <header class="toolbar">
+          <h2>{{ t('library.ghSearchTitle') }}</h2>
+        </header>
+        <p class="intro">{{ t('library.ghIntro') }}</p>
+        <div class="gh-search-row">
+          <input
+            v-model="ghKeyword"
+            class="input"
+            :placeholder="t('library.ghKeywordPlaceholder')"
+            @keyup.enter="doGhSearch"
+          />
+          <button class="btn btn-primary" :disabled="ghSearching" @click="doGhSearch">
+            {{ ghSearching ? t('library.ghSearching') : t('library.ghSearch') }}
+          </button>
+        </div>
+        <div class="gh-repos">
+          <span v-for="repo in settings.githubBookRepos" :key="repo" class="gh-repo-chip">
+            {{ repo }}
+            <button class="gh-repo-del" :title="t('common.delete')" @click="removeGhRepo(repo)">✕</button>
+          </span>
+          <input
+            v-model="ghRepoDraft"
+            class="input gh-repo-add"
+            :placeholder="t('library.ghAddRepo')"
+            @keyup.enter="addGhRepo"
+          />
+        </div>
+        <div v-if="ghNotice" class="gh-notice">⚠️ {{ ghNotice }}</div>
+        <div v-if="ghProgress" class="gh-progress">{{ ghProgress }}</div>
+        <div v-if="ghResults.length || ghSearched" class="gh-results card">
+          <div
+            v-for="hit in ghResults"
+            :key="hit.url"
+            class="gh-item"
+            :class="{ busy: ghImporting === hit.url }"
+            @click="importGhBook(hit)"
+          >
+            <span class="gh-name">{{ hit.name }}</span>
+            <span class="gh-meta">{{ hit.repo }}<template v-if="hit.path.includes('/')"> · {{ hit.path.slice(0, hit.path.lastIndexOf('/')) }}</template><template v-if="hit.size"> · {{ fmtBytes(hit.size) }}</template></span>
+          </div>
+          <p v-if="ghSearched && !ghSearching && !ghResults.length" class="gh-empty">{{ t('reader.noResults') }}</p>
+          <div v-if="ghResults.length" class="gh-count">{{ t('reader.resultCount', { n: ghResults.length }) }}</div>
+        </div>
+      </section>
 
       <!-- Calibre 书库直读 (桌面版) -->
       <section v-if="calibreAvailable()" class="calibre-section">
@@ -752,5 +863,108 @@ async function removeSource(s: CatalogSourceRec) {
   display: flex;
   gap: 6px;
   margin-top: auto;
+}
+
+.gh-section {
+  margin-top: 28px;
+}
+.gh-section h2 {
+  font-size: 16px;
+}
+.gh-search-row {
+  display: flex;
+  gap: 8px;
+  max-width: 560px;
+}
+.gh-search-row .input {
+  flex: 1;
+}
+.gh-repos {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+.gh-repo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--card);
+}
+.gh-repo-del {
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font-size: 10px;
+  padding: 0;
+}
+.gh-repo-del:hover {
+  color: var(--danger);
+}
+.gh-repo-add {
+  height: 26px;
+  width: 210px;
+  font-size: 12px;
+}
+.gh-notice {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.gh-progress {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--brand);
+}
+.gh-results {
+  margin-top: 12px;
+  max-width: 720px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 8px;
+}
+.gh-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gh-item:hover {
+  background: var(--bg);
+}
+.gh-item.busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.gh-name {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+}
+.gh-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  word-break: break-all;
+}
+.gh-empty {
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+  padding: 16px 0;
+}
+.gh-count {
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 8px 10px 2px;
+  border-top: 1px solid var(--border);
 }
 </style>
