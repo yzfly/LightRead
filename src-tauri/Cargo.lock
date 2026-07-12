@@ -2409,7 +2409,7 @@ dependencies = [
 
 [[package]]
 name = "lightread"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "bzip2 0.5.2",
  "futures-util",
