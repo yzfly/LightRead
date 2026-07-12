@@ -332,4 +332,6 @@ export default {
   'library.tagDeleted': 'Tag deleted',
   'library.deleteTagConfirm': 'Delete tag "{tag}"? Books are kept; only the tag is removed.',
   'library.noTags': 'No tags yet. Assign tags to books in batch manage mode.',
+  'reader.fullscreen': 'Fullscreen',
+  'reader.exitFullscreen': 'Exit Fullscreen',
 } as Record<string, string>

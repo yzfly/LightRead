@@ -332,4 +332,6 @@ export default {
   'library.tagDeleted': '分类已删除',
   'library.deleteTagConfirm': '删除分类「{tag}」？书籍不会被删除, 仅移除该分类标签。',
   'library.noTags': '还没有分类, 在批量管理中给书籍设置分类标签',
+  'reader.fullscreen': '全屏阅读',
+  'reader.exitFullscreen': '退出全屏',
 } as Record<string, string>

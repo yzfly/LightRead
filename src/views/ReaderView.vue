@@ -60,6 +60,34 @@ function hideBars() {
 
 const cancelBarsTimer = () => clearTimeout(barsTimer)
 
+// ---- 一键全屏沉浸 ----
+const isFullscreen = ref(false)
+
+async function toggleFullscreen() {
+  try {
+    if (isTauri()) {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      const win = getCurrentWindow()
+      const next = !(await win.isFullscreen())
+      await win.setFullscreen(next)
+      isFullscreen.value = next
+    } else if (document.fullscreenElement) {
+      await document.exitFullscreen()
+      isFullscreen.value = false
+    } else {
+      await document.documentElement.requestFullscreen()
+      isFullscreen.value = true
+    }
+    // 进入全屏后稍候隐去工具栏, 直接进入纯文字状态
+    if (isFullscreen.value) setTimeout(hideBars, 400)
+  } catch { /* 平台拒绝全屏时忽略 */ }
+}
+
+/** Web 端用户可能按 Esc 或系统手势退出全屏, 同步状态 */
+const syncFullscreenState = () => {
+  if (!isTauri()) isFullscreen.value = !!document.fullscreenElement
+}
+
 // 打开目录时把当前章节滚到可视区中间
 watch(panel, async p => {
   if (p !== 'toc') return
@@ -206,6 +234,7 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowLeft' || e.key === 'PageUp') turnPage('left')
   else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') turnPage('right')
   else if (e.key === 'Escape') {
+    if (isFullscreen.value && isTauri()) toggleFullscreen()
     panel.value = 'none'
     settingsOpen.value = false
     autoPanel.value = false
@@ -585,6 +614,7 @@ function onSlide(e: Event) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
+  document.addEventListener('fullscreenchange', syncFullscreenState)
   showBars(true)
   try {
     const storage = await getStorage()
@@ -653,6 +683,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
+  // 回藏书页时恢复窗口状态
+  if (isFullscreen.value) toggleFullscreen()
   clearTimeout(saveTimer)
   stopAutoRead()
   stopTTS()
@@ -710,6 +743,10 @@ onBeforeUnmount(() => {
         </button>
         <button class="icon-btn" :title="t('reader.typography')" @click="settingsOpen = !settingsOpen">
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M11.1 4.55a1 1 0 0 1 1.8 0l5.6 12.02a1 1 0 1 1-1.81.86L15.3 14.5H8.7l-1.39 2.93a1 1 0 1 1-1.8-.86L11.1 4.55zM9.64 12.5h4.72L12 7.36 9.64 12.5z"/></svg>
+        </button>
+        <button class="icon-btn" :class="{ 'auto-on': isFullscreen }" :title="isFullscreen ? t('reader.exitFullscreen') : t('reader.fullscreen')" @click="toggleFullscreen">
+          <svg v-if="!isFullscreen" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 9a1 1 0 0 1-1-1V5a2 2 0 0 1 2-2h3a1 1 0 0 1 0 2H5v3a1 1 0 0 1-1 1zm16 0a1 1 0 0 1-1-1V5h-3a1 1 0 1 1 0-2h3a2 2 0 0 1 2 2v3a1 1 0 0 1-1 1zM4 15a1 1 0 0 1 1 1v3h3a1 1 0 1 1 0 2H5a2 2 0 0 1-2-2v-3a1 1 0 0 1 1-1zm16 0a1 1 0 0 1 1 1v3a2 2 0 0 1-2 2h-3a1 1 0 1 1 0-2h3v-3a1 1 0 0 1 1-1z"/></svg>
+          <svg v-else viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M8 3a1 1 0 0 1 1 1v3a2 2 0 0 1-2 2H4a1 1 0 0 1 0-2h3V4a1 1 0 0 1 1-1zm8 0a1 1 0 0 1 1 1v3h3a1 1 0 1 1 0 2h-3a2 2 0 0 1-2-2V4a1 1 0 0 1 1-1zM4 15h3a2 2 0 0 1 2 2v3a1 1 0 1 1-2 0v-3H4a1 1 0 0 1 0-2zm13 0h3a1 1 0 1 1 0 2h-3v3a1 1 0 1 1-2 0v-3a2 2 0 0 1 2-2z"/></svg>
         </button>
       </div>
     </header>
