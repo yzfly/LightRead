@@ -16,6 +16,7 @@ import { useReadingTimer } from '../composables/useReadingTimer'
 import { toast } from '../services/toast'
 import { t } from '../i18n'
 import { searchBook, type SearchHit } from '../services/bookSearch'
+import { chatStream, aiConfigured, readerSystemPrompt, explainPrompt, type AiMessage } from '../services/ai'
 import TocList, { type TocItem } from '../components/TocList.vue'
 
 const route = useRoute()
@@ -32,7 +33,7 @@ const toc = ref<TocItem[]>([])
 const currentTocHref = ref<string>()
 const fraction = ref(0)
 const chapterLabel = ref('')
-const panel = ref<'none' | 'toc' | 'annotations' | 'search'>('none')
+const panel = ref<'none' | 'toc' | 'annotations' | 'search' | 'ai'>('none')
 const panelEl = ref<HTMLElement>()
 const settingsOpen = ref(false)
 
@@ -126,6 +127,77 @@ const searching = ref(false)
 const searchTruncated = ref(false)
 const searchOpts = reactive({ caseSensitive: false, wholeWord: false, regex: false })
 let searchSession = 0
+
+// ---- AI 阅读助手 ----
+const aiMessages = ref<Array<{ role: 'user' | 'assistant'; content: string }>>([])
+const aiInput = ref('')
+const aiStreaming = ref(false)
+const aiListEl = ref<HTMLElement>()
+let aiSession = 0
+
+const aiReady = () => aiConfigured()
+
+function aiScrollToEnd() {
+  nextTick(() => {
+    if (aiListEl.value) aiListEl.value.scrollTop = aiListEl.value.scrollHeight
+  })
+}
+
+async function sendAi(text?: string) {
+  const content = (text ?? aiInput.value).trim()
+  if (!content || aiStreaming.value) return
+  if (!text) aiInput.value = ''
+  const session = ++aiSession
+  aiMessages.value.push({ role: 'user', content })
+  aiMessages.value.push({ role: 'assistant', content: '' })
+  const reply = aiMessages.value[aiMessages.value.length - 1]
+  aiStreaming.value = true
+  aiScrollToEnd()
+  try {
+    const history: AiMessage[] = [
+      { role: 'system', content: readerSystemPrompt(
+        { title: meta.value?.title, author: meta.value?.author },
+        chapterLabel.value,
+        settings.language,
+      ) },
+      // 只带最近 8 轮, 控制上下文长度
+      ...aiMessages.value.slice(0, -1).slice(-16).map(m => ({ role: m.role, content: m.content })),
+    ]
+    for await (const delta of chatStream(history)) {
+      if (session !== aiSession) return
+      reply.content += delta
+      aiScrollToEnd()
+    }
+    if (!reply.content) reply.content = t('ai.emptyReply')
+  } catch (e: any) {
+    if (session === aiSession) {
+      reply.content = `⚠️ ${t('ai.requestFailed')}: ${e?.message ?? e}`
+    }
+  } finally {
+    if (session === aiSession) aiStreaming.value = false
+  }
+}
+
+/** 划词 → AI 解读 */
+function aiExplainSelection() {
+  if (!selection.value) return
+  const text = selection.value.text.slice(0, 1500)
+  selection.value = null
+  panel.value = 'ai'
+  showBars()
+  sendAi(explainPrompt(text, settings.language))
+}
+
+function clearAi() {
+  aiSession++
+  aiStreaming.value = false
+  aiMessages.value = []
+}
+
+function stopAi() {
+  aiSession++
+  aiStreaming.value = false
+}
 
 // 自动阅读
 const autoPanel = ref(false)
@@ -812,6 +884,9 @@ onBeforeUnmount(() => {
         <button class="icon-btn" :class="{ 'auto-on': ttsState !== 'stopped' }" :title="t('tts.title')" @click="openTTSPanel">
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3a7 7 0 0 0-7 7v1.1A3.5 3.5 0 0 0 3 14.5v2A3.5 3.5 0 0 0 6.5 20H8a1 1 0 0 0 1-1v-7a1 1 0 0 0-1-1h-.9A5 5 0 0 1 12 5a5 5 0 0 1 4.9 6H16a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h1.5a3.5 3.5 0 0 0 3.5-3.5v-2a3.5 3.5 0 0 0-2-3.16V10a7 7 0 0 0-7-7z"/></svg>
         </button>
+        <button class="icon-btn" :class="{ 'auto-on': panel === 'ai' }" :title="t('ai.title')" @click="panel = panel === 'ai' ? 'none' : 'ai'">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2.5a1 1 0 0 1 .95.69l1.4 4.3a3 3 0 0 0 1.92 1.92l4.3 1.4a1 1 0 0 1 0 1.9l-4.3 1.4a3 3 0 0 0-1.92 1.92l-1.4 4.3a1 1 0 0 1-1.9 0l-1.4-4.3a3 3 0 0 0-1.92-1.92l-4.3-1.4a1 1 0 0 1 0-1.9l4.3-1.4a3 3 0 0 0 1.92-1.92l1.4-4.3A1 1 0 0 1 12 2.5zm7.5 12.7a.8.8 0 0 1 .76.55l.42 1.28a1.6 1.6 0 0 0 1.02 1.02l1.28.42a.8.8 0 0 1 0 1.52l-1.28.42a1.6 1.6 0 0 0-1.02 1.02l-.42 1.28a.8.8 0 0 1-1.52 0l-.42-1.28a1.6 1.6 0 0 0-1.02-1.02l-1.28-.42a.8.8 0 0 1 0-1.52l1.28-.42a1.6 1.6 0 0 0 1.02-1.02l.42-1.28a.8.8 0 0 1 .76-.55z"/></svg>
+        </button>
         <button class="icon-btn" :title="t('reader.searchInBook')" @click="panel = panel === 'search' ? 'none' : 'search'">
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l3.75 3.75a1 1 0 0 0 1.4-1.42l-3.74-3.74A7.5 7.5 0 0 0 10.5 3zM5 10.5a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0z"/></svg>
         </button>
@@ -886,6 +961,7 @@ onBeforeUnmount(() => {
         @click="addHighlight(name as string)"
       />
       <button class="btn btn-sm" @click="addHighlight('yellow', true)">💬 {{ t('reader.writeNote') }}</button>
+      <button class="btn btn-sm" @click="aiExplainSelection">✨ {{ t('ai.explain') }}</button>
       <button class="icon-btn" :title="t('common.cancel')" @click="selection = null">✕</button>
     </div>
 
@@ -1022,6 +1098,34 @@ onBeforeUnmount(() => {
             <p v-if="!bookmarks.length" class="panel-empty">{{ t('reader.bookmarkEmptyHint') }}</p>
           </template>
         </div>
+      </template>
+
+      <template v-else-if="panel === 'ai'">
+        <h3>✨ {{ t('ai.title') }}</h3>
+        <div v-if="!aiReady()" class="ai-setup">
+          <p>{{ t('ai.setupHint') }}</p>
+          <button class="btn btn-sm btn-primary" @click="router.push('/settings')">{{ t('ai.goSettings') }}</button>
+        </div>
+        <template v-else>
+          <div ref="aiListEl" class="panel-body ai-list">
+            <p v-if="!aiMessages.length" class="panel-empty">{{ t('ai.intro') }}</p>
+            <div v-for="(m, i) in aiMessages" :key="i" class="ai-msg" :class="m.role">
+              <div class="ai-bubble">{{ m.content }}<span v-if="m.role === 'assistant' && aiStreaming && i === aiMessages.length - 1" class="ai-cursor">▍</span></div>
+            </div>
+          </div>
+          <div class="ai-input-row">
+            <input
+              v-model="aiInput"
+              class="input"
+              :placeholder="t('ai.placeholder')"
+              :disabled="aiStreaming"
+              @keyup.enter="sendAi()"
+            />
+            <button v-if="aiStreaming" class="btn btn-sm" @click="stopAi">{{ t('common.stop') }}</button>
+            <button v-else class="btn btn-sm btn-primary" :disabled="!aiInput.trim()" @click="sendAi()">{{ t('ai.send') }}</button>
+          </div>
+          <button v-if="aiMessages.length" class="btn btn-sm ai-clear" @click="clearAi">{{ t('ai.clear') }}</button>
+        </template>
       </template>
 
       <template v-else>
@@ -1557,6 +1661,60 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--text-3);
   line-height: 1.6;
+}
+.ai-setup {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.8;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.ai-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 2px;
+}
+.ai-msg {
+  display: flex;
+}
+.ai-msg.user {
+  justify-content: flex-end;
+}
+.ai-bubble {
+  max-width: 92%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ai-msg.user .ai-bubble {
+  background: var(--brand-light);
+  color: var(--text);
+}
+.ai-msg.assistant .ai-bubble {
+  background: var(--bg);
+  color: var(--text-2);
+}
+.ai-cursor {
+  color: var(--brand);
+  animation: tts-pulse 1s ease-in-out infinite;
+}
+.ai-input-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ai-input-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.ai-clear {
+  margin-top: 6px;
 }
 .search-form {
   margin-bottom: 8px;

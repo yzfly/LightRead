@@ -70,6 +70,11 @@ interface SettingsState {
   calibrePath: string
   /** 书库存储根目录 (桌面端), 空为默认应用数据目录 */
   libraryRoot: string
+  /** AI 助手: 预设 id / 接口地址 / 密钥 / 模型 */
+  aiProvider: string
+  aiBaseUrl: string
+  aiApiKey: string
+  aiModel: string
   /** WebDAV 云备份 */
   webdavUrl: string
   webdavUser: string
@@ -108,6 +113,10 @@ const defaults: SettingsState = {
   httpProxy: '',
   calibrePath: '',
   libraryRoot: '',
+  aiProvider: 'siliconflow',
+  aiBaseUrl: 'https://api.siliconflow.cn/v1',
+  aiApiKey: '',
+  aiModel: 'Qwen/Qwen2.5-7B-Instruct',
   webdavUrl: '',
   webdavUser: '',
   webdavPass: '',

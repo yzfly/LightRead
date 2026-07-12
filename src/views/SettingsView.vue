@@ -14,6 +14,7 @@ import {
   type UpdateInfo, type DownloadOption,
 } from '../services/updater'
 import { t } from '../i18n'
+import { AI_PROVIDERS, providerById, chatStream } from '../services/ai'
 
 const settings = useSettings()
 const library = useLibrary()
@@ -127,6 +128,46 @@ onMounted(async () => {
   const storage = await getStorage()
   storageKind.value = storage.kind
 })
+
+// ---- AI 助手 ----
+const aiTesting = ref(false)
+const aiTestResult = ref('')
+
+function onAiProviderChange() {
+  const preset = providerById(settings.aiProvider)
+  if (preset.id !== 'custom') {
+    settings.aiBaseUrl = preset.baseUrl
+    settings.aiModel = preset.defaultModel
+  }
+  aiTestResult.value = ''
+}
+
+const aiDocsUrl = computed(() => providerById(settings.aiProvider).docsUrl ?? '')
+
+async function testAi() {
+  if (aiTesting.value) return
+  aiTesting.value = true
+  aiTestResult.value = ''
+  const started = performance.now()
+  try {
+    let got = ''
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout 20s')), 20000))
+    await Promise.race([
+      (async () => {
+        for await (const delta of chatStream([{ role: 'user', content: '请回复: OK' }])) {
+          got += delta
+          if (got.length >= 2) break
+        }
+      })(),
+      timeout,
+    ])
+    aiTestResult.value = `✅ ${t('settings.aiTestOk', { ms: Math.round(performance.now() - started), reply: got.slice(0, 20) })}`
+  } catch (e: any) {
+    aiTestResult.value = `❌ ${e?.message ?? e}`
+  } finally {
+    aiTesting.value = false
+  }
+}
 
 // ---- 版本与更新 ----
 const updateInfo = ref<UpdateInfo | null>(null)
@@ -386,6 +427,35 @@ async function doImport(e: Event) {
     </section>
 
     <section class="card section">
+      <h2>{{ t('settings.aiTitle') }}</h2>
+      <div class="row">
+        <div style="min-width: 0">
+          <div class="row-title">{{ t('settings.aiProvider') }}</div>
+          <div class="row-desc">{{ t('settings.aiDesc') }}</div>
+        </div>
+      </div>
+      <div class="ai-grid">
+        <select v-model="settings.aiProvider" class="input" @change="onAiProviderChange">
+          <option v-for="p in AI_PROVIDERS" :key="p.id" :value="p.id">
+            {{ p.label }}{{ p.id === 'siliconflow' || p.id === 'zhipu' ? t('settings.aiFreeTag') : '' }}
+          </option>
+        </select>
+        <input v-model="settings.aiModel" class="input" :placeholder="t('settings.aiModelPh')" />
+      </div>
+      <div class="ai-grid">
+        <input v-model="settings.aiBaseUrl" class="input" placeholder="https://api.siliconflow.cn/v1" />
+        <input v-model="settings.aiApiKey" class="input" type="password" :placeholder="t('settings.aiKeyPh')" autocomplete="new-password" />
+      </div>
+      <div class="webdav-actions">
+        <button class="btn btn-sm btn-primary" :disabled="aiTesting || !settings.aiBaseUrl || !settings.aiModel" @click="testAi">
+          {{ aiTesting ? t('settings.testing') : t('settings.aiTest') }}
+        </button>
+        <a v-if="aiDocsUrl" href="javascript:void 0" class="ai-key-link" @click="download(aiDocsUrl)">{{ t('settings.aiGetKey') }}</a>
+        <span v-if="aiTestResult" class="dav-info">{{ aiTestResult }}</span>
+      </div>
+    </section>
+
+    <section class="card section">
       <h2>{{ t('settings.reading') }}</h2>
       <div class="row">
         <div>
@@ -546,6 +616,19 @@ h2 {
   font-size: 12px;
   color: var(--brand);
   padding-top: 6px;
+}
+.ai-grid {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ai-grid .input {
+  flex: 1;
+  min-width: 0;
+}
+.ai-key-link {
+  font-size: 12px;
+  color: var(--brand);
 }
 .webdav-grid {
   display: flex;
