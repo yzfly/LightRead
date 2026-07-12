@@ -1037,9 +1037,7 @@ onBeforeUnmount(() => {
               v-if="i === 0 || r.chapter !== searchResults[i - 1].chapter"
               class="search-chapter"
             >{{ r.chapter || '·' }}</div>
-            <div class="search-item" @click="gotoSearchHit(r)">
-              {{ r.excerpt.pre }}<mark>{{ r.excerpt.match }}</mark>{{ r.excerpt.post }}
-            </div>
+            <div class="search-item" @click="gotoSearchHit(r)"><template v-for="(seg, j) in r.segments" :key="j"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div>
           </template>
           <p v-if="!searching && searchQuery && !searchResults.length" class="panel-empty">{{ t('reader.noResults') }}</p>
         </div>

@@ -17,7 +17,8 @@ export interface SearchHit {
   sectionIndex: number
   /** 所属章节标题 (由 toc 推断, 可能为空) */
   chapter: string
-  excerpt: { pre: string; match: string; post: string }
+  /** 摘要分段: hit 段高亮 (多关键词时全部命中词都标记) */
+  segments: Array<{ text: string; hit: boolean }>
 }
 
 export interface SearchEvent {
@@ -141,6 +142,44 @@ function sectionChapterMap(book: any): Map<number, string> {
 const EXCERPT_SPAN = 60
 
 /**
+ * 摘要分段高亮: 主匹配区间必亮, 再用全部匹配器扫描摘要文本,
+ * 命中区间合并后切分为 [普通|高亮] 交替段落。
+ */
+function buildSegments(
+  pre: string,
+  match: string,
+  post: string,
+  matchers: RegExp[],
+): SearchHit['segments'] {
+  const text = pre + match + post
+  const intervals: Array<[number, number]> = [[pre.length, pre.length + match.length]]
+  for (const source of matchers) {
+    // 克隆正则, 避免污染外层扫描循环的 lastIndex
+    const re = new RegExp(source.source, source.flags)
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      if (m[0] === '') { re.lastIndex++; continue }
+      intervals.push([m.index, m.index + m[0].length])
+    }
+  }
+  intervals.sort((a, b) => a[0] - b[0])
+  const merged: Array<[number, number]> = []
+  for (const iv of intervals) {
+    const last = merged[merged.length - 1]
+    if (last && iv[0] <= last[1]) last[1] = Math.max(last[1], iv[1])
+    else merged.push([iv[0], iv[1]])
+  }
+  const segments: SearchHit['segments'] = []
+  let pos = 0
+  for (const [a, b] of merged) {
+    if (a > pos) segments.push({ text: text.slice(pos, a), hit: false })
+    segments.push({ text: text.slice(a, b), hit: true })
+    pos = b
+  }
+  if (pos < text.length) segments.push({ text: text.slice(pos), hit: false })
+  return segments
+}
+
+/**
  * 全书流式检索。调用方用 for await 消费; 提前 return/break 即取消。
  */
 export async function* searchBook(
@@ -192,11 +231,12 @@ export async function* searchBook(
             cfi,
             sectionIndex: index,
             chapter: chapters.get(index) ?? '',
-            excerpt: {
-              pre: section.text.slice(Math.max(0, start - EXCERPT_SPAN), start).trimStart(),
-              match: m[0],
-              post: section.text.slice(end, end + EXCERPT_SPAN).trimEnd(),
-            },
+            segments: buildSegments(
+              section.text.slice(Math.max(0, start - EXCERPT_SPAN), start).trimStart(),
+              m[0],
+              section.text.slice(end, end + EXCERPT_SPAN).trimEnd(),
+              [primary, ...others],
+            ),
           })
           total++
           if (total >= limit) {
