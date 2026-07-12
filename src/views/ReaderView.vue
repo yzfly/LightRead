@@ -709,6 +709,23 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- 听书迷你胶囊: 面板收起但会话未停止时显示 -->
+    <div
+      v-if="!ttsPanel && ttsState !== 'stopped'"
+      class="tts-mini card"
+      title="展开听书面板"
+      @click="ttsPanel = true"
+    >
+      <span class="tts-mini-dot" :class="{ paused: ttsState === 'paused' }" />
+      <span class="tts-mini-label">{{ ttsState === 'playing' ? '朗读中' : '已暂停' }}</span>
+      <button
+        class="tts-mini-btn"
+        :title="ttsState === 'playing' ? '暂停' : '继续'"
+        @click.stop="ttsState === 'playing' ? pauseTTS() : resumeTTS()"
+      >{{ ttsState === 'playing' ? '⏸' : '▶' }}</button>
+      <button class="tts-mini-btn" title="停止" @click.stop="stopTTS()">⏹</button>
+    </div>
+
     <!-- 听书控制条 -->
     <div v-if="ttsPanel" class="tts-panel card">
       <div class="tts-row">
@@ -719,7 +736,7 @@ onBeforeUnmount(() => {
           {{ ttsState === 'playing' ? '⏸ 暂停' : ttsState === 'paused' ? '▶ 继续' : '▶ 开始听书' }}
         </button>
         <button class="btn btn-sm" :disabled="ttsState === 'stopped'" @click="stopTTS">⏹ 停止</button>
-        <button class="icon-btn" title="关闭" @click="ttsPanel = false; stopTTS()">✕</button>
+        <button class="icon-btn" title="收起 (继续朗读)" @click="ttsPanel = false">✕</button>
       </div>
       <div class="tts-row">
         <label>语速</label>
@@ -1188,6 +1205,55 @@ onBeforeUnmount(() => {
 }
 .note-input:focus {
   border-color: var(--brand);
+}
+.tts-mini {
+  position: absolute;
+  bottom: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+}
+.tts-mini-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: tts-pulse 1.6s ease-in-out infinite;
+}
+.tts-mini-dot.paused {
+  background: var(--text-3);
+  animation: none;
+}
+@keyframes tts-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
+}
+.tts-mini-label {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.tts-mini-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tts-mini-btn:hover {
+  background: var(--brand-light);
+  color: var(--brand);
 }
 .tts-panel {
   position: absolute;
