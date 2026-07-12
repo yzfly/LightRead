@@ -50,7 +50,10 @@ export async function checkUpdate(force = false): Promise<UpdateInfo> {
   if (!force) {
     try {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) ?? '')
-      if (cached.at > Date.now() - CACHE_TTL && cached.info) return cached.info
+      if (cached.at > Date.now() - CACHE_TTL && cached.info) {
+        // hasUpdate 与当前版本相关, 不能沿用缓存时刻的结论 (升级后读旧缓存会失真)
+        return { ...cached.info, hasUpdate: compareVersions(cached.info.version, CURRENT_VERSION) > 0 }
+      }
     } catch { /* 无缓存或已损坏 */ }
   }
 
