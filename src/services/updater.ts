@@ -122,3 +122,88 @@ export async function openDownload(url: string) {
     window.open(url, '_blank', 'noopener')
   }
 }
+
+/** 桌面端支持应用内下载安装 (Android 的 Tauri 无法直接拉起安装器, 走浏览器) */
+export const canInAppInstall = () => isTauri() && !/Android/i.test(navigator.userAgent)
+
+export interface DownloadProgress {
+  /** 0-1, 无 content-length 时为 null */
+  fraction: number | null
+  receivedMB: string
+  totalMB: string
+}
+
+/**
+ * 应用内下载安装包到系统下载文件夹 (桌面端)。
+ * 经 Rust 原生 HTTP 下载, 自动使用设置页配置的网络代理。
+ */
+export async function downloadInstaller(
+  url: string,
+  fileName: string,
+  onProgress: (p: DownloadProgress) => void,
+): Promise<string> {
+  const res = await fetchRemote(url, undefined, { headers: { accept: 'application/octet-stream' } })
+  const total = Number(res.headers.get('content-length') ?? 0)
+  const chunks: Uint8Array[] = []
+  let received = 0
+  const report = () => onProgress({
+    fraction: total ? received / total : null,
+    receivedMB: (received / 1048576).toFixed(1),
+    totalMB: total ? (total / 1048576).toFixed(0) : '?',
+  })
+  const reader = res.body?.getReader?.()
+  if (reader) {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      received += value.length
+      report()
+    }
+  } else {
+    const buf = new Uint8Array(await res.arrayBuffer())
+    chunks.push(buf)
+    received = buf.length
+    report()
+  }
+  const data = new Uint8Array(received)
+  let offset = 0
+  for (const chunk of chunks) {
+    data.set(chunk, offset)
+    offset += chunk.length
+  }
+  const { downloadDir, join } = await import('@tauri-apps/api/path')
+  const { writeFile } = await import('@tauri-apps/plugin-fs')
+  const path = await join(await downloadDir(), fileName)
+  await writeFile(path, data)
+  return path
+}
+
+/** 打开已下载的安装包 (macOS 挂载 dmg, Windows 运行安装器) */
+export async function openInstaller(path: string) {
+  const { openPath } = await import('@tauri-apps/plugin-opener')
+  await openPath(path)
+}
+
+/** 复制下载链接, 便于换到浏览器或其他工具下载 */
+export async function copyLink(url: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(url)
+    return true
+  } catch {
+    // WebView 剪贴板 API 不可用时回退到隐藏输入框
+    try {
+      const input = document.createElement('textarea')
+      input.value = url
+      input.style.position = 'fixed'
+      input.style.opacity = '0'
+      document.body.appendChild(input)
+      input.select()
+      const ok = document.execCommand('copy')
+      input.remove()
+      return ok
+    } catch {
+      return false
+    }
+  }
+}

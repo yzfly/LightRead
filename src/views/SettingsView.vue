@@ -9,7 +9,9 @@ import { fetchRemote } from '../services/net'
 import { toast } from '../services/toast'
 import {
   CURRENT_VERSION, RELEASES_URL, REPO_URL, ISSUES_URL,
-  checkUpdate, pickDownloads, openDownload, type UpdateInfo,
+  checkUpdate, pickDownloads, openDownload, canInAppInstall,
+  downloadInstaller, openInstaller, copyLink,
+  type UpdateInfo, type DownloadOption,
 } from '../services/updater'
 
 const settings = useSettings()
@@ -154,10 +156,44 @@ const fmtSize = (bytes: number) => `${(bytes / 1048576).toFixed(0)} MB`
 async function download(url: string) {
   try {
     await openDownload(url)
-    toast('已在浏览器中开始下载', 'success')
   } catch {
-    toast('无法打开下载链接', 'error')
+    toast('无法打开链接', 'error')
   }
+}
+
+// ---- 应用内下载安装 (桌面端, 走已配置的网络代理) ----
+const installing = ref('')
+const installedPath = ref('')
+
+async function downloadOption(d: DownloadOption) {
+  if (!canInAppInstall()) {
+    await download(d.url)
+    toast('已在浏览器中开始下载', 'success')
+    return
+  }
+  if (installing.value) return
+  installing.value = '连接中…'
+  installedPath.value = ''
+  try {
+    const fileName = decodeURIComponent(d.url.split('/').pop() ?? 'LightRead-installer')
+    const path = await downloadInstaller(d.url, fileName, p => {
+      installing.value = p.fraction != null
+        ? `下载中 ${(p.fraction * 100).toFixed(0)}% · ${p.receivedMB} / ${p.totalMB} MB`
+        : `下载中 ${p.receivedMB} MB`
+    })
+    installing.value = ''
+    installedPath.value = path
+    toast('下载完成, 正在打开安装包', 'success')
+    await openInstaller(path)
+  } catch (e: any) {
+    installing.value = ''
+    toast(`下载失败: ${e?.message ?? e}`, 'error', 6000)
+  }
+}
+
+async function doCopyLink(url: string) {
+  const ok = await copyLink(url)
+  toast(ok ? '下载链接已复制, 可粘贴到浏览器下载' : '复制失败', ok ? 'success' : 'error')
 }
 
 // ---- 存储位置 (桌面端) ----
@@ -382,19 +418,35 @@ async function doImport(e: Event) {
         </div>
         <pre v-if="updateInfo.notes" class="update-notes">{{ updateInfo.notes }}</pre>
         <div class="update-actions">
-          <button
-            v-for="(d, i) in downloads.filter(x => x.recommended)"
-            :key="d.url"
-            class="btn btn-sm"
-            :class="{ 'btn-primary': i === 0 }"
-            @click="download(d.url)"
-          >
-            ⬇ {{ d.label }} · {{ fmtSize(d.size) }}
-          </button>
+          <template v-for="(d, i) in downloads.filter(x => x.recommended)" :key="d.url">
+            <button
+              class="btn btn-sm"
+              :class="{ 'btn-primary': i === 0 }"
+              :disabled="!!installing"
+              @click="downloadOption(d)"
+            >
+              ⬇ {{ d.label }} · {{ fmtSize(d.size) }}
+            </button>
+            <button class="copy-link-btn" title="复制下载链接, 可在浏览器中下载" @click="doCopyLink(d.url)">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M8 5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-2v-2h2a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-8a1 1 0 0 0-1 1v2H8V5zM2 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3v-8zm3-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H5z"/></svg>
+            </button>
+          </template>
           <a class="all-downloads" href="javascript:void 0" @click="download(updateInfo.pageUrl)">
             全部平台安装包 →
           </a>
         </div>
+        <div v-if="installing" class="install-progress">
+          {{ installing }}
+          <span v-if="settings.httpProxy" class="install-hint">经代理 {{ settings.httpProxy }}</span>
+        </div>
+        <div v-else-if="installedPath" class="install-done">
+          ✅ 已下载到 <code>{{ installedPath }}</code>
+          <button class="btn btn-sm" @click="openInstaller(installedPath)">打开安装包</button>
+        </div>
+        <p v-else-if="canInAppInstall()" class="install-tip">
+          点击直接在应用内下载并打开安装包{{ settings.httpProxy ? ' (走「网络」中配置的代理)' : ', 网络不畅可在「网络」中配置代理' }};
+          或复制链接用浏览器下载。
+        </p>
       </div>
 
       <div class="about">
@@ -626,6 +678,56 @@ h2 {
 }
 .all-downloads:hover {
   color: var(--brand);
+}
+.copy-link-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -4px;
+}
+.copy-link-btn:hover {
+  background: var(--bg);
+  color: var(--brand);
+}
+.install-progress {
+  font-size: 13px;
+  color: var(--brand);
+  margin-top: 10px;
+}
+.install-hint {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-left: 8px;
+}
+.install-done {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.install-done code {
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.install-tip {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 10px;
+  line-height: 1.7;
 }
 .about {
   border-top: 1px solid var(--border);

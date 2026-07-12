@@ -22,19 +22,42 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$APPDATA/**" },
-        { "path": "$APPCONFIG/**" },
-        { "path": "$HOME/**" },
-        { "path": "/Volumes/**" }
+        {
+          "path": "$APPDATA/**"
+        },
+        {
+          "path": "$APPCONFIG/**"
+        },
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "/Volumes/**"
+        }
       ]
     },
     "dialog:default",
     "opener:default",
     {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        {
+          "path": "$DOWNLOAD/**"
+        },
+        {
+          "path": "$HOME/**"
+        }
+      ]
+    },
+    {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://**" },
-        { "url": "http://**" }
+        {
+          "url": "https://**"
+        },
+        {
+          "url": "http://**"
+        }
       ]
     }
   ]
