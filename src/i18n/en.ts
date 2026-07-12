@@ -176,7 +176,6 @@ export default {
   'settings.author': 'Author',
   'settings.wechat': 'WeChat',
   'settings.license': 'License',
-  'settings.engine': 'Reading engines',
   'settings.pickLibraryFolder': 'Choose library storage folder',
   'settings.useExistingLibrary': 'This folder already contains a LightRead library. Use it directly?\n\n{path}',
   'settings.migrateConfirm': 'Copy the current library to this folder and switch?\n\n{path}\n\nData at the original location will be left untouched.',

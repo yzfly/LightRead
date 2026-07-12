@@ -469,9 +469,7 @@ async function doImport(e: Event) {
           <a href="javascript:void 0" @click="download(RELEASES_URL)">{{ t('settings.releasesLink') }}</a>
         </p>
         <p class="muted">
-          {{ t('settings.author') }}: 云中江树 ({{ t('settings.wechat') }}: 云中江树) · {{ t('settings.license') }}: CC BY-NC 4.0 ·
-          {{ t('settings.engine') }}: <a href="https://github.com/johnfactotum/foliate-js" target="_blank" rel="noopener">foliate-js</a>
-          / <a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">pdf.js</a>
+          {{ t('settings.author') }}: 云中江树 ({{ t('settings.wechat') }}: 云中江树) · {{ t('settings.license') }}: CC BY-NC 4.0
         </p>
       </div>
     </section>

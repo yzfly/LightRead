@@ -176,7 +176,6 @@ export default {
   'settings.author': '作者',
   'settings.wechat': '微信公众号',
   'settings.license': '开源协议',
-  'settings.engine': '阅读引擎',
   'settings.pickLibraryFolder': '选择书库存储文件夹',
   'settings.useExistingLibrary': '该文件夹已有一个轻阅书库，直接使用它？\n\n{path}',
   'settings.migrateConfirm': '将当前书库复制到该文件夹并切换？\n\n{path}\n\n原位置的数据会保留不动。',
