@@ -446,13 +446,58 @@ function onSectionLoad(e: CustomEvent) {
     settingsOpen.value = false
     activeAnnotation.value = null
   })
-  doc.addEventListener('click', (e: MouseEvent) => onContentClick(e, doc))
+  doc.addEventListener('click', (e: MouseEvent) => {
+    // 触屏轻点已在 touchend 处理过, 吞掉其后的合成 click
+    if (Date.now() < suppressClickUntil) return
+    onContentClick(e.clientX, doc, e.target as Element)
+  })
+
+  // 触屏轻点: 触摸设备上合成 click 与 foliate 的 touch 吸附赛跑, 时有丢失/弹回
+  // (Windows 触屏的"点击翻不动/翻了又弹回")。轻点在 touchend 直接判定并翻页,
+  // 与滑动走同一条触摸管线; 之后的合成 click 一律吞掉。
+  let touchStart: { x: number; y: number; t: number } | null = null
+  doc.addEventListener('touchstart', (e: TouchEvent) => {
+    const t0 = e.changedTouches[0]
+    touchStart = t0 ? { x: t0.clientX, y: t0.clientY, t: Date.now() } : null
+    pointerTs = Date.now()
+  }, { passive: true })
+  // 捕获阶段先于 foliate 的 touchend 监听: 轻点时阻断其"吸附回当前页"动画,
+  // 否则吸附动画与我们的翻页动画并发抢写滚动位置, 随机弹回 (Windows 触屏的病根)
+  doc.addEventListener('touchend', (e: TouchEvent) => {
+    const t0 = e.changedTouches[0]
+    const st = touchStart
+    touchStart = null
+    if (!st || !t0) return
+    // 有位移是滑动, 长按是选字, 都交给原有流程
+    if (Math.abs(t0.clientX - st.x) > 10 || Math.abs(t0.clientY - st.y) > 10) return
+    if (Date.now() - st.t > 350) return
+    e.stopImmediatePropagation()
+    if (panel.value !== 'none' || settingsOpen.value || activeAnnotation.value) {
+      panel.value = 'none'
+      settingsOpen.value = false
+      activeAnnotation.value = null
+    } else {
+      onContentClick(t0.clientX, doc, e.target as Element)
+    }
+    // 吞掉这次轻点随后的合成 click (必须在处理之后设置)
+    suppressClickUntil = Date.now() + 700
+  }, { passive: true, capture: true })
+
+  // 指针/触摸引发的 focusin 会让 foliate 回滚到旧锚点 (表现为翻页弹回), 拦掉;
+  // 键盘 Tab 导航的 focusin 不受影响
+  doc.addEventListener('pointerdown', () => { pointerTs = Date.now() }, true)
+  doc.addEventListener('focusin', (e: FocusEvent) => {
+    if (Date.now() - pointerTs < 1000) e.stopImmediatePropagation()
+  }, true)
 }
+
+let pointerTs = 0
+let suppressClickUntil = 0
 
 // 点正文左/右侧翻页
 let overlayDismissed = false
 
-function onContentClick(e: MouseEvent, doc: Document) {
+function onContentClick(clientX: number, doc: Document, target?: Element | null) {
   if (overlayDismissed) {
     overlayDismissed = false
     return
@@ -468,12 +513,12 @@ function onContentClick(e: MouseEvent, doc: Document) {
   if (selection.value) return
   const sel = doc.getSelection()
   if (sel && !sel.isCollapsed) return
-  if ((e.target as Element)?.closest?.('a[href]')) return
+  if (target?.closest?.('a[href]')) return
   // iframe 内坐标换算到窗口坐标 (分页模式下 iframe 比可视区宽且随翻页平移)
   const frameRect = doc.defaultView?.frameElement?.getBoundingClientRect()
   const contentRect = container.value?.getBoundingClientRect()
   if (!frameRect || !contentRect) return
-  const x = frameRect.left + e.clientX - contentRect.left
+  const x = frameRect.left + clientX - contentRect.left
   if (x < contentRect.width / 3) turnPage('left')
   else if (x > contentRect.width * 2 / 3) turnPage('right')
   // 中间 1/3: 呼出 / 隐藏工具栏 (沉浸式)
