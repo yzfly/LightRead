@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLibrary } from '../stores/library'
 import { importFiles } from '../services/importer'
+import { importFromUrl } from '../services/urlImport'
 import { ACCEPT, SUPPORTED_EXTS } from '../services/format'
 import { toast } from '../services/toast'
 import { formatReadingTime } from '../composables/useReadingTimer'
@@ -108,6 +109,37 @@ async function removeBook(book: BookMeta) {
   if (!confirm(t('library.deleteConfirm', { title: book.title }))) return
   await library.removeBook(book.id)
   toast(t('library.deleted'), 'success')
+}
+
+// ---- URL 导入 ----
+const showUrlModal = ref(false)
+const urlDraft = ref('')
+const urlImporting = ref('')
+
+async function doUrlImport() {
+  const url = urlDraft.value.trim()
+  if (!url || urlImporting.value) return
+  if (!/^https?:\/\//i.test(url)) {
+    toast(t('library.urlInvalid'), 'error')
+    return
+  }
+  urlImporting.value = t('common.connecting')
+  try {
+    const result = await importFromUrl(url, p => {
+      urlImporting.value = p.fraction != null
+        ? t('library.urlDownloading', { pct: (p.fraction * 100).toFixed(0), mb: p.receivedMB })
+        : t('library.urlDownloadingMB', { mb: p.receivedMB })
+    })
+    if (!result.ok) throw new Error(result.error)
+    await library.refresh()
+    showUrlModal.value = false
+    urlDraft.value = ''
+    toast(t('library.importSuccess', { count: 1 }), 'success')
+  } catch (e: any) {
+    toast(t('library.urlImportFailed', { msg: e?.message ?? e }), 'error', 6000)
+  } finally {
+    urlImporting.value = ''
+  }
 }
 
 // ---- 批量管理 ----
@@ -253,6 +285,10 @@ async function batchClearTags() {
       <button v-if="library.books.length" class="btn" :class="{ 'btn-primary': manageMode }" @click="toggleManage">
         {{ manageMode ? t('common.done') : t('library.manage') }}
       </button>
+      <button class="btn" :title="t('library.urlImportTitle')" @click="showUrlModal = true">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10.6 13.4a1 1 0 0 1 0-1.4l2.8-2.83a1 1 0 1 1 1.42 1.41L12 13.4a1 1 0 0 1-1.4 0zm-2.83 4.24a3 3 0 0 1 0-4.24l1.41-1.42A1 1 0 0 0 7.76 10.6l-1.41 1.4a5 5 0 1 0 7.07 7.08l1.41-1.42a1 1 0 1 0-1.41-1.41l-1.41 1.41a3 3 0 0 1-4.25 0zm8.48-4.24a1 1 0 0 0 1.42 1.42l1.41-1.42a5 5 0 1 0-7.07-7.07L10.6 7.74a1 1 0 0 0 1.41 1.42l1.42-1.42a3 3 0 0 1 4.24 4.25l-1.41 1.41z"/></svg>
+        URL
+      </button>
       <button class="btn btn-primary" @click="fileInput?.click()">
         <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M11 13H5a1 1 0 1 1 0-2h6V5a1 1 0 1 1 2 0v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6z"/></svg>
         {{ t('library.import') }}
@@ -328,6 +364,29 @@ async function batchClearTags() {
           <button class="btn btn-sm" @click="batchClearTags">{{ t('library.clearTags') }}</button>
           <button class="btn btn-sm" @click="showTagModal = false">{{ t('common.cancel') }}</button>
           <button class="btn btn-sm btn-primary" :disabled="!tagDraft.trim()" @click="batchTag">{{ t('common.add') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- URL 导入弹窗 -->
+    <div v-if="showUrlModal" class="modal-mask" @click.self="!urlImporting && (showUrlModal = false)">
+      <div class="modal">
+        <h3>{{ t('library.urlImportTitle') }}</h3>
+        <input
+          v-model="urlDraft"
+          class="input"
+          style="width: 100%; margin-top: 12px"
+          :placeholder="t('library.urlPlaceholder')"
+          :disabled="!!urlImporting"
+          @keyup.enter="doUrlImport"
+        />
+        <p class="url-hint">{{ t('library.urlHint') }}</p>
+        <div v-if="urlImporting" class="url-progress">{{ urlImporting }}</div>
+        <div style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px">
+          <button class="btn btn-sm" :disabled="!!urlImporting" @click="showUrlModal = false">{{ t('common.cancel') }}</button>
+          <button class="btn btn-sm btn-primary" :disabled="!urlDraft.trim() || !!urlImporting" @click="doUrlImport">
+            {{ urlImporting ? t('common.loading') : t('library.urlDownloadImport') }}
+          </button>
         </div>
       </div>
     </div>
@@ -466,6 +525,17 @@ async function batchClearTags() {
   font-size: 12px;
   color: var(--text-3);
   white-space: nowrap;
+}
+.url-hint {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 8px;
+  line-height: 1.7;
+}
+.url-progress {
+  font-size: 13px;
+  color: var(--brand);
+  margin-top: 8px;
 }
 .tag-manage-empty {
   color: var(--text-3);
