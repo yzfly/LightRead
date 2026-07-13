@@ -139,3 +139,31 @@ export async function extractParagraphs(page: any): Promise<PaperParagraph[]> {
     .slice(0, 80)
     .map((text, id) => ({ id, text }))
 }
+
+/**
+ * 宽松兜底提取: 严格算法失败或为空时使用。
+ * 只按 y 排序拼行, 再按句号/长度切块 — 只要页面有文字就有结果。
+ */
+export async function extractParagraphsLoose(page: any): Promise<PaperParagraph[]> {
+  const content = await page.getTextContent()
+  const items = (content.items as any[])
+    .filter(i => i.str && String(i.str).trim())
+    .map(i => ({ y: i.transform?.[5] ?? 0, x: i.transform?.[4] ?? 0, str: String(i.str) }))
+  if (!items.length) return []
+  items.sort((a, b) => b.y - a.y || a.x - b.x)
+  const text = items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim()
+  if (!text) return []
+  // 优先按句子切, 聚合到 ~600 字符一块
+  const sentences = text.match(/[^.!?。！？]+[.!?。！？]+["')\]]?\s*/g) ?? [text]
+  const chunks: string[] = []
+  let cur = ''
+  for (const sentence of sentences) {
+    if (cur && cur.length + sentence.length > 600) {
+      chunks.push(cur.trim())
+      cur = ''
+    }
+    cur += sentence
+  }
+  if (cur.trim()) chunks.push(cur.trim())
+  return chunks.slice(0, 60).map((t, id) => ({ id, text: t }))
+}

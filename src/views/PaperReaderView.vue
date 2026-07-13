@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getStorage, type BookMeta } from '../storage'
 import { initPdfjs, pdfAssetOptions } from '../services/importer'
-import { extractParagraphs, type PaperParagraph } from '../services/paperText'
+import { extractParagraphs, extractParagraphsLoose, type PaperParagraph } from '../services/paperText'
 import { translatePage, cachedTranslation } from '../services/paperTranslate'
 import { aiConfigured } from '../services/ai'
 import { useLibrary } from '../stores/library'
@@ -30,6 +30,7 @@ const paragraphs = ref<PaperParagraph[]>([])
 const translations = ref<string[]>([])
 const translating = ref(false)
 const extractError = ref(false)
+const extractErrorMsg = ref('')
 const expanded = ref<Set<number>>(new Set())
 let translateSession = 0
 
@@ -69,13 +70,26 @@ async function renderPage() {
 async function loadParagraphs() {
   if (!pdf) return
   extractError.value = false
+  extractErrorMsg.value = ''
+  let pdfPage: any = null
   try {
-    const pdfPage = await pdf.getPage(page.value)
+    pdfPage = await pdf.getPage(page.value)
     paragraphs.value = await extractParagraphs(pdfPage)
-  } catch {
+  } catch (e: any) {
+    console.error('paragraph extraction failed:', e)
     paragraphs.value = []
-    extractError.value = true
+    extractErrorMsg.value = String(e?.message ?? e).slice(0, 160)
   }
+  // 严格算法无结果时宽松兜底: 只要有文字就切得出块
+  if (!paragraphs.value.length && pdfPage) {
+    try {
+      paragraphs.value = await extractParagraphsLoose(pdfPage)
+    } catch (e: any) {
+      console.error('loose extraction failed:', e)
+      if (!extractErrorMsg.value) extractErrorMsg.value = String(e?.message ?? e).slice(0, 160)
+    }
+  }
+  extractError.value = !paragraphs.value.length
 }
 
 async function runTranslate(force = false) {
@@ -229,7 +243,10 @@ onBeforeUnmount(() => {
             <span>{{ t('paper.translationTitle') }}</span>
             <span v-if="translating" class="pt-busy">{{ t('paper.translating') }}</span>
           </div>
-          <p v-if="extractError || (!paragraphs.length && !loading)" class="pt-empty">{{ t('paper.noText') }}</p>
+          <p v-if="extractError || (!paragraphs.length && !loading)" class="pt-empty">
+            {{ t('paper.noText') }}
+            <span v-if="extractErrorMsg" class="pt-errdetail">{{ extractErrorMsg }}</span>
+          </p>
           <div v-for="p in paragraphs" :key="p.id" class="pt-card">
             <div class="pt-zh">
               <template v-if="translations[p.id]">{{ translations[p.id] }}</template>
@@ -372,6 +389,13 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 400;
   color: var(--brand);
+}
+.pt-errdetail {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--danger, #d54941);
+  word-break: break-all;
 }
 .pt-empty {
   font-size: 13px;
