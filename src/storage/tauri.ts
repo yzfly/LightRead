@@ -30,6 +30,7 @@ interface BookRow {
   has_cover: number
   reading_seconds: number | null
   pinned_at: number | null
+  kind: string | null
 }
 
 const rowToMeta = (r: BookRow): BookMeta => ({
@@ -49,6 +50,7 @@ const rowToMeta = (r: BookRow): BookMeta => ({
   hasCover: !!r.has_cover,
   readingSeconds: r.reading_seconds ?? 0,
   pinnedAt: r.pinned_at ?? undefined,
+  kind: r.kind === 'paper' ? 'paper' : 'book',
 })
 
 const META_COLUMNS: Record<string, string> = {
@@ -63,6 +65,7 @@ const META_COLUMNS: Record<string, string> = {
   source: 'source',
   readingSeconds: 'reading_seconds',
   pinnedAt: 'pinned_at',
+  kind: 'kind',
 }
 
 export class TauriStorage implements LibraryStorage {
@@ -141,6 +144,7 @@ export class TauriStorage implements LibraryStorage {
       "ALTER TABLE annotations ADD COLUMN kind TEXT NOT NULL DEFAULT 'highlight'",
       'ALTER TABLE books ADD COLUMN reading_seconds INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE books ADD COLUMN pinned_at INTEGER',
+      "ALTER TABLE books ADD COLUMN kind TEXT NOT NULL DEFAULT 'book'",
     ]) {
       await this.db.execute(ddl).catch(() => { /* 列已存在 */ })
     }
@@ -196,12 +200,13 @@ export class TauriStorage implements LibraryStorage {
     }
     await this.db.execute(
       `INSERT INTO books (id, title, author, format, file_name, description, language,
-        tags, added_at, last_read_at, location, progress, source, has_cover)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        tags, added_at, last_read_at, location, progress, source, has_cover, kind)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [id, meta.title, meta.author, meta.format, meta.fileName,
         meta.description ?? null, meta.language ?? null, JSON.stringify(meta.tags),
         meta.addedAt, meta.lastReadAt ?? null, meta.location ?? null,
-        meta.progress ?? null, meta.source ?? null, cover ? 1 : 0])
+        meta.progress ?? null, meta.source ?? null, cover ? 1 : 0,
+        meta.kind === 'paper' ? 'paper' : 'book'])
     return id
   }
 

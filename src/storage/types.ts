@@ -26,6 +26,8 @@ export interface BookMeta {
   readingSeconds?: number
   /** 置顶时间戳, 0/缺省为未置顶; 越新越靠前 */
   pinnedAt?: number
+  /** 归属: 藏书 (缺省) / 论文 */
+  kind?: 'book' | 'paper'
 }
 
 export type NewBookMeta = Omit<BookMeta, 'id' | 'hasCover'>

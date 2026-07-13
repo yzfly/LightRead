@@ -141,7 +141,7 @@ async function uniDownloadPub(pub: OpdsPublication, acq: OpdsPublication['acquis
   if (downloading.value.has(acq.href)) return
   downloading.value.add(acq.href)
   try {
-    await downloadToLibrary(pub, acq, sourceTitle)
+    await downloadToLibrary(pub, acq, sourceTitle, undefined, sourceTitle === 'arXiv' ? 'paper' : undefined)
     await library.refresh()
     toast(t('library.importSuccess', { count: 1 }), 'success')
   } catch (e: any) {
@@ -382,7 +382,10 @@ async function download(pub: OpdsPublication, acq: OpdsPublication['acquisitions
   if (downloading.value.has(key)) return
   downloading.value.add(key)
   try {
-    await downloadToLibrary(pub, acq, activeSource.value?.title ?? 'OPDS', sourceAuth())
+    await downloadToLibrary(
+      pub, acq, activeSource.value?.title ?? 'OPDS', sourceAuth(),
+      activeSource.value?.kind === 'arxiv' ? 'paper' : undefined,
+    )
     await library.refresh()
     toast(t('catalog.bookImported', { title: pub.title }), 'success')
   } catch (e: any) {

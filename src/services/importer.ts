@@ -92,6 +92,8 @@ export interface MetaOverrides {
   title?: string
   author?: string
   description?: string
+  /** 归属: 论文入「论文」页 */
+  kind?: 'book' | 'paper'
 }
 
 /** 导入单个文件到藏书库; overrides 来自书源目录的元数据, 优先于文件内嵌信息 */
@@ -150,6 +152,7 @@ export async function importFile(
   if (overrides?.title) meta.title = overrides.title
   if (overrides?.author) meta.author = overrides.author
   if (overrides?.description) meta.description = overrides.description
+  meta.kind = overrides?.kind ?? 'book'
 
   const storage = await getStorage()
   const bookId = await storage.addBook(meta, file, cover)
@@ -161,13 +164,14 @@ export async function importFiles(
   files: Iterable<File>,
   source = '本地导入',
   onProgress?: (done: number, total: number, current: string) => void,
+  overrides?: MetaOverrides,
 ): Promise<ImportResult[]> {
   const list = Array.from(files)
   const results: ImportResult[] = []
   let done = 0
   for (const file of list) {
     onProgress?.(done, list.length, file.name)
-    results.push(await importFile(file, source))
+    results.push(await importFile(file, source, overrides))
     done++
   }
   onProgress?.(done, list.length, '')

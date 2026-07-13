@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useLibrary } from '../stores/library'
 import { importFiles } from '../services/importer'
 import { importFromUrl } from '../services/urlImport'
@@ -12,7 +12,20 @@ import type { BookMeta } from '../storage'
 import { t } from '../i18n'
 
 const router = useRouter()
+const route = useRoute()
 const library = useLibrary()
+
+/** /papers 路由复用本视图, 只显示论文 */
+const paperMode = computed(() => route.meta.kind === 'paper')
+const pageKind = computed<'book' | 'paper'>(() => (paperMode.value ? 'paper' : 'book'))
+
+// 路由切换 (藏书 ↔ 论文) 时重置筛选与选择状态
+watch(paperMode, () => {
+  manageMode.value = false
+  selectedIds.value = new Set()
+  tagFilter.value = ''
+  keyword.value = ''
+})
 
 const keyword = ref('')
 const sortBy = ref<'recent' | 'added' | 'title' | 'author'>('recent')
@@ -31,18 +44,21 @@ const tagDraft = ref('')
 onMounted(() => library.refresh())
 
 const totalReadingTime = computed(() => {
-  const total = library.books.reduce((sum, b) => sum + (b.readingSeconds ?? 0), 0)
+  const total = kindBooks.value.reduce((sum, b) => sum + (b.readingSeconds ?? 0), 0)
   return total >= 60 ? formatReadingTime(total) : ''
 })
 
 const allTags = computed(() => {
   const tags = new Set<string>()
-  for (const book of library.books) for (const t of book.tags) tags.add(t)
+  for (const book of kindBooks.value) for (const t of book.tags) tags.add(t)
   return [...tags].sort((a, b) => a.localeCompare(b, 'zh'))
 })
 
+const kindBooks = computed(() =>
+  library.books.filter(b => (b.kind ?? 'book') === pageKind.value))
+
 const filtered = computed(() => {
-  let list = library.books
+  let list = kindBooks.value
   if (tagFilter.value) list = list.filter(b => b.tags.includes(tagFilter.value))
   const kw = keyword.value.trim().toLowerCase()
   if (kw) {
@@ -78,7 +94,7 @@ async function handleFiles(files: FileList | File[]) {
   importing.value = true
   const results = await importFiles(files, '本地导入', (done, total, current) => {
     importState.value = { done, total, current }
-  })
+  }, { kind: pageKind.value })
   importing.value = false
   await library.refresh()
   const okCount = results.filter(r => r.ok).length
@@ -99,10 +115,11 @@ function onDrop(e: DragEvent) {
 }
 
 function openBook(book: BookMeta) {
-  const route = book.format === 'pdf' ? `/read-pdf/${book.id}`
+  const target = book.format === 'pdf'
+    ? ((book.kind ?? 'book') === 'paper' ? `/read-paper/${book.id}` : `/read-pdf/${book.id}`)
     : book.format === 'djvu' ? `/read-djvu/${book.id}`
       : `/read/${book.id}`
-  router.push(route)
+  router.push(target)
 }
 
 async function removeBook(book: BookMeta) {
@@ -195,6 +212,19 @@ async function togglePin(book: BookMeta) {
   toast(pinnedAt ? t('library.pinned') : t('library.unpinned'), 'success')
 }
 
+async function batchMoveKind() {
+  const target: 'book' | 'paper' = paperMode.value ? 'book' : 'paper'
+  const storage = await (await import('../storage')).getStorage()
+  for (const id of selectedIds.value) {
+    const book = library.books.find(b => b.id === id)
+    if (!book) continue
+    await storage.updateBook(id, { kind: target })
+    book.kind = target
+  }
+  toast(t(target === 'paper' ? 'library.movedToPapers' : 'library.movedToBooks', { count: selectedIds.value.size }), 'success')
+  selectedIds.value = new Set()
+}
+
 async function batchPin(pin: boolean) {
   const storage = await (await import('../storage')).getStorage()
   let stamp = Date.now()
@@ -274,9 +304,9 @@ async function batchClearTags() {
     @click="importMenu = false"
   >
     <header class="toolbar">
-      <h1>{{ t('library.title') }}</h1>
+      <h1>{{ paperMode ? t('nav.papers') : t('library.title') }}</h1>
       <span v-if="library.loaded" class="count">
-        {{ t('library.bookCount', { count: library.books.length }) }}<template v-if="totalReadingTime"> · {{ t('library.totalReading', { time: totalReadingTime }) }}</template>
+        {{ t(paperMode ? 'library.paperCount' : 'library.bookCount', { count: kindBooks.length }) }}<template v-if="totalReadingTime"> · {{ t('library.totalReading', { time: totalReadingTime }) }}</template>
       </span>
       <div class="spacer" />
       <input v-model="keyword" class="input search" type="search" :placeholder="t('library.searchPlaceholder')" />
@@ -286,7 +316,7 @@ async function batchClearTags() {
         <option value="title">{{ t('library.sortTitle') }}</option>
         <option value="author">{{ t('library.sortAuthor') }}</option>
       </select>
-      <button v-if="library.books.length" class="btn" :class="{ 'btn-primary': manageMode }" @click="toggleManage">
+      <button v-if="kindBooks.length" class="btn" :class="{ 'btn-primary': manageMode }" @click="toggleManage">
         {{ manageMode ? t('common.done') : t('library.manage') }}
       </button>
       <div class="import-group">
@@ -330,10 +360,13 @@ async function batchClearTags() {
       </div>
     </div>
 
-    <div v-if="library.loaded && !library.books.length" class="empty">
-      <div class="empty-icon">📚</div>
-      <p>{{ t('library.emptyTitle') }}</p>
-      <p class="hint">{{ t('library.emptyHint') }}<br />{{ t('library.supportedFormats', { formats: SUPPORTED_EXTS.join(' / ') }) }}</p>
+    <div v-if="library.loaded && !kindBooks.length" class="empty">
+      <div class="empty-icon">{{ paperMode ? '🎓' : '📚' }}</div>
+      <p>{{ t(paperMode ? 'library.papersEmptyTitle' : 'library.emptyTitle') }}</p>
+      <p class="hint">
+        <template v-if="paperMode">{{ t('library.papersEmptyHint') }}</template>
+        <template v-else>{{ t('library.emptyHint') }}<br />{{ t('library.supportedFormats', { formats: SUPPORTED_EXTS.join(' / ') }) }}</template>
+      </p>
     </div>
 
     <div v-else class="grid">
@@ -356,6 +389,9 @@ async function batchClearTags() {
       <span class="batch-count">{{ t('library.selectedCount', { count: selectedIds.size }) }}</span>
       <button class="btn btn-sm" @click="selectAll">
         {{ selectedIds.size === filtered.length && filtered.length ? t('library.deselectAll') : t('library.selectAll') }}
+      </button>
+      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchMoveKind">
+        {{ paperMode ? t('library.moveToBooks') : t('library.moveToPapers') }}
       </button>
       <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPin(true)">{{ t('library.pin') }}</button>
       <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPin(false)">{{ t('library.unpin') }}</button>

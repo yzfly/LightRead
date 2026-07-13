@@ -151,6 +151,7 @@ export async function downloadToLibrary(
   acq: OpdsPublication['acquisitions'][number],
   sourceTitle: string,
   auth?: RequestAuth,
+  kind?: 'book' | 'paper',
 ) {
   const { blob, contentType } = await fetchBlob(acq.href, auth)
   // 从 URL 或 MIME 推断文件名
@@ -164,6 +165,7 @@ export async function downloadToLibrary(
     title: pub.title,
     author: pub.author,
     description: pub.summary,
+    kind,
   })
   if (!result.ok) throw new Error(result.error)
   return result
