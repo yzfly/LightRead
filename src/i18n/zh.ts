@@ -384,7 +384,7 @@ export default {
   'settings.aiFreeTag': ' (有免费模型)',
   'settings.aiModelPh': '模型, 如 Qwen/Qwen2.5-7B-Instruct',
   'settings.aiKeyPh': 'API Key (本地模型可留空)',
-  'settings.aiTest': '测试对话',
+  'settings.aiTest': '测试连接',
   'settings.aiTestOk': '连接正常 ({ms} ms): {reply}',
   'settings.aiGetKey': '获取 API Key →',
   'ai.step1': '注册硅基流动 (内有免费模型)',

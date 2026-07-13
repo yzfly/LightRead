@@ -384,7 +384,7 @@ export default {
   'settings.aiFreeTag': ' (free models)',
   'settings.aiModelPh': 'Model, e.g. Qwen/Qwen2.5-7B-Instruct',
   'settings.aiKeyPh': 'API Key (empty for local models)',
-  'settings.aiTest': 'Test Chat',
+  'settings.aiTest': 'Test Connection',
   'settings.aiTestOk': 'Connected ({ms} ms): {reply}',
   'settings.aiGetKey': 'Get API Key →',
   'ai.step1': 'Sign up for SiliconFlow (offers free models)',
