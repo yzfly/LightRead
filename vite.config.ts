@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 import { readFileSync } from 'node:fs'
 
-import { cloudflare } from "@cloudflare/vite-plugin";
+import { cloudflare } from '@cloudflare/vite-plugin'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
 
@@ -49,7 +49,9 @@ export default defineConfig({
         { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
       ],
     },
-  }), cloudflare()],
+  }),
+  // Cloudflare 插件仅用于网页版部署; Tauri 桌面构建不加载 (且其要求 Node ≥22.15)
+  ...(process.env.TAURI_ENV_PLATFORM ? [] : [cloudflare()])],
   build: {
     target: 'esnext',
     chunkSizeWarningLimit: 2048,
