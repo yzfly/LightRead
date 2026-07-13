@@ -437,7 +437,7 @@ async function doImport(e: Event) {
       <div class="ai-grid">
         <select v-model="settings.aiProvider" class="input" @change="onAiProviderChange">
           <option v-for="p in AI_PROVIDERS" :key="p.id" :value="p.id">
-            {{ p.label }}{{ p.id === 'siliconflow' || p.id === 'zhipu' ? t('settings.aiFreeTag') : '' }}
+            {{ p.label }}{{ p.id === 'trial' ? t('settings.aiTrialTag') : p.id === 'siliconflow' || p.id === 'zhipu' ? t('settings.aiFreeTag') : '' }}
           </option>
         </select>
         <input v-model="settings.aiModel" class="input" :placeholder="t('settings.aiModelPh')" />

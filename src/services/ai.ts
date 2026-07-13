@@ -20,7 +20,17 @@ export interface AiProviderPreset {
   docsUrl?: string
 }
 
+/** 内置试用通道 (Cloudflare Worker 中转, 密钥在服务端): 开箱即用, 有限速 */
+export const TRIAL_BASE_URL = 'https://lightread-ai.lightread.workers.dev/v1'
+
 export const AI_PROVIDERS: AiProviderPreset[] = [
+  {
+    id: 'trial',
+    label: '内置试用通道',
+    baseUrl: TRIAL_BASE_URL,
+    defaultModel: 'Qwen/Qwen2.5-7B-Instruct',
+    needsKey: false,
+  },
   {
     id: 'siliconflow',
     label: '硅基流动 SiliconFlow',
@@ -85,6 +95,17 @@ export interface AiMessage {
   content: string
 }
 
+/** 匿名设备标识: 首启生成随机 id, 仅用于试用通道按设备限额, 不含任何个人信息 */
+function deviceId(): string {
+  const KEY = 'lightread-device-id'
+  let id = localStorage.getItem(KEY)
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem(KEY, id)
+  }
+  return id
+}
+
 /** AI 是否已完成必要配置 */
 export function aiConfigured(): boolean {
   const s = useSettings()
@@ -107,6 +128,8 @@ export async function* chatStream(messages: AiMessage[]): AsyncGenerator<string>
       'content-type': 'application/json',
       accept: 'text/event-stream, application/json',
       ...(s.aiApiKey.trim() ? { authorization: `Bearer ${s.aiApiKey.trim()}` } : {}),
+      // 试用通道: 携带匿名设备标识用于每日配额
+      ...(s.aiBaseUrl.startsWith(TRIAL_BASE_URL) ? { 'x-device-id': deviceId() } : {}),
     },
     body: JSON.stringify({
       model: s.aiModel.trim(),

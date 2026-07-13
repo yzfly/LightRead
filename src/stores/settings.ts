@@ -24,7 +24,7 @@ export interface PdfPrefs {
 }
 
 /** 结构版本: 修正历史默认值时递增 */
-const SETTINGS_VERSION = 4
+const SETTINGS_VERSION = 5
 
 /** v3 时代曾并入用户设置的内置书库 (v4 起社区清单独立远程拉取, 此表仅供迁移清理) */
 const BUILTIN_BOOK_REPOS = [
@@ -113,8 +113,8 @@ const defaults: SettingsState = {
   httpProxy: '',
   calibrePath: '',
   libraryRoot: '',
-  aiProvider: 'siliconflow',
-  aiBaseUrl: 'https://api.siliconflow.cn/v1',
+  aiProvider: 'trial',
+  aiBaseUrl: 'https://lightread-ai.lightread.workers.dev/v1',
   aiApiKey: '',
   aiModel: 'Qwen/Qwen2.5-7B-Instruct',
   webdavUrl: '',
@@ -144,6 +144,15 @@ function load(): SettingsState {
       merged.githubBookRepos = (saved.githubBookRepos ?? []).filter(
         (r: string) => !BUILTIN_BOOK_REPOS.includes(r),
       )
+    }
+    // v5: AI 默认走内置试用通道; 仅迁移从未配置过 Key 的默认状态,
+    // 用户自行配置过的服务商保持不动
+    if ((saved.version ?? 1) < 5) {
+      if (!saved.aiApiKey && (!saved.aiProvider || saved.aiProvider === 'siliconflow')) {
+        merged.aiProvider = 'trial'
+        merged.aiBaseUrl = 'https://lightread-ai.lightread.workers.dev/v1'
+        merged.aiModel = 'Qwen/Qwen2.5-7B-Instruct'
+      }
     }
     merged.version = SETTINGS_VERSION
     return merged

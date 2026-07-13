@@ -3,3 +3,13 @@ main = "src/index.js"
 compatibility_date = "2026-07-01"
 
 # 密钥不入库: npx wrangler secret put SILICONFLOW_KEY
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lightread-usage"
+database_id = "791a5d67-c5b5-4c1d-99b1-818550a880b8"
+
+[vars]
+# 每日配额 (设备 / IP 两个维度, 超出返回 429)
+DEVICE_DAILY_QUOTA = "120"
+IP_DAILY_QUOTA = "300"

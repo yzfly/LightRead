@@ -392,4 +392,5 @@ export default {
   'ai.step3': 'Paste it in Settings → AI Assistant — done',
   'ai.register': 'Sign up free →',
   'ai.setupAlt': 'Zhipu / Qwen / Kimi / Doubao / local Ollama / any OpenAI-compatible endpoint also work.',
+  'settings.aiTrialTag': ' (works out of the box, rate-limited)',
 } as Record<string, string>

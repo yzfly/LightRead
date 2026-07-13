@@ -392,4 +392,5 @@ export default {
   'ai.step3': '回到「设置 → AI 助手」粘贴 Key, 即刻可用',
   'ai.register': '免费注册 →',
   'ai.setupAlt': '也支持智谱 / 千问 / Kimi / 豆包 / 本地 Ollama / 任意 OpenAI 兼容接口。',
+  'settings.aiTrialTag': ' (开箱即用 · 限速)',
 } as Record<string, string>
