@@ -1,7 +1,7 @@
 /**
  * LightRead AI 试用通道中转 (Cloudflare Worker)
  *
- * 应用 → 本 Worker → 硅基流动。API Key 只存在 Worker 的环境变量里,
+ * 应用 → 本 Worker → 智谱 (GLM Flash 免费系)。API Key 只存在 Worker 的环境变量里,
  * 客户端不含任何密钥。防线 (由外向内):
  *  1. 免费模型白名单 — 被刷也不产生费用
  *  2. 每 IP 每分钟限速 (isolate 内存滑动窗口)
@@ -9,23 +9,18 @@
  *  4. max_tokens 与上下文长度上限
  *
  * 部署: cd relay && npx wrangler deploy
- * 配置密钥: npx wrangler secret put SILICONFLOW_KEY
+ * 配置密钥: npx wrangler secret put UPSTREAM_KEY  (智谱 API Key)
  * 建表 (一次): npx wrangler d1 execute lightread-usage --remote --file schema.sql
  */
 
-const UPSTREAM = 'https://api.siliconflow.cn/v1/chat/completions'
+const UPSTREAM_BASE = 'https://open.bigmodel.cn/api/paas/v4'
+const UPSTREAM = UPSTREAM_BASE + '/chat/completions'
 
-/** 硅基流动免费模型白名单 */
+/** 智谱免费 Flash 系模型白名单 */
 const FREE_MODELS = new Set([
-  'Qwen/Qwen3.5-9B',
-  'Qwen/Qwen3.5-4B',
-  'Qwen/Qwen3-8B',
-  'THUDM/GLM-4-9B-0414',
-  'THUDM/GLM-Z1-9B-0414',
-  'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
-  'tencent/Hunyuan-MT-7B',
-  'inclusionAI/Ling-mini-2.0',
-  'Qwen/Qwen2.5-7B-Instruct',
+  'glm-4.7-flash',
+  'glm-4.5-flash',
+  'glm-4-flash',
 ])
 
 const MAX_TOKENS = 1024
@@ -82,9 +77,9 @@ export default {
     const url = new URL(request.url)
     // 模型列表透传 (公开信息, 便于诊断与选型)
     if (request.method === 'GET' && url.pathname.endsWith('/models')) {
-      if (!env.SILICONFLOW_KEY) return err(503, 'not configured')
-      const upstream = await fetch('https://api.siliconflow.cn/v1/models', {
-        headers: { authorization: `Bearer ${env.SILICONFLOW_KEY}` },
+      if (!env.UPSTREAM_KEY) return err(503, 'not configured')
+      const upstream = await fetch(UPSTREAM_BASE + '/models', {
+        headers: { authorization: `Bearer ${env.UPSTREAM_KEY}` },
       })
       const headers = new Headers(CORS)
       headers.set('content-type', 'application/json')
@@ -93,13 +88,13 @@ export default {
     if (request.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) {
       return err(404, 'not found')
     }
-    if (!env.SILICONFLOW_KEY) {
+    if (!env.UPSTREAM_KEY) {
       return err(503, '试用通道尚未配置, 请在设置中填入自己的 API Key')
     }
 
     const ip = request.headers.get('cf-connecting-ip') ?? 'unknown'
     if (rateLimited(ip)) {
-      return err(429, '试用通道限速 (每分钟 10 次)。稍后再试, 或在「设置 → AI 助手」填入自己的免费 Key 不限速。')
+      return err(429, '试用通道限速 (每分钟 10 次)。稍后再试, 或在「设置 → AI 助手」填入自己的 Key 不限速。')
     }
 
     // 匿名设备标识: 应用首启生成的随机 id, 无任何个人信息
@@ -116,7 +111,7 @@ export default {
         bumpUsage(env.DB, day, 'i', ip),
       ])
       if (deviceCount > deviceQuota || ipCount > ipQuota) {
-        return err(429, '今日试用额度已用完。明天再来, 或在「设置 → AI 助手」免费注册硅基流动填入自己的 Key (不限额)。')
+        return err(429, '今日试用额度已用完。明天再来, 或在「设置 → AI 助手」填入自己的 Key (不限额)。')
       }
       // 偶发清理过期计数 (~1% 请求触发)
       if (Math.random() < 0.01) {
@@ -145,7 +140,7 @@ export default {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${env.SILICONFLOW_KEY}`,
+        authorization: `Bearer ${env.UPSTREAM_KEY}`,
       },
       body: JSON.stringify(body),
     })

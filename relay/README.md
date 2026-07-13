@@ -1,6 +1,6 @@
 # LightRead AI 试用通道中转
 
-Cloudflare Worker：应用 → 本 Worker → 硅基流动。API Key 只存在 Worker 环境变量，客户端零密钥。
+Cloudflare Worker：应用 → 本 Worker → 智谱 (GLM Flash 免费系)。API Key 只存在 Worker 环境变量，客户端零密钥。
 
 ## 防线
 
@@ -14,7 +14,7 @@ Cloudflare Worker：应用 → 本 Worker → 硅基流动。API Key 只存在 W
 cd relay
 npx wrangler login          # 浏览器授权 Cloudflare 账号
 npx wrangler deploy         # 部署, 输出 workers.dev 地址
-npx wrangler secret put SILICONFLOW_KEY   # 粘贴硅基流动 API Key (建议专用小号)
+npx wrangler secret put UPSTREAM_KEY      # 粘贴智谱 API Key (建议专用小号)
 ```
 
 之后轮换 Key 只需重跑第三条命令；改代码后重跑 `npx wrangler deploy`。

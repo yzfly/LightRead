@@ -31,3 +31,10 @@ dev-dist
 
 # PDF 兼容性语料库 (本地下载, 不入库)
 .corpus
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example

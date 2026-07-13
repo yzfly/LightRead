@@ -28,7 +28,7 @@ export const AI_PROVIDERS: AiProviderPreset[] = [
     id: 'trial',
     label: '内置试用通道',
     baseUrl: TRIAL_BASE_URL,
-    defaultModel: 'Qwen/Qwen2.5-7B-Instruct',
+    defaultModel: 'glm-4.7-flash',
     needsKey: false,
   },
   {

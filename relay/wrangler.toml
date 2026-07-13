@@ -2,7 +2,7 @@ name = "lightread-ai"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
 
-# 密钥不入库: npx wrangler secret put SILICONFLOW_KEY
+# 密钥不入库: npx wrangler secret put UPSTREAM_KEY  (智谱 API Key)
 
 [[d1_databases]]
 binding = "DB"
