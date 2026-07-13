@@ -376,7 +376,7 @@ export default {
   'ai.clear': 'Clear',
   'ai.emptyReply': '(empty reply)',
   'ai.requestFailed': 'Request failed',
-  'ai.setupHint': 'No AI model configured yet. Go to Settings → AI Assistant and pick a provider (SiliconFlow / Zhipu offer free models; local Ollama and any OpenAI-compatible endpoint work too).',
+  'ai.setupHint': 'Get a free AI model in 30 seconds:',
   'ai.goSettings': 'Open Settings',
   'settings.aiTitle': 'AI Assistant',
   'settings.aiProvider': 'Model provider',
@@ -387,4 +387,9 @@ export default {
   'settings.aiTest': 'Test Chat',
   'settings.aiTestOk': 'Connected ({ms} ms): {reply}',
   'settings.aiGetKey': 'Get API Key →',
+  'ai.step1': 'Sign up for SiliconFlow (free; the referral gives both sides bonus tokens)',
+  'ai.step2': 'Create an API key in the console and copy it',
+  'ai.step3': 'Paste it in Settings → AI Assistant — done',
+  'ai.register': 'Sign up free →',
+  'ai.setupAlt': 'Zhipu / Qwen / Kimi / Doubao / local Ollama / any OpenAI-compatible endpoint also work.',
 } as Record<string, string>

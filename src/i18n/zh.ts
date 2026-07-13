@@ -376,7 +376,7 @@ export default {
   'ai.clear': '清空对话',
   'ai.emptyReply': '(无回复内容)',
   'ai.requestFailed': '请求失败',
-  'ai.setupHint': '还没有配置 AI 模型。到「设置 → AI 助手」选择一个服务商 (硅基流动 / 智谱有免费模型, 也支持本地 Ollama 或任意 OpenAI 兼容接口), 填好即可使用。',
+  'ai.setupHint': '30 秒接入免费 AI 模型:',
   'ai.goSettings': '去设置',
   'settings.aiTitle': 'AI 助手',
   'settings.aiProvider': '模型服务',
@@ -387,4 +387,9 @@ export default {
   'settings.aiTest': '测试对话',
   'settings.aiTestOk': '连接正常 ({ms} ms): {reply}',
   'settings.aiGetKey': '获取 API Key →',
+  'ai.step1': '免费注册硅基流动 (邀请注册, 双方都送大额免费 token)',
+  'ai.step2': '控制台创建 API Key 并复制',
+  'ai.step3': '回到「设置 → AI 助手」粘贴 Key, 即刻可用',
+  'ai.register': '免费注册 →',
+  'ai.setupAlt': '也支持智谱 / 千问 / Kimi / 豆包 / 本地 Ollama / 任意 OpenAI 兼容接口。',
 } as Record<string, string>

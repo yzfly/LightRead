@@ -188,6 +188,11 @@ function aiExplainSelection() {
   sendAi(explainPrompt(text, settings.language))
 }
 
+async function openRegister() {
+  const { openDownload } = await import('../services/updater')
+  openDownload('https://cloud.siliconflow.cn/i/TxUlXG3u')
+}
+
 function clearAi() {
   aiSession++
   aiStreaming.value = false
@@ -1104,7 +1109,16 @@ onBeforeUnmount(() => {
         <h3>✨ {{ t('ai.title') }}</h3>
         <div v-if="!aiReady()" class="ai-setup">
           <p>{{ t('ai.setupHint') }}</p>
-          <button class="btn btn-sm btn-primary" @click="router.push('/settings')">{{ t('ai.goSettings') }}</button>
+          <ol class="ai-steps">
+            <li>{{ t('ai.step1') }}</li>
+            <li>{{ t('ai.step2') }}</li>
+            <li>{{ t('ai.step3') }}</li>
+          </ol>
+          <div class="ai-setup-actions">
+            <button class="btn btn-sm btn-primary" @click="openRegister">{{ t('ai.register') }}</button>
+            <button class="btn btn-sm" @click="router.push('/settings')">{{ t('ai.goSettings') }}</button>
+          </div>
+          <p class="ai-setup-alt">{{ t('ai.setupAlt') }}</p>
         </div>
         <template v-else>
           <div ref="aiListEl" class="panel-body ai-list">
@@ -1670,6 +1684,22 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 10px;
   align-items: flex-start;
+}
+.ai-steps {
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.ai-setup-actions {
+  display: flex;
+  gap: 8px;
+}
+.ai-setup-alt {
+  font-size: 12px;
+  color: var(--text-3);
 }
 .ai-list {
   display: flex;
