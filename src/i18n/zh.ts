@@ -410,4 +410,11 @@ export default {
   'paper.hideOriginal': '原文 ▴',
   'paper.noText': '本页没有可提取的文本 (可能是扫描版或纯图页)。',
   'paper.setupHint': '配置 AI 模型后, 这里将显示逐段中文翻译。硅基流动 / 智谱等有免费模型。',
+  'library.searchPapersPlaceholder': '搜索论文 / 作者 / 标签',
+  'library.importPapers': '导入论文',
+  'library.sortPaperTitle': '标题',
+  'library.dropHintPapers': '松开导入论文',
+  'library.importPapersSuccess': '成功导入 {count} 篇论文',
+  'library.deletePaperConfirm': '确定从论文中删除《{title}》吗？文件将一并移除。',
+  'library.batchDeletePapersConfirm': '确定删除选中的 {count} 篇论文吗？文件将一并移除。',
 } as Record<string, string>

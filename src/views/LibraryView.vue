@@ -99,7 +99,7 @@ async function handleFiles(files: FileList | File[]) {
   await library.refresh()
   const okCount = results.filter(r => r.ok).length
   const failed = results.filter(r => !r.ok)
-  if (okCount) toast(t('library.importSuccess', { count: okCount }), 'success')
+  if (okCount) toast(t(paperMode.value ? 'library.importPapersSuccess' : 'library.importSuccess', { count: okCount }), 'success')
   for (const f of failed) toast(`${f.fileName}: ${f.error}`, 'error', 5000)
 }
 
@@ -123,7 +123,7 @@ function openBook(book: BookMeta) {
 }
 
 async function removeBook(book: BookMeta) {
-  if (!confirm(t('library.deleteConfirm', { title: book.title }))) return
+  if (!confirm(t(paperMode.value ? 'library.deletePaperConfirm' : 'library.deleteConfirm', { title: book.title }))) return
   await library.removeBook(book.id)
   toast(t('library.deleted'), 'success')
 }
@@ -183,7 +183,7 @@ function selectAll() {
 
 async function batchDelete() {
   const count = selectedIds.value.size
-  if (!count || !confirm(t('library.batchDeleteConfirm', { count }))) return
+  if (!count || !confirm(t(paperMode.value ? 'library.batchDeletePapersConfirm' : 'library.batchDeleteConfirm', { count }))) return
   for (const id of selectedIds.value) await library.removeBook(id)
   selectedIds.value = new Set()
   toast(t('library.batchDeleted', { count }), 'success')
@@ -309,11 +309,11 @@ async function batchClearTags() {
         {{ t(paperMode ? 'library.paperCount' : 'library.bookCount', { count: kindBooks.length }) }}<template v-if="totalReadingTime"> · {{ t('library.totalReading', { time: totalReadingTime }) }}</template>
       </span>
       <div class="spacer" />
-      <input v-model="keyword" class="input search" type="search" :placeholder="t('library.searchPlaceholder')" />
+      <input v-model="keyword" class="input search" type="search" :placeholder="t(paperMode ? 'library.searchPapersPlaceholder' : 'library.searchPlaceholder')" />
       <select v-model="sortBy" class="input">
         <option value="recent">{{ t('library.sortRecent') }}</option>
         <option value="added">{{ t('library.sortAdded') }}</option>
-        <option value="title">{{ t('library.sortTitle') }}</option>
+        <option value="title">{{ t(paperMode ? 'library.sortPaperTitle' : 'library.sortTitle') }}</option>
         <option value="author">{{ t('library.sortAuthor') }}</option>
       </select>
       <button v-if="kindBooks.length" class="btn" :class="{ 'btn-primary': manageMode }" @click="toggleManage">
@@ -322,7 +322,7 @@ async function batchClearTags() {
       <div class="import-group">
         <button class="btn btn-primary import-main" @click="fileInput?.click()">
           <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M11 13H5a1 1 0 1 1 0-2h6V5a1 1 0 1 1 2 0v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6z"/></svg>
-          {{ t('library.import') }}
+          {{ t(paperMode ? 'library.importPapers' : 'library.import') }}
         </button>
         <button class="btn btn-primary import-caret" :title="t('library.moreImport')" @click.stop="importMenu = !importMenu">
           <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M5.3 9.3a1 1 0 0 1 1.4 0l5.3 5.29 5.3-5.3a1 1 0 1 1 1.4 1.42l-6 6a1 1 0 0 1-1.4 0l-6-6a1 1 0 0 1 0-1.42z"/></svg>
@@ -459,7 +459,7 @@ async function batchClearTags() {
       </div>
     </div>
 
-    <div v-if="dragging" class="drop-hint">{{ t('library.dropHint') }}</div>
+    <div v-if="dragging" class="drop-hint">{{ t(paperMode ? 'library.dropHintPapers' : 'library.dropHint') }}</div>
   </div>
 </template>
 

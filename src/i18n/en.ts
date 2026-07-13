@@ -410,4 +410,11 @@ export default {
   'paper.hideOriginal': 'Original ▴',
   'paper.noText': 'No extractable text on this page (scanned or image-only).',
   'paper.setupHint': 'Configure an AI model to see paragraph-by-paragraph translation here. SiliconFlow / Zhipu offer free models.',
+  'library.searchPapersPlaceholder': 'Search papers / authors / tags',
+  'library.importPapers': 'Import Papers',
+  'library.sortPaperTitle': 'Title',
+  'library.dropHintPapers': 'Drop to import papers',
+  'library.importPapersSuccess': 'Imported {count} papers',
+  'library.deletePaperConfirm': 'Delete "{title}" from Papers? The file will be removed too.',
+  'library.batchDeletePapersConfirm': 'Delete {count} selected papers? Files will be removed too.',
 } as Record<string, string>
