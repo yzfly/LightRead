@@ -17,10 +17,15 @@ const UPSTREAM = 'https://api.siliconflow.cn/v1/chat/completions'
 
 /** 硅基流动免费模型白名单 */
 const FREE_MODELS = new Set([
+  'Qwen/Qwen3.5-9B',
+  'Qwen/Qwen3.5-4B',
+  'Qwen/Qwen3-8B',
+  'THUDM/GLM-4-9B-0414',
+  'THUDM/GLM-Z1-9B-0414',
+  'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B',
+  'tencent/Hunyuan-MT-7B',
+  'inclusionAI/Ling-mini-2.0',
   'Qwen/Qwen2.5-7B-Instruct',
-  'Qwen/Qwen2-7B-Instruct',
-  'THUDM/glm-4-9b-chat',
-  'internlm/internlm2_5-7b-chat',
 ])
 
 const MAX_TOKENS = 1024
@@ -75,6 +80,16 @@ export default {
       return new Response(null, { status: 204, headers: CORS })
     }
     const url = new URL(request.url)
+    // 模型列表透传 (公开信息, 便于诊断与选型)
+    if (request.method === 'GET' && url.pathname.endsWith('/models')) {
+      if (!env.SILICONFLOW_KEY) return err(503, 'not configured')
+      const upstream = await fetch('https://api.siliconflow.cn/v1/models', {
+        headers: { authorization: `Bearer ${env.SILICONFLOW_KEY}` },
+      })
+      const headers = new Headers(CORS)
+      headers.set('content-type', 'application/json')
+      return new Response(upstream.body, { status: upstream.status, headers })
+    }
     if (request.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) {
       return err(404, 'not found')
     }
