@@ -27,7 +27,7 @@ export const AI_PROVIDERS: AiProviderPreset[] = [
     baseUrl: 'https://api.siliconflow.cn/v1',
     defaultModel: 'Qwen/Qwen2.5-7B-Instruct',
     needsKey: true,
-    docsUrl: 'https://cloud.siliconflow.cn/account/ak',
+    docsUrl: 'https://cloud.siliconflow.cn/i/TxUlXG3u',
   },
   {
     id: 'zhipu',
@@ -36,6 +36,22 @@ export const AI_PROVIDERS: AiProviderPreset[] = [
     defaultModel: 'glm-4-flash',
     needsKey: true,
     docsUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
+  },
+  {
+    id: 'qwen',
+    label: '阿里云千问 (百炼)',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    defaultModel: 'qwen-plus',
+    needsKey: true,
+    docsUrl: 'https://bailian.console.aliyun.com/?apiKey=1',
+  },
+  {
+    id: 'kimi',
+    label: 'Kimi (月之暗面)',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    defaultModel: 'moonshot-v1-8k',
+    needsKey: true,
+    docsUrl: 'https://platform.moonshot.cn/console/api-keys',
   },
   {
     id: 'doubao',
