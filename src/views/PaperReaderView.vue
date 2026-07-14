@@ -274,18 +274,31 @@ async function loadParagraphs() {
   extractError.value = !paragraphs.value.length
 }
 
-/** 打开/翻页只回填缓存 (零成本), 网络翻译由用户点击触发 */
-function loadCachedTranslation() {
-  translateSession++
-  translating.value = false
-  const paras = paragraphs.value.map(p => p.text)
-  translations.value = new Array(paras.length).fill('')
-  if (!paras.length) return
-  const cached = cachedTranslation(bookId, page.value, paras.length)
-  if (cached) translations.value = cached
-}
+/** 翻译面板开关: 打开论文默认纯 PDF 阅读, 点「翻译」才展开右栏 */
+const translateOpen = ref(false)
 
 const hasAnyTranslation = computed(() => translations.value.some(Boolean))
+
+async function openTranslate() {
+  translateOpen.value = true
+  await nextTick()
+  // 面板挂载后左栏变窄, 重排原文页
+  renderPage()
+  await loadParagraphs()
+  await nextTick()
+  renderMirror()
+  runTranslate()
+}
+
+function closeTranslate() {
+  cancelTranslate()
+  translateOpen.value = false
+  nextTick(renderPage)
+}
+// 右栏条件渲染, 出现时才纳入尺寸观察
+watch(translateOpen, open => {
+  if (open) nextTick(() => rightPane.value && resizeObserver?.observe(rightPane.value))
+})
 
 function cancelTranslate() {
   translateSession++
@@ -296,7 +309,7 @@ async function runTranslate(force = false) {
   const session = ++translateSession
   const paras = paragraphs.value.map(p => p.text)
   translations.value = new Array(paras.length).fill('')
-  if (!paras.length || !aiReady.value) return
+  if (!paras.length) return
   if (!force) {
     const cached = cachedTranslation(bookId, page.value, paras.length)
     if (cached) {
@@ -304,6 +317,7 @@ async function runTranslate(force = false) {
       return
     }
   }
+  if (!aiReady.value) return
   translating.value = true
   try {
     await translatePage(
@@ -331,10 +345,13 @@ async function showPage(n: number) {
   expanded.value = new Set()
   showOrig.value = new Set()
   rightPane.value?.scrollTo({ top: 0 })
-  await Promise.all([renderPage(), loadParagraphs()])
-  loadCachedTranslation()
-  await nextTick()
-  renderMirror()
+  await Promise.all([renderPage(), translateOpen.value ? loadParagraphs() : Promise.resolve()])
+  if (translateOpen.value) {
+    await nextTick()
+    renderMirror()
+    // 翻译模式开启期间翻页自动跟随 (缓存优先)
+    runTranslate()
+  }
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
     library.saveProgress(bookId, String(page.value), pageCount.value ? page.value / pageCount.value : 0)
@@ -455,7 +472,6 @@ onMounted(async () => {
       renderMirror()
     })
     if (leftPane.value) resizeObserver.observe(leftPane.value)
-    if (rightPane.value) resizeObserver.observe(rightPane.value)
   } catch (e: any) {
     console.error(e)
     error.value = e?.message ?? t('reader.cantOpenPdf')
@@ -495,17 +511,11 @@ onBeforeUnmount(() => {
         <button class="icon-btn" :title="t('reader.nextPage')" :disabled="page >= pageCount" @click="nextPage">
           <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M9.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 0 1-1.4-1.4l5.29-5.3-5.3-5.3a1 1 0 0 1 0-1.4z"/></svg>
         </button>
-        <button v-if="translating" class="btn btn-sm" @click="cancelTranslate">
-          {{ t('paper.cancelTranslate') }}
+        <button v-if="!translateOpen" class="btn btn-sm btn-primary" :disabled="!pageCount" @click="openTranslate">
+          {{ t('paper.openTranslate') }}
         </button>
-        <button
-          v-else
-          class="btn btn-sm"
-          :class="{ 'btn-primary': !hasAnyTranslation }"
-          :disabled="!paragraphs.length || !aiReady"
-          @click="runTranslate(hasAnyTranslation)"
-        >
-          {{ hasAnyTranslation ? t('paper.retranslate') : t('paper.translatePage') }}
+        <button v-else class="btn btn-sm" @click="closeTranslate">
+          {{ t('paper.closeTranslate') }}
         </button>
         <button v-if="bdSupported" class="btn btn-sm" :title="t('paper.bdTooltip')" @click="openBabeldoc">
           {{ t('paper.bdButton') }}
@@ -593,8 +603,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- 右: AI 中文翻译 (版式对照 / 段落列表) -->
-      <div ref="rightPane" class="pane pane-right">
+      <!-- 右: AI 中文翻译 (版式对照 / 段落列表), 点「翻译」才展开 -->
+      <div v-if="translateOpen" ref="rightPane" class="pane pane-right">
         <div v-if="!aiReady" class="pt-setup">
           <p>{{ t('paper.setupHint') }}</p>
           <button class="btn btn-sm btn-primary" @click="router.push('/settings')">{{ t('ai.goSettings') }}</button>
@@ -606,6 +616,8 @@ onBeforeUnmount(() => {
               <button :class="{ active: viewMode === 'mirror' }" @click="setMode('mirror')">{{ t('paper.viewMirror') }}</button>
               <button :class="{ active: viewMode === 'cards' }" @click="setMode('cards')">{{ t('paper.viewCards') }}</button>
             </span>
+            <button v-if="translating" class="pt-act" @click="cancelTranslate">{{ t('paper.cancelTranslate') }}</button>
+            <button v-else class="pt-act" :disabled="!paragraphs.length" @click="runTranslate(true)">{{ t('paper.retranslate') }}</button>
             <span v-if="translating" class="pt-busy">{{ t('paper.translating') }}</span>
           </div>
           <p v-if="extractError || (!paragraphs.length && !loading)" class="pt-empty">
@@ -830,6 +842,17 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 400;
   color: var(--brand);
+}
+.pt-act {
+  border: none;
+  background: none;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 400;
+  padding: 2px 4px;
+}
+.pt-act:disabled {
+  opacity: 0.4;
 }
 .pt-errdetail {
   display: block;

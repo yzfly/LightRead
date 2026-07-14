@@ -408,6 +408,8 @@ export default {
   'paper.translateFailed': 'Translation failed',
   'paper.showOriginal': 'Original ▾',
   'paper.hideOriginal': 'Original ▴',
+  'paper.openTranslate': 'Translate',
+  'paper.closeTranslate': 'Close translation',
   'paper.translatePage': 'Translate page',
   'paper.cancelTranslate': 'Cancel',
   'paper.translateHint': 'This page is not translated yet. Click to start (uses model quota).',

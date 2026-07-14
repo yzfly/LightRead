@@ -408,6 +408,8 @@ export default {
   'paper.translateFailed': '翻译失败',
   'paper.showOriginal': '原文 ▾',
   'paper.hideOriginal': '原文 ▴',
+  'paper.openTranslate': '翻译',
+  'paper.closeTranslate': '关闭翻译',
   'paper.translatePage': '翻译本页',
   'paper.cancelTranslate': '取消翻译',
   'paper.translateHint': '本页尚未翻译, 点击开始 (消耗模型用量)',
