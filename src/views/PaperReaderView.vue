@@ -274,6 +274,24 @@ async function loadParagraphs() {
   extractError.value = !paragraphs.value.length
 }
 
+/** 打开/翻页只回填缓存 (零成本), 网络翻译由用户点击触发 */
+function loadCachedTranslation() {
+  translateSession++
+  translating.value = false
+  const paras = paragraphs.value.map(p => p.text)
+  translations.value = new Array(paras.length).fill('')
+  if (!paras.length) return
+  const cached = cachedTranslation(bookId, page.value, paras.length)
+  if (cached) translations.value = cached
+}
+
+const hasAnyTranslation = computed(() => translations.value.some(Boolean))
+
+function cancelTranslate() {
+  translateSession++
+  translating.value = false
+}
+
 async function runTranslate(force = false) {
   const session = ++translateSession
   const paras = paragraphs.value.map(p => p.text)
@@ -314,7 +332,7 @@ async function showPage(n: number) {
   showOrig.value = new Set()
   rightPane.value?.scrollTo({ top: 0 })
   await Promise.all([renderPage(), loadParagraphs()])
-  runTranslate()
+  loadCachedTranslation()
   await nextTick()
   renderMirror()
   clearTimeout(saveTimer)
@@ -477,8 +495,17 @@ onBeforeUnmount(() => {
         <button class="icon-btn" :title="t('reader.nextPage')" :disabled="page >= pageCount" @click="nextPage">
           <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M9.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 0 1-1.4-1.4l5.29-5.3-5.3-5.3a1 1 0 0 1 0-1.4z"/></svg>
         </button>
-        <button class="btn btn-sm" :disabled="translating || !paragraphs.length || !aiReady" @click="runTranslate(true)">
-          {{ translating ? t('paper.translating') : t('paper.retranslate') }}
+        <button v-if="translating" class="btn btn-sm" @click="cancelTranslate">
+          {{ t('paper.cancelTranslate') }}
+        </button>
+        <button
+          v-else
+          class="btn btn-sm"
+          :class="{ 'btn-primary': !hasAnyTranslation }"
+          :disabled="!paragraphs.length || !aiReady"
+          @click="runTranslate(hasAnyTranslation)"
+        >
+          {{ hasAnyTranslation ? t('paper.retranslate') : t('paper.translatePage') }}
         </button>
         <button v-if="bdSupported" class="btn btn-sm" :title="t('paper.bdTooltip')" @click="openBabeldoc">
           {{ t('paper.bdButton') }}
@@ -585,6 +612,12 @@ onBeforeUnmount(() => {
             {{ t('paper.noText') }}
             <span v-if="extractErrorMsg" class="pt-errdetail">{{ extractErrorMsg }}</span>
           </p>
+
+          <!-- 未翻译引导: 打开不自动消耗 token, 点击才翻译 -->
+          <div v-if="paragraphs.length && !hasAnyTranslation && !translating" class="pt-start">
+            <span>{{ t('paper.translateHint') }}</span>
+            <button class="btn btn-sm btn-primary" @click="runTranslate()">{{ t('paper.translatePage') }}</button>
+          </div>
 
           <!-- 版式对照: 原页做底, 译文按原位铺回, 图表公式原样保留 -->
           <div
@@ -810,6 +843,18 @@ onBeforeUnmount(() => {
   color: var(--text-3);
   padding: 16px 0;
   text-align: center;
+}
+.pt-start {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
 }
 /* 版式对照 */
 .pm-stage {
