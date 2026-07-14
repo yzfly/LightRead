@@ -1,3 +1,4 @@
+mod babeldoc;
 mod calibre;
 mod edge_tts;
 mod fonts;
@@ -6,6 +7,7 @@ mod local_tts;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .manage(babeldoc::BabeldocState::default())
     .invoke_handler(tauri::generate_handler![
       edge_tts::edge_tts_synthesize,
       fonts::list_system_fonts,
@@ -14,7 +16,11 @@ pub fn run() {
       local_tts::local_tts_status,
       local_tts::local_tts_download,
       local_tts::local_tts_remove,
-      local_tts::local_tts_synthesize
+      local_tts::local_tts_synthesize,
+      babeldoc::babeldoc_status,
+      babeldoc::babeldoc_translate,
+      babeldoc::babeldoc_cancel,
+      babeldoc::babeldoc_read_output
     ])
     .plugin(tauri_plugin_sql::Builder::new().build())
     .plugin(tauri_plugin_fs::init())

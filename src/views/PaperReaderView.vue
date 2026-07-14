@@ -11,6 +11,19 @@ import {
 } from '../services/paperText'
 import { translatePage, cachedTranslation } from '../services/paperTranslate'
 import { aiConfigured } from '../services/ai'
+import {
+  INSTALL_CMD,
+  babeldocCancel,
+  babeldocReadOutput,
+  babeldocStatus,
+  babeldocSupported,
+  babeldocTranslate,
+  babeldocUsableProvider,
+  bookFilePath,
+  onBabeldocProgress,
+  type BabeldocStatus,
+} from '../services/babeldoc'
+import { importFile } from '../services/importer'
 import { useLibrary } from '../stores/library'
 import { useReadingTimer } from '../composables/useReadingTimer'
 import { toast } from '../services/toast'
@@ -325,6 +338,77 @@ function toggleOriginal(id: number) {
   expanded.value = next
 }
 
+/* ---- BabelDOC 整本重排版翻译 ---- */
+type BdPhase = 'checking' | 'notfound' | 'ready' | 'running' | 'done' | 'error'
+const bdSupported = babeldocSupported()
+const bd = ref<{
+  open: boolean
+  phase: BdPhase
+  status?: BabeldocStatus
+  pages: string
+  percent: number | null
+  line: string
+  error: string
+  results: Array<{ id: string; label: string }>
+}>({ open: false, phase: 'checking', pages: '', percent: null, line: '', error: '', results: [] })
+const bdProviderOk = computed(() => babeldocUsableProvider())
+let bdUnlisten: (() => void) | undefined
+
+async function openBabeldoc() {
+  bd.value = { open: true, phase: 'checking', pages: '', percent: null, line: '', error: '', results: [] }
+  const st = await babeldocStatus().catch(() => ({ found: false, path: '', version: '' }))
+  bd.value.status = st
+  bd.value.phase = st.found ? 'ready' : 'notfound'
+}
+
+async function startBabeldoc() {
+  if (!meta.value) return
+  bd.value.phase = 'running'
+  bd.value.percent = null
+  bd.value.line = ''
+  bd.value.error = ''
+  bdUnlisten = await onBabeldocProgress(p => {
+    if (p.percent != null) bd.value.percent = p.percent
+    bd.value.line = p.line
+  })
+  try {
+    const path = await bookFilePath(bookId, meta.value.fileName)
+    const outputs = await babeldocTranslate(path, bd.value.pages)
+    const results: Array<{ id: string; label: string }> = []
+    for (const out of outputs) {
+      const label = out.includes('.dual.') ? t('paper.bdDual') : t('paper.bdMono')
+      const blob = await babeldocReadOutput(out)
+      const title = `${meta.value.title} · ${label}`
+      const file = new File([blob], `${title}.pdf`, { type: 'application/pdf' })
+      const r = await importFile(file, 'BabelDOC', { kind: 'paper', title })
+      if (r.ok && r.bookId) results.push({ id: r.bookId, label })
+    }
+    await library.refresh()
+    bd.value.results = results
+    bd.value.phase = 'done'
+  } catch (e: any) {
+    bd.value.error = String(e?.message ?? e).slice(0, 300)
+    bd.value.phase = bd.value.error === '已取消' ? 'ready' : 'error'
+  } finally {
+    bdUnlisten?.()
+    bdUnlisten = undefined
+  }
+}
+
+function cancelBabeldoc() {
+  babeldocCancel().catch(() => {})
+}
+
+function openResult(id: string) {
+  // 同路由参数变化不触发重挂载, 直接整页刷新到目标论文
+  window.location.hash = `#/read-paper/${id}`
+  window.location.reload()
+}
+
+function copyInstall() {
+  navigator.clipboard?.writeText(INSTALL_CMD).then(() => toast(t('paper.bdCopied')))
+}
+
 function handleKeydown(e: KeyboardEvent) {
   const target = e.target as HTMLElement
   if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
@@ -370,6 +454,8 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   clearTimeout(saveTimer)
   pdf?.destroy?.()
+  bdUnlisten?.()
+  if (bd.value.phase === 'running') babeldocCancel().catch(() => {})
 })
 </script>
 
@@ -394,8 +480,76 @@ onBeforeUnmount(() => {
         <button class="btn btn-sm" :disabled="translating || !paragraphs.length || !aiReady" @click="runTranslate(true)">
           {{ translating ? t('paper.translating') : t('paper.retranslate') }}
         </button>
+        <button v-if="bdSupported" class="btn btn-sm" :title="t('paper.bdTooltip')" @click="openBabeldoc">
+          {{ t('paper.bdButton') }}
+        </button>
       </div>
     </header>
+
+    <!-- BabelDOC 整本重排版翻译面板 -->
+    <div v-if="bd.open" class="bd-mask" @click.self="bd.phase !== 'running' && (bd.open = false)">
+      <div class="bd-panel">
+        <h3>{{ t('paper.bdTitle') }}</h3>
+        <p class="bd-sub">{{ t('paper.bdDesc') }}</p>
+
+        <p v-if="bd.phase === 'checking'" class="bd-line">{{ t('paper.bdChecking') }}</p>
+
+        <template v-else-if="bd.phase === 'notfound'">
+          <p class="bd-line">{{ t('paper.bdNotFound') }}</p>
+          <div class="bd-cmd">
+            <code>{{ INSTALL_CMD }}</code>
+            <button class="btn btn-sm" @click="copyInstall">{{ t('paper.bdCopy') }}</button>
+          </div>
+          <p class="bd-hint">{{ t('paper.bdInstallHint') }}</p>
+          <div class="bd-actions">
+            <button class="btn btn-sm" @click="openBabeldoc">{{ t('paper.bdRecheck') }}</button>
+          </div>
+        </template>
+
+        <template v-else-if="bd.phase === 'ready'">
+          <p class="bd-ok">✓ {{ bd.status?.version || 'babeldoc' }}</p>
+          <p v-if="!bdProviderOk" class="bd-warn">{{ t('paper.bdTrialUnsupported') }}</p>
+          <label class="bd-field">
+            {{ t('paper.bdPages') }}
+            <input v-model="bd.pages" class="input" :placeholder="t('paper.bdPagesPh')" />
+          </label>
+          <p class="bd-hint">{{ t('paper.bdTimeHint') }}</p>
+          <div class="bd-actions">
+            <button class="btn btn-sm btn-primary" :disabled="!bdProviderOk || !aiReady" @click="startBabeldoc">
+              {{ t('paper.bdStart') }}
+            </button>
+          </div>
+        </template>
+
+        <template v-else-if="bd.phase === 'running'">
+          <div class="bd-bar">
+            <div class="bd-bar-fill" :style="{ width: `${bd.percent ?? 2}%` }" />
+          </div>
+          <p class="bd-line">{{ bd.percent != null ? `${bd.percent.toFixed(0)}% · ` : '' }}{{ bd.line || t('paper.translating') }}</p>
+          <p class="bd-hint">{{ t('paper.bdStayHint') }}</p>
+          <div class="bd-actions">
+            <button class="btn btn-sm" @click="cancelBabeldoc">{{ t('paper.bdCancel') }}</button>
+          </div>
+        </template>
+
+        <template v-else-if="bd.phase === 'done'">
+          <p class="bd-ok">{{ t('paper.bdDone') }}</p>
+          <div class="bd-actions">
+            <button v-for="r in bd.results" :key="r.id" class="btn btn-sm btn-primary" @click="openResult(r.id)">
+              {{ t('paper.bdOpen') }}{{ r.label }}
+            </button>
+            <button class="btn btn-sm" @click="bd.open = false">{{ t('paper.bdClose') }}</button>
+          </div>
+        </template>
+
+        <template v-else-if="bd.phase === 'error'">
+          <p class="bd-warn">{{ bd.error }}</p>
+          <div class="bd-actions">
+            <button class="btn btn-sm" @click="bd.phase = 'ready'">{{ t('paper.bdBack') }}</button>
+          </div>
+        </template>
+      </div>
+    </div>
 
     <div v-if="loading" class="paper-state">{{ t('reader.opening') }}</div>
     <div v-else-if="error" class="paper-state">
@@ -719,6 +873,100 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   padding: 8px 10px;
 }
+/* BabelDOC 面板 */
+.bd-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 32, 0.4);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bd-panel {
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  background: var(--card);
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+.bd-panel h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.bd-sub {
+  font-size: 12px;
+  color: var(--text-3);
+  margin: 0 0 14px;
+  line-height: 1.6;
+}
+.bd-line {
+  font-size: 13px;
+  color: var(--text-2);
+  word-break: break-all;
+}
+.bd-ok {
+  font-size: 13px;
+  color: var(--success, #23a55a);
+}
+.bd-warn {
+  font-size: 12.5px;
+  color: var(--danger, #d54941);
+  line-height: 1.6;
+  word-break: break-all;
+}
+.bd-hint {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.6;
+}
+.bd-cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 10px 0;
+}
+.bd-cmd code {
+  flex: 1;
+  font-size: 12.5px;
+}
+.bd-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 12px 0 6px;
+}
+.bd-field .input {
+  flex: 1;
+  height: 30px;
+}
+.bd-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.bd-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+  margin: 14px 0 10px;
+}
+.bd-bar-fill {
+  height: 100%;
+  background: var(--brand);
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+
 @media (max-width: 860px) {
   .paper-split {
     flex-direction: column;
