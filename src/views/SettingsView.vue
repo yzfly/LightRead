@@ -549,7 +549,8 @@ async function doImport(e: Event) {
 <style scoped>
 .settings {
   padding: 24px 28px 40px;
-  max-width: 760px;
+  max-width: 820px;
+  margin: 0 auto;
 }
 h1 {
   font-size: 20px;
