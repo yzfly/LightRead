@@ -13,6 +13,7 @@ import { translatePage, cachedTranslation } from '../services/paperTranslate'
 import { aiConfigured } from '../services/ai'
 import {
   INSTALL_CMD,
+  stageLabel,
   babeldocCancel,
   babeldocReadOutput,
   babeldocStatus,
@@ -383,11 +384,32 @@ const bd = ref<{
   pages: string
   percent: number | null
   line: string
+  stage?: string
+  current?: number
+  total?: number
   error: string
   results: Array<{ id: string; label: string }>
 }>({ open: false, phase: 'checking', pages: '', percent: null, line: '', error: '', results: [] })
 const bdProviderOk = computed(() => babeldocUsableProvider())
 let bdUnlisten: (() => void) | undefined
+
+/** 长任务反馈: 已用时长计时 + 引擎启动占位文案 */
+const bdElapsed = ref(0)
+let bdTimer: ReturnType<typeof setInterval> | undefined
+const bdElapsedText = computed(() => {
+  const m = Math.floor(bdElapsed.value / 60)
+  const s = bdElapsed.value % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+})
+const bdLineText = computed(() => {
+  if (bd.value.line === 'engine starting' || !bd.value.line) return t('paper.bdStarting')
+  if (bd.value.stage) {
+    const counts =
+      bd.value.total && bd.value.total > 1 ? ` ${bd.value.current ?? 0}/${bd.value.total}` : ''
+    return stageLabel(bd.value.stage) + counts
+  }
+  return bd.value.line
+})
 
 async function openBabeldoc() {
   bd.value = { open: true, phase: 'checking', pages: '', percent: null, line: '', error: '', results: [] }
@@ -402,9 +424,18 @@ async function startBabeldoc() {
   bd.value.percent = null
   bd.value.line = ''
   bd.value.error = ''
+  bdElapsed.value = 0
+  const startAt = Date.now()
+  clearInterval(bdTimer)
+  bdTimer = setInterval(() => {
+    bdElapsed.value = Math.floor((Date.now() - startAt) / 1000)
+  }, 1000)
   bdUnlisten = await onBabeldocProgress(p => {
     if (p.percent != null) bd.value.percent = p.percent
     bd.value.line = p.line
+    bd.value.stage = p.stage ?? undefined
+    bd.value.current = p.current ?? undefined
+    bd.value.total = p.total ?? undefined
   })
   try {
     const path = await bookFilePath(bookId, meta.value.fileName)
@@ -425,6 +456,8 @@ async function startBabeldoc() {
     bd.value.error = String(e?.message ?? e).slice(0, 300)
     bd.value.phase = bd.value.error === '已取消' ? 'ready' : 'error'
   } finally {
+    clearInterval(bdTimer)
+    bdTimer = undefined
     bdUnlisten?.()
     bdUnlisten = undefined
   }
@@ -559,11 +592,11 @@ onBeforeUnmount(() => {
         </template>
 
         <template v-else-if="bd.phase === 'running'">
-          <div class="bd-bar">
-            <div class="bd-bar-fill" :style="{ width: `${bd.percent ?? 2}%` }" />
+          <div class="bd-bar" :class="{ 'bd-indeterminate': bd.percent == null }">
+            <div class="bd-bar-fill" :style="bd.percent != null ? { width: `${bd.percent}%` } : {}" />
           </div>
-          <p class="bd-line">{{ bd.percent != null ? `${bd.percent.toFixed(0)}% · ` : '' }}{{ bd.line || t('paper.translating') }}</p>
-          <p class="bd-hint">{{ t('paper.bdStayHint') }}</p>
+          <p class="bd-line">{{ bd.percent != null ? `${bd.percent.toFixed(0)}% · ` : '' }}{{ bdLineText }}</p>
+          <p class="bd-hint">{{ t('paper.bdElapsed') }} {{ bdElapsedText }} · {{ t('paper.bdStayHint') }}</p>
           <div class="bd-actions">
             <button class="btn btn-sm" @click="cancelBabeldoc">{{ t('paper.bdCancel') }}</button>
           </div>
@@ -1033,6 +1066,19 @@ onBeforeUnmount(() => {
   background: var(--brand);
   border-radius: 3px;
   transition: width 0.4s;
+}
+/* 无百分比时的不确定态: 流动条, 表明任务仍在进行 */
+.bd-indeterminate .bd-bar-fill {
+  width: 32%;
+  animation: bd-slide 1.2s ease-in-out infinite;
+}
+@keyframes bd-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
 }
 
 @media (max-width: 860px) {

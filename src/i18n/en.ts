@@ -426,6 +426,8 @@ export default {
   'paper.bdPages': 'Page range',
   'paper.bdPagesPh': 'e.g. 1-8, empty for all',
   'paper.bdTimeHint': 'A full paper takes several minutes depending on pages and model speed.',
+  'paper.bdStarting': 'Starting engine (loading layout model)…',
+  'paper.bdElapsed': 'Elapsed',
   'paper.bdStart': 'Start',
   'paper.bdStayHint': 'Stay on this page during translation; leaving aborts the task.',
   'paper.bdCancel': 'Cancel',

@@ -426,6 +426,8 @@ export default {
   'paper.bdPages': '页码范围',
   'paper.bdPagesPh': '如 1-8, 留空整本',
   'paper.bdTimeHint': '整本论文约需几分钟, 取决于页数和模型速度。',
+  'paper.bdStarting': '正在启动引擎 (版面分析模型加载中)…',
+  'paper.bdElapsed': '已用时',
   'paper.bdStart': '开始翻译',
   'paper.bdStayHint': '翻译期间请停留在本页, 离开会中止任务。',
   'paper.bdCancel': '取消',
