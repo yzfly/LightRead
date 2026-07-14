@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getStorage, type BookMeta } from '../storage'
 import { initPdfjs, pdfAssetOptions } from '../services/importer'
-import { extractParagraphs, extractParagraphsLoose, type PaperParagraph } from '../services/paperText'
+import {
+  extractParagraphs,
+  extractParagraphsLoose,
+  restorePlaceholders,
+  type PaperParagraph,
+} from '../services/paperText'
 import { translatePage, cachedTranslation } from '../services/paperTranslate'
 import { aiConfigured } from '../services/ai'
 import { useLibrary } from '../stores/library'
@@ -23,8 +28,11 @@ const page = ref(1)
 const pageCount = ref(0)
 const pageInput = ref('1')
 const canvasHost = ref<HTMLElement>()
+const textHost = ref<HTMLElement>()
 const leftPane = ref<HTMLElement>()
 const rightPane = ref<HTMLElement>()
+const mirrorHost = ref<HTMLElement>()
+const stageRef = ref<HTMLElement>()
 
 const paragraphs = ref<PaperParagraph[]>([])
 const translations = ref<string[]>([])
@@ -32,27 +40,45 @@ const translating = ref(false)
 const extractError = ref(false)
 const extractErrorMsg = ref('')
 const expanded = ref<Set<number>>(new Set())
+const showOrig = ref<Set<number>>(new Set())
 let translateSession = 0
 
+/** 右侧视图: 版式对照 (默认) / 段落列表 */
+const VIEW_KEY = 'lightread-paper-view'
+const viewMode = ref<'mirror' | 'cards'>(localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'mirror')
+
 let pdf: any = null
+let pdfjsMod: any = null
 let renderSession = 0
+let mirrorSession = 0
 let resizeObserver: ResizeObserver | undefined
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 
 useReadingTimer(bookId)
 
 const aiReady = computed(() => aiConfigured())
+const hasGeometry = computed(() => paragraphs.value.some(p => p.bbox))
+/** 无几何信息 (宽松兜底提取) 时自动退回列表模式 */
+const effectiveMode = computed(() => (viewMode.value === 'mirror' && hasGeometry.value ? 'mirror' : 'cards'))
+
+/** 占位符还原后的译文 (供两种视图共用) */
+const displayTexts = computed(() =>
+  translations.value.map((tr, i) => restorePlaceholders(tr, paragraphs.value[i]?.placeholders)),
+)
+const origText = (p: PaperParagraph) => restorePlaceholders(p.text, p.placeholders)
+
+/** 版式对照: 已有译文的几何段落才铺遮罩 (未译前透出原文) */
+const blocks = computed(() => paragraphs.value.filter(p => p.bbox && displayTexts.value[p.id]))
+
+/** 版式画布度量: css 尺寸 / 缩放 / PDF 页高 */
+const mir = ref({ w: 0, h: 0, scale: 1, pageH: 0 })
 
 const DPR = () => Math.min(window.devicePixelRatio || 1, 2)
 const MAX_DIM = 4096
 
-async function renderPage() {
-  if (!pdf || !canvasHost.value || !leftPane.value) return
-  const session = ++renderSession
-  const pdfPage = await pdf.getPage(page.value)
+async function renderToCanvas(pdfPage: any, cssWidth: number) {
   const base = pdfPage.getViewport({ scale: 1 })
-  const paneWidth = leftPane.value.clientWidth - 24
-  let scale = (paneWidth / base.width) * DPR()
+  let scale = (cssWidth / base.width) * DPR()
   if (base.width * scale > MAX_DIM || base.height * scale > MAX_DIM) {
     scale = Math.min(MAX_DIM / base.width, MAX_DIM / base.height)
   }
@@ -60,11 +86,100 @@ async function renderPage() {
   const canvas = document.createElement('canvas')
   canvas.width = Math.floor(viewport.width)
   canvas.height = Math.floor(viewport.height)
-  canvas.style.width = `${Math.floor(viewport.width / DPR())}px`
+  const cssScale = scale / DPR()
+  canvas.style.width = `${Math.floor(base.width * cssScale)}px`
   await pdfPage.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport } as any).promise
+  return { canvas, cssScale, cssW: base.width * cssScale, cssH: base.height * cssScale, pageH: base.height }
+}
+
+async function renderPage() {
+  if (!pdf || !canvasHost.value || !leftPane.value) return
+  const session = ++renderSession
+  const pdfPage = await pdf.getPage(page.value)
+  const r = await renderToCanvas(pdfPage, leftPane.value.clientWidth - 24)
   if (session !== renderSession) return
-  canvasHost.value.replaceChildren(canvas)
+  canvasHost.value.replaceChildren(r.canvas)
   leftPane.value.scrollTop = 0
+  // 文本层: 原文划词选择
+  if (textHost.value && pdfjsMod?.TextLayer) {
+    textHost.value.replaceChildren()
+    textHost.value.style.setProperty('--scale-factor', String(r.cssScale))
+    try {
+      const tl = new pdfjsMod.TextLayer({
+        textContentSource: pdfPage.streamTextContent(),
+        container: textHost.value,
+        viewport: pdfPage.getViewport({ scale: r.cssScale }),
+      })
+      await tl.render()
+    } catch (e) {
+      console.warn('text layer failed:', e)
+    }
+  }
+}
+
+async function renderMirror() {
+  if (!pdf || !rightPane.value || effectiveMode.value !== 'mirror' || !mirrorHost.value) return
+  const session = ++mirrorSession
+  const pdfPage = await pdf.getPage(page.value)
+  const r = await renderToCanvas(pdfPage, Math.min(rightPane.value.clientWidth - 28, 980))
+  if (session !== mirrorSession) return
+  mirrorHost.value.replaceChildren(r.canvas)
+  mir.value = { w: r.cssW, h: r.cssH, scale: r.cssScale, pageH: r.pageH }
+  queueFit()
+}
+
+function blockStyle(p: PaperParagraph) {
+  const s = mir.value.scale
+  const b = p.bbox!
+  return {
+    left: `${b.x * s - 2}px`,
+    top: `${(mir.value.pageH - b.y - b.h) * s - 1}px`,
+    width: `${b.w * s + 5}px`,
+    height: `${b.h * s + 3}px`,
+  }
+}
+const blockBaseFont = (p: PaperParagraph) =>
+  Math.max(8, Math.min(26, (p.fontSize ?? 10) * mir.value.scale * 0.95))
+
+/** 译文超出原框时字号按 0.93 递减适配 (BabelDOC 迭代缩放思路) */
+let fitQueued = false
+function queueFit() {
+  if (fitQueued) return
+  fitQueued = true
+  nextTick(() =>
+    requestAnimationFrame(() => {
+      fitQueued = false
+      const host = stageRef.value
+      if (!host) return
+      for (const el of Array.from(host.querySelectorAll<HTMLElement>('.pm-block'))) {
+        let size = parseFloat(el.dataset.base || '12')
+        el.style.fontSize = `${size}px`
+        let guard = 12
+        while (guard-- > 0 && size > 7.5 && el.scrollHeight > el.clientHeight + 2) {
+          size *= 0.93
+          el.style.fontSize = `${size}px`
+        }
+      }
+    }),
+  )
+}
+watch([displayTexts, showOrig], queueFit)
+
+function setMode(mode: 'mirror' | 'cards') {
+  viewMode.value = mode
+  localStorage.setItem(VIEW_KEY, mode)
+}
+watch(effectiveMode, mode => {
+  if (mode === 'mirror') nextTick(renderMirror)
+})
+
+function toggleBlock(id: number) {
+  // 划词选择时不触发切换
+  if (window.getSelection()?.toString()) return
+  const next = new Set(showOrig.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  showOrig.value = next
 }
 
 async function loadParagraphs() {
@@ -129,9 +244,12 @@ async function showPage(n: number) {
   page.value = Math.min(Math.max(1, n), pageCount.value)
   pageInput.value = String(page.value)
   expanded.value = new Set()
+  showOrig.value = new Set()
   rightPane.value?.scrollTo({ top: 0 })
   await Promise.all([renderPage(), loadParagraphs()])
   runTranslate()
+  await nextTick()
+  renderMirror()
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
     library.saveProgress(bookId, String(page.value), pageCount.value ? page.value / pageCount.value : 0)
@@ -170,14 +288,18 @@ onMounted(async () => {
       return
     }
     const blob = await storage.getBookFile(bookId)
-    const pdfjs = await initPdfjs()
-    pdf = await pdfjs.getDocument({ data: await blob.arrayBuffer(), ...pdfAssetOptions }).promise
+    pdfjsMod = await initPdfjs()
+    pdf = await pdfjsMod.getDocument({ data: await blob.arrayBuffer(), ...pdfAssetOptions }).promise
     pageCount.value = pdf.numPages
     const saved = parseInt(meta.value.location ?? '1', 10)
     loading.value = false
     await showPage(Number.isFinite(saved) ? saved : 1)
-    resizeObserver = new ResizeObserver(() => renderPage())
+    resizeObserver = new ResizeObserver(() => {
+      renderPage()
+      renderMirror()
+    })
     if (leftPane.value) resizeObserver.observe(leftPane.value)
+    if (rightPane.value) resizeObserver.observe(rightPane.value)
   } catch (e: any) {
     console.error(e)
     error.value = e?.message ?? t('reader.cantOpenPdf')
@@ -190,6 +312,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   translateSession++
   renderSession++
+  mirrorSession++
   resizeObserver?.disconnect()
   clearTimeout(saveTimer)
   pdf?.destroy?.()
@@ -227,12 +350,15 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-else class="paper-split">
-      <!-- 左: 原文 PDF -->
+      <!-- 左: 原文 PDF (带划词文本层) -->
       <div ref="leftPane" class="pane pane-left">
-        <div ref="canvasHost" class="canvas-host" />
+        <div class="canvas-wrap">
+          <div ref="canvasHost" class="canvas-host" />
+          <div ref="textHost" class="text-layer" />
+        </div>
       </div>
 
-      <!-- 右: AI 中文翻译 (段落对照) -->
+      <!-- 右: AI 中文翻译 (版式对照 / 段落列表) -->
       <div ref="rightPane" class="pane pane-right">
         <div v-if="!aiReady" class="pt-setup">
           <p>{{ t('paper.setupHint') }}</p>
@@ -241,23 +367,51 @@ onBeforeUnmount(() => {
         <template v-else>
           <div class="pt-head">
             <span>{{ t('paper.translationTitle') }}</span>
+            <span class="pm-switch">
+              <button :class="{ active: viewMode === 'mirror' }" @click="setMode('mirror')">{{ t('paper.viewMirror') }}</button>
+              <button :class="{ active: viewMode === 'cards' }" @click="setMode('cards')">{{ t('paper.viewCards') }}</button>
+            </span>
             <span v-if="translating" class="pt-busy">{{ t('paper.translating') }}</span>
           </div>
           <p v-if="extractError || (!paragraphs.length && !loading)" class="pt-empty">
             {{ t('paper.noText') }}
             <span v-if="extractErrorMsg" class="pt-errdetail">{{ extractErrorMsg }}</span>
           </p>
-          <div v-for="p in paragraphs" :key="p.id" class="pt-card">
-            <div class="pt-zh">
-              <template v-if="translations[p.id]">{{ translations[p.id] }}</template>
-              <span v-else-if="translating" class="pt-pending">{{ t('paper.translating') }}</span>
-              <span v-else class="pt-pending">{{ p.text.slice(0, 120) }}</span>
-            </div>
-            <button class="pt-toggle" @click="toggleOriginal(p.id)">
-              {{ expanded.has(p.id) ? t('paper.hideOriginal') : t('paper.showOriginal') }}
-            </button>
-            <p v-if="expanded.has(p.id)" class="pt-en">{{ p.text }}</p>
+
+          <!-- 版式对照: 原页做底, 译文按原位铺回, 图表公式原样保留 -->
+          <div
+            v-if="effectiveMode === 'mirror'"
+            ref="stageRef"
+            class="pm-stage"
+            :style="{ width: `${mir.w}px`, height: `${mir.h}px` }"
+            :title="t('paper.blockHint')"
+          >
+            <div ref="mirrorHost" class="pm-canvas" />
+            <div
+              v-for="p in blocks"
+              :key="p.id"
+              class="pm-block"
+              :class="{ 'pm-original': showOrig.has(p.id) }"
+              :style="blockStyle(p)"
+              :data-base="blockBaseFont(p)"
+              @click="toggleBlock(p.id)"
+            >{{ showOrig.has(p.id) ? origText(p) : displayTexts[p.id] }}</div>
           </div>
+
+          <!-- 段落列表 -->
+          <template v-else>
+            <div v-for="p in paragraphs" :key="p.id" class="pt-card">
+              <div class="pt-zh">
+                <template v-if="displayTexts[p.id]">{{ displayTexts[p.id] }}</template>
+                <span v-else-if="translating" class="pt-pending">{{ t('paper.translating') }}</span>
+                <span v-else class="pt-pending">{{ origText(p).slice(0, 120) }}</span>
+              </div>
+              <button class="pt-toggle" @click="toggleOriginal(p.id)">
+                {{ expanded.has(p.id) ? t('paper.hideOriginal') : t('paper.showOriginal') }}
+              </button>
+              <p v-if="expanded.has(p.id)" class="pt-en">{{ origText(p) }}</p>
+            </div>
+          </template>
         </template>
       </div>
     </div>
@@ -353,11 +507,37 @@ onBeforeUnmount(() => {
   justify-content: center;
   background: #525659;
 }
+.canvas-wrap {
+  position: relative;
+  height: max-content;
+}
+.canvas-host {
+  font-size: 0;
+}
 .canvas-host :deep(canvas),
 .canvas-host canvas {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
   border-radius: 2px;
   height: auto;
+}
+/* 文本层: 划词选择 (pdf.js TextLayer 输出绝对定位 span) */
+.text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.text-layer :deep(span) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+}
+.text-layer :deep(span)::selection {
+  background: rgba(64, 128, 255, 0.35);
 }
 .pane-right {
   flex: 1;
@@ -379,11 +559,32 @@ onBeforeUnmount(() => {
 .pt-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
   margin-bottom: 10px;
+  gap: 10px;
+}
+.pt-head > span:first-child {
+  flex: 1;
+}
+.pm-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.pm-switch button {
+  border: none;
+  background: none;
+  font-size: 12px;
+  font-weight: 400;
+  padding: 3px 10px;
+  color: var(--text-3);
+}
+.pm-switch button.active {
+  background: var(--brand);
+  color: #fff;
 }
 .pt-busy {
   font-size: 12px;
@@ -402,6 +603,38 @@ onBeforeUnmount(() => {
   color: var(--text-3);
   padding: 16px 0;
   text-align: center;
+}
+/* 版式对照 */
+.pm-stage {
+  position: relative;
+  margin: 0 auto;
+}
+.pm-canvas {
+  font-size: 0;
+}
+.pm-canvas :deep(canvas) {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  border-radius: 2px;
+  height: auto;
+}
+.pm-block {
+  position: absolute;
+  background: #fff;
+  color: #16181c;
+  overflow: hidden;
+  line-height: 1.34;
+  cursor: pointer;
+  user-select: text;
+  -webkit-user-select: text;
+  text-align: justify;
+  word-break: break-word;
+}
+.pm-block:hover {
+  outline: 1px dashed rgba(64, 128, 255, 0.55);
+}
+.pm-block.pm-original {
+  background: #eef4ff;
+  color: #333;
 }
 .pt-card {
   border-bottom: 1px solid var(--border);
