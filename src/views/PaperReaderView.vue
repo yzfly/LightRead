@@ -128,20 +128,75 @@ async function renderMirror() {
   queueFit()
 }
 
-function blockStyle(p: PaperParagraph) {
+/**
+ * 版式求解 (先算好每个块的最终几何再填充, 避免遮罩互相覆盖):
+ * 按列分组 → 列内按纵向排序 → 与下一块重叠时裁掉本块底部。
+ */
+interface BlockRect {
+  left: number
+  top: number
+  width: number
+  height: number
+  base: number
+}
+const layout = computed<Map<number, BlockRect>>(() => {
   const s = mir.value.scale
-  const b = p.bbox!
+  const pageH = mir.value.pageH
+  const pageW = mir.value.w
+  const rects = paragraphs.value
+    .filter(p => p.bbox)
+    .map(p => ({
+      id: p.id,
+      left: p.bbox!.x * s,
+      top: (pageH - p.bbox!.y - p.bbox!.h) * s,
+      width: p.bbox!.w * s,
+      height: p.bbox!.h * s,
+      base: Math.max(8, Math.min(26, (p.fontSize ?? 10) * s)),
+    }))
+  const groups: Record<string, typeof rects> = { L: [], R: [], full: [] }
+  for (const r of rects) {
+    const key = r.width > pageW * 0.6 ? 'full' : r.left + r.width / 2 < pageW / 2 ? 'L' : 'R'
+    groups[key].push(r)
+  }
+  for (const key of ['L', 'R', 'full']) {
+    const arr = groups[key].sort((a, b) => a.top - b.top)
+    for (let i = 0; i < arr.length - 1; i++) {
+      const cur = arr[i]
+      const next = arr[i + 1]
+      if (cur.top + cur.height > next.top - 2) cur.height = Math.max(10, next.top - 2 - cur.top)
+    }
+  }
+  return new Map(rects.map(r => [r.id, r]))
+})
+
+/** 按容量预计算字号: 中文按 1 字宽、拉丁按 0.52 估算, 使文本恰好放进框 */
+function fitFont(text: string, w: number, h: number, base: number) {
+  let eff = 0
+  for (const ch of text) eff += ch.charCodeAt(0) > 0x2e00 ? 1 : 0.52
+  eff = Math.max(eff, 1)
+  let f = Math.min(base, Math.sqrt((w * h) / (1.36 * eff)))
+  for (let i = 0; i < 10; i++) {
+    const cap = Math.max(1, Math.floor(w / f)) * Math.max(1, Math.floor(h / (f * 1.34)))
+    if (cap >= eff * 1.04) break
+    f *= 0.95
+  }
+  return Math.max(7, f)
+}
+
+function blockStyle(p: PaperParagraph) {
+  const r = layout.value.get(p.id)
+  if (!r) return {}
+  const text = showOrig.value.has(p.id) ? origText(p) : displayTexts.value[p.id] ?? ''
   return {
-    left: `${b.x * s - 2}px`,
-    top: `${(mir.value.pageH - b.y - b.h) * s - 1}px`,
-    width: `${b.w * s + 5}px`,
-    height: `${b.h * s + 3}px`,
+    left: `${r.left}px`,
+    top: `${r.top}px`,
+    width: `${r.width}px`,
+    height: `${r.height}px`,
+    fontSize: `${fitFont(text, r.width, r.height, r.base)}px`,
   }
 }
-const blockBaseFont = (p: PaperParagraph) =>
-  Math.max(8, Math.min(26, (p.fontSize ?? 10) * mir.value.scale * 0.95))
 
-/** 译文超出原框时字号按 0.93 递减适配 (BabelDOC 迭代缩放思路) */
+/** 兜底微调: 预计算字号后仍溢出的个别块 (换行低效) 再小步递减 */
 let fitQueued = false
 function queueFit() {
   if (fitQueued) return
@@ -152,11 +207,10 @@ function queueFit() {
       const host = stageRef.value
       if (!host) return
       for (const el of Array.from(host.querySelectorAll<HTMLElement>('.pm-block'))) {
-        let size = parseFloat(el.dataset.base || '12')
-        el.style.fontSize = `${size}px`
-        let guard = 12
-        while (guard-- > 0 && size > 7.5 && el.scrollHeight > el.clientHeight + 2) {
-          size *= 0.93
+        let size = parseFloat(el.style.fontSize || '12')
+        let guard = 6
+        while (guard-- > 0 && size > 7 && el.scrollHeight > el.clientHeight + 2) {
+          size *= 0.95
           el.style.fontSize = `${size}px`
         }
       }
@@ -393,7 +447,6 @@ onBeforeUnmount(() => {
               class="pm-block"
               :class="{ 'pm-original': showOrig.has(p.id) }"
               :style="blockStyle(p)"
-              :data-base="blockBaseFont(p)"
               @click="toggleBlock(p.id)"
             >{{ showOrig.has(p.id) ? origText(p) : displayTexts[p.id] }}</div>
           </div>
