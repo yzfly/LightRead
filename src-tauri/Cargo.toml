@@ -1,6 +1,6 @@
 [package]
 name = "lightread"
-version = "1.0.0"
+version = "1.0.1"
 description = "LightRead 轻阅 — 开源本地阅读器"
 authors = ["云中江树"]
 license = "MIT"

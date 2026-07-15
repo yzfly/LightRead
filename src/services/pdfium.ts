@@ -10,6 +10,7 @@
  */
 import { init, type WrappedPdfiumModule } from '@embedpdf/pdfium'
 import wasmUrl from '@embedpdf/pdfium/pdfium.wasm?url'
+import { isMathChar, type TextItem } from './paperText'
 
 let modPromise: Promise<WrappedPdfiumModule> | null = null
 
@@ -47,6 +48,8 @@ export interface TextModel {
   codes: Uint32Array
   /** 每字符盒 [x, y, w, h] × n */
   boxes: Float32Array
+  /** 每字符字号 (PDF 单位) */
+  sizes: Float32Array
   lines: TextLine[]
 }
 
@@ -161,9 +164,11 @@ export class PdfiumDoc {
     const count = Math.max(0, m.FPDFText_CountChars(tp))
     const codes = new Uint32Array(count)
     const boxes = new Float32Array(count * 4)
+    const sizes = new Float32Array(count)
     const dbl = m.pdfium.wasmExports.malloc(32)
     for (let i = 0; i < count; i++) {
       codes[i] = m.FPDFText_GetUnicode(tp, i)
+      sizes[i] = m.FPDFText_GetFontSize(tp, i)
       if (m.FPDFText_GetCharBox(tp, i, dbl, dbl + 8, dbl + 16, dbl + 24)) {
         const left = this.rt.getValue(dbl, 'double')
         const right = this.rt.getValue(dbl + 8, 'double')
@@ -178,9 +183,21 @@ export class PdfiumDoc {
     m.pdfium.wasmExports.free(dbl)
     m.FPDFText_ClosePage(tp)
     m.FPDF_ClosePage(page)
-    const model: TextModel = { count, codes, boxes, lines: buildLines(codes, boxes) }
+    const model: TextModel = { count, codes, boxes, sizes, lines: buildLines(codes, boxes) }
     this.textCache.set(pageIdx, model)
     return model
+  }
+
+  /** 文档元数据 (Title / Author 等) */
+  meta(tag: string): string {
+    const m = this.m
+    const len = m.FPDF_GetMetaText(this.doc, tag, 0, 0)
+    if (len <= 2) return ''
+    const buf = m.pdfium.wasmExports.malloc(len)
+    m.FPDF_GetMetaText(this.doc, tag, buf, len)
+    const s = this.rt.UTF16ToString(buf)
+    m.pdfium.wasmExports.free(buf)
+    return s.trim()
   }
 
   /** 整页纯文本 (供 AI 上下文等) */
@@ -424,6 +441,54 @@ const isWordCode = (c: number) =>
   c === 95 ||
   c === 45 ||
   c > 0x2e00 // CJK 等宽字符双击按单字扩展亦可接受
+
+/**
+ * 字符流 → 文本项 runs (供段落提取管线, 对齐 pdf.js textContent item 语义):
+ * 按行遍历, 行内在字号突变 / 数学字符边界 / 大间距处断 run。
+ * 坐标: x 左缘, y 盒底 (转为 PDF 左下原点), h 用字号。
+ */
+export function textRuns(model: TextModel, pageH: number): TextItem[] {
+  const out: TextItem[] = []
+  for (const ln of model.lines) {
+    let cur: (TextItem & { math: boolean; endX: number }) | null = null
+    const push = () => {
+      if (cur && cur.str.trim()) out.push({ x: cur.x, y: cur.y, w: cur.w, h: cur.h, str: cur.str })
+      cur = null
+    }
+    for (let i = ln.start; i <= ln.end; i++) {
+      const code = model.codes[i]
+      if (isNewline(code)) continue
+      const ch = String.fromCodePoint(code)
+      const bx = model.boxes[i * 4]
+      const by = model.boxes[i * 4 + 1]
+      const bw = model.boxes[i * 4 + 2]
+      const bh = model.boxes[i * 4 + 3]
+      const isSpace = /\s/.test(ch)
+      if (bw <= 0 && bh <= 0) {
+        // 生成的空白字符: 归入当前 run, 不改几何
+        if (cur) cur.str += ' '
+        continue
+      }
+      const size = model.sizes[i] > 0 ? model.sizes[i] : bh || 10
+      const math = isMathChar(ch)
+      const needBreak =
+        !cur ||
+        bx - cur.endX > size * 0.5 ||
+        (!isSpace && Math.abs(size - cur.h) > 0.6) ||
+        (!isSpace && math !== cur.math)
+      if (needBreak) {
+        push()
+        cur = { x: bx, y: pageH - (by + bh), w: 0, h: size, str: '', math, endX: bx }
+      }
+      cur!.str += ch
+      cur!.endX = Math.max(cur!.endX, bx + bw)
+      cur!.w = cur!.endX - cur!.x
+      cur!.y = Math.min(cur!.y, pageH - (by + bh))
+    }
+    push()
+  }
+  return out
+}
 
 /** 双击取词: 边界处向两侧扩展 */
 export function wordRange(model: TextModel, boundary: number): [number, number] | null {

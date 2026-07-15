@@ -35,49 +35,31 @@ async function extractFoliateMeta(file: File) {
   return result
 }
 
-export async function initPdfjs() {
-  const pdfjs = await import('pdfjs-dist')
-  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
-    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
-  }
-  return pdfjs
-}
-
-// pdf.js 运行时资源 (由 vite-plugin-static-copy 从 pdfjs-dist 复制到 /pdfjs/):
-// wasm 含 JPEG 2000/JBIG2 解码器 (扫描版 PDF 缺它整页空白), cmaps 是 CJK 字体映射
-const PDF_ASSETS = `${import.meta.env.BASE_URL}pdfjs/`
-export const pdfAssetOptions = {
-  wasmUrl: `${PDF_ASSETS}wasm/`,
-  iccUrl: `${PDF_ASSETS}iccs/`,
-  cMapUrl: `${PDF_ASSETS}cmaps/`,
-  standardFontDataUrl: `${PDF_ASSETS}standard_fonts/`,
-}
-
+/** PDF 元数据与封面: PDFium (与阅读器同引擎) */
 async function extractPdfMeta(file: File) {
-  const pdfjs = await initPdfjs()
-  const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer(), ...pdfAssetOptions })
-  const pdf = await loadingTask.promise
   let title = ''
   let author = ''
-  try {
-    const { info } = (await pdf.getMetadata()) as any
-    title = info?.Title ?? ''
-    author = info?.Author ?? ''
-  } catch { /* 元数据缺失时用文件名兜底 */ }
-  // 首页渲染为封面
   let cover: Blob | undefined
   try {
-    const page = await pdf.getPage(1)
-    const viewport = page.getViewport({ scale: 0.6 })
-    const canvas = document.createElement('canvas')
-    canvas.width = viewport.width
-    canvas.height = viewport.height
-    await page.render({ canvas, canvasContext: canvas.getContext('2d')!, viewport } as any).promise
-    cover = await new Promise<Blob | undefined>(resolve =>
-      canvas.toBlob(b => resolve(b ?? undefined), 'image/jpeg', 0.8))
-  } catch { /* 封面渲染失败可忽略 */ }
-  await loadingTask.destroy()
+    const { PdfiumDoc } = await import('./pdfium')
+    const doc = await PdfiumDoc.open(await file.arrayBuffer())
+    try {
+      title = doc.meta('Title')
+      author = doc.meta('Author')
+      const pg = doc.pages[0]
+      if (pg) {
+        const img = doc.render(0, 0.6)
+        const canvas = document.createElement('canvas')
+        canvas.width = img.width
+        canvas.height = img.height
+        canvas.getContext('2d')!.putImageData(img, 0, 0)
+        cover = await new Promise<Blob | undefined>(resolve =>
+          canvas.toBlob(b => resolve(b ?? undefined), 'image/jpeg', 0.8))
+      }
+    } finally {
+      doc.close()
+    }
+  } catch { /* 解析失败: 文件名兜底, 无封面 */ }
   return { title, author, cover }
 }
 

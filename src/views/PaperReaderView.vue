@@ -2,10 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getStorage, type BookMeta, type AnnotationRec } from '../storage'
-import { initPdfjs, pdfAssetOptions } from '../services/importer'
 import {
-  extractParagraphs,
-  extractParagraphsLoose,
+  extractParagraphsFromItems,
+  extractParagraphsLooseFromItems,
   restorePlaceholders,
   type PaperParagraph,
 } from '../services/paperText'
@@ -17,6 +16,7 @@ import {
   rangeRects,
   rangeText,
   wordRange,
+  textRuns,
 } from '../services/pdfium'
 import {
   TEN_QUESTIONS,
@@ -75,22 +75,8 @@ const pageInput = ref('1')
 const scroller = ref<HTMLElement>()
 const rightPane = ref<HTMLElement>()
 
-/** 阅读引擎: PDFium (唯一) — 渲染 / 几何选择 / 链接 / 目录 / 页文本 */
+/** 阅读引擎: PDFium (唯一) — 渲染 / 几何选择 / 链接 / 目录 / 文本与段落提取 */
 let pdm: PdfiumDoc | null = null
-/** 原始文件字节: 供翻译面板懒加载 pdf.js 做段落几何提取 (阅读路径不加载 pdf.js) */
-let fileData: ArrayBuffer | null = null
-let pdfjsDocPromise: Promise<any> | null = null
-
-async function pdfjsDoc(): Promise<any> {
-  if (!pdfjsDocPromise) {
-    pdfjsDocPromise = (async () => {
-      if (!fileData) throw new Error('document not loaded')
-      const pdfjs = await initPdfjs()
-      return pdfjs.getDocument({ data: fileData, ...pdfAssetOptions }).promise
-    })()
-  }
-  return pdfjsDocPromise
-}
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 let settleTimer: ReturnType<typeof setTimeout> | undefined
 let resizeTimer: ReturnType<typeof setTimeout> | undefined
@@ -909,23 +895,15 @@ async function ensureParas(page: number): Promise<MirPageData> {
   const cur = mirData.value[page]
   if (cur) return cur
   const d: MirPageData = { paras: [], trs: [] }
-  let pdfPage: any = null
   try {
-    // 段落几何提取仍基于 pdf.js 文本项 (首次打开翻译面板时懒加载)
-    pdfPage = await (await pdfjsDoc()).getPage(page)
-    d.paras = await extractParagraphs(pdfPage)
+    // 段落几何提取: PDFium 字符流合成 runs → 既有聚类管线
+    const items = pdm ? textRuns(pdm.text(page - 1), baseDims.value.h) : []
+    d.paras = extractParagraphsFromItems(items, baseDims.value.w)
+    // 严格算法无结果时宽松兜底: 只要页面有文字就切得出块
+    if (!d.paras.length) d.paras = extractParagraphsLooseFromItems(items)
   } catch (e: any) {
     console.error('paragraph extraction failed:', e)
     d.err = String(e?.message ?? e).slice(0, 160)
-  }
-  // 严格算法无结果时宽松兜底: 只要有文字就切得出块
-  if (!d.paras.length && pdfPage) {
-    try {
-      d.paras = await extractParagraphsLoose(pdfPage)
-    } catch (e: any) {
-      console.error('loose extraction failed:', e)
-      if (!d.err) d.err = String(e?.message ?? e).slice(0, 160)
-    }
   }
   d.trs = new Array(d.paras.length).fill('')
   const cached = cachedTranslation(bookId, page, d.paras.length)
@@ -1619,9 +1597,7 @@ onMounted(async () => {
       annotations.value = list.filter(a => decodeLoc(a.cfi))
     })
     const blob = await storage.getBookFile(bookId)
-    // PDFium 把字节拷入 wasm 堆, fileData 原样留给翻译面板的 pdf.js 懒加载
-    fileData = await blob.arrayBuffer()
-    pdm = await PdfiumDoc.open(fileData)
+    pdm = await PdfiumDoc.open(await blob.arrayBuffer())
     pageCount.value = pdm.pages.length
     baseDims.value = { w: pdm.pages[0]?.w ?? 612, h: pdm.pages[0]?.h ?? 792 }
     loading.value = false
@@ -1662,8 +1638,6 @@ onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(settleTimer)
   clearTimeout(resizeTimer)
-  pdfjsDocPromise?.then(d => d?.destroy?.()).catch(() => {})
-  pdfjsDocPromise = null
   window.removeEventListener('pointermove', onDragMove)
   pdm?.close()
   pdm = null

@@ -1,6 +1,6 @@
 /**
  * 论文 AI 辅读: 整体总结 / 论文十问 / 基于全文的问答。
- * 上下文来自 pdf.js 逐页提取的正文文本 (超预算截断), 走用户配置的 AI 服务。
+ * 上下文来自 PDFium 逐页提取的正文文本 (超预算截断), 走用户配置的 AI 服务。
  * 总结与十问答案按论文缓存 (localStorage), 问答为会话性质不缓存。
  */
 import { chatStream, type AiMessage } from './ai'

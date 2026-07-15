@@ -1,10 +1,10 @@
 /**
  * 运行时 polyfill: 补齐 WKWebView (Safari 内核) 缺失的标准特性。
  *
- * ReadableStream 异步迭代器 — pdf.js getTextContent 内部使用
- * `for await (const value of readableStream)`, 在系统 WKWebView 中
- * 因缺少 Symbol.asyncIterator 抛出 "undefined is not a function",
- * 导致论文段落提取整页失败 (渲染不受影响)。
+ * ReadableStream 异步迭代器 — 系统 WKWebView 缺少 Symbol.asyncIterator,
+ * 任何依赖 `for await (const v of readableStream)` 的库都会抛
+ * "undefined is not a function" (曾导致 pdf.js 时代论文段落提取整页失败)。
+ * 保留以兜底第三方依赖。
  */
 const rs = typeof ReadableStream !== 'undefined' ? (ReadableStream.prototype as any) : null
 

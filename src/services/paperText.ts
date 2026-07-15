@@ -1,5 +1,5 @@
 /**
- * 论文 PDF 段落提取: 基于 pdf.js 文本项坐标聚类。
+ * 论文 PDF 段落提取: 基于文本项 (runs) 坐标聚类, 数据源为 PDFium 字符流合成的 runs。
  *  - 双栏版式识别 (学术论文常见): 左列 / 右列 / 跨栏块
  *  - 行聚类 → 段落切分 (行距突变 / 首行缩进), 连字符断词还原
  *  - 段落包围盒与主字号 (供版式对照原位铺回)
@@ -26,7 +26,8 @@ interface Seg {
   math: boolean
 }
 
-interface TextItem {
+/** 文本项 run: x 左缘, y 底缘 (PDF 左下原点), h 为字号 */
+export interface TextItem {
   x: number
   y: number
   w: number
@@ -45,6 +46,8 @@ interface Line {
 /** 数学符号 (希腊字母 / 运算符 / 集合关系符 …) */
 const MATH_RE =
   /[∑∏∫∮∂∇√∞≈≃≅≠≡≤≥≪≫±∓×÷∘·∈∉⊂⊆⊃⊇∪∩∧∨¬⊕⊗⊥∥→←↔⇒⇐⇔↦∝∀∃∄∅ℓℏℝℤℕℚℂ𝔼αβγδεϵζηθϑικλμνξπϖρϱσςτυφϕχψωΓΔΘΛΞΠΣΥΦΨΩ]/
+
+export const isMathChar = (ch: string) => MATH_RE.test(ch)
 
 /** 数学符号密度足够高的短片段视为公式 */
 function isMathStr(str: string) {
@@ -172,22 +175,10 @@ export function restorePlaceholders(text: string, placeholders?: Record<string, 
 
 /**
  * 提取一页的段落 (阅读顺序)。
- * page: pdf.js PDFPageProxy
+ * items: 文本项 runs (PDFium 字符流合成, 见 pdfium.textRuns), W: 页宽 (PDF 单位)
  */
-export async function extractParagraphs(page: any): Promise<PaperParagraph[]> {
-  const content = await page.getTextContent()
-  const viewport = page.getViewport({ scale: 1 })
-  const W = viewport.width
-
-  const items: TextItem[] = (content.items as any[])
-    .filter(i => i.str && i.str.trim())
-    .map(i => ({
-      x: i.transform[4],
-      y: i.transform[5],
-      w: i.width ?? 0,
-      h: Math.abs(i.transform[3]) || i.height || 10,
-      str: i.str as string,
-    }))
+export function extractParagraphsFromItems(rawItems: TextItem[], W: number): PaperParagraph[] {
+  const items = rawItems.filter(i => i.str && i.str.trim())
   if (!items.length) return []
 
   // 三路分流: 左列 / 右列 / 跨栏
@@ -237,11 +228,8 @@ export async function extractParagraphs(page: any): Promise<PaperParagraph[]> {
  * 宽松兜底提取: 严格算法失败或为空时使用。
  * 只按 y 排序拼行, 再按句号/长度切块 — 只要页面有文字就有结果 (无版式信息)。
  */
-export async function extractParagraphsLoose(page: any): Promise<PaperParagraph[]> {
-  const content = await page.getTextContent()
-  const items = (content.items as any[])
-    .filter(i => i.str && String(i.str).trim())
-    .map(i => ({ y: i.transform?.[5] ?? 0, x: i.transform?.[4] ?? 0, str: String(i.str) }))
+export function extractParagraphsLooseFromItems(rawItems: TextItem[]): PaperParagraph[] {
+  const items = rawItems.filter(i => i.str && i.str.trim())
   if (!items.length) return []
   items.sort((a, b) => b.y - a.y || a.x - b.x)
   const text = items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim()
