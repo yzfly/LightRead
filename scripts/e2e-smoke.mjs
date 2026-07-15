@@ -46,6 +46,14 @@ const step = async (name, fn) => {
   }
 }
 
+// 沉浸式阅读: 翻页后工具栏自动隐藏 (pointer-events: none), 点工具栏按钮前先悬停顶部呼出条
+const revealBars = async () => {
+  if (await page.locator('.bar-peek.top').count()) {
+    await page.hover('.bar-peek.top')
+    await page.waitForSelector('header.bar.top:not(.hidden)', { timeout: 3000 })
+  }
+}
+
 await step('打开应用', async () => {
   await page.goto('http://localhost:4173/', { waitUntil: 'networkidle' })
   await page.waitForSelector('text=书架还是空的', { timeout: 8000 })
@@ -96,6 +104,7 @@ await step('键盘翻页更新进度', async () => {
 })
 
 await step('书内搜索', async () => {
+  await revealBars()
   await page.click('button[title="书内搜索"]')
   await page.fill('.search-form input', '墨布')
   await page.press('.search-form input', 'Enter')
@@ -104,6 +113,7 @@ await step('书内搜索', async () => {
 await page.screenshot({ path: join(TMP, 'shots', '05-search.png') })
 
 await step('返回书架并打开 PDF', async () => {
+  await revealBars()
   await page.click('button[title="返回藏书"]')
   await page.waitForSelector('.book-card', { timeout: 8000 })
   await page.click('.book-card:has-text("test-doc")')
