@@ -249,7 +249,7 @@ async function calibreImport(book: CalibreBook, thenOpen = false) {
     await library.refresh()
     if (thenOpen && result.bookId) {
       const imported = library.books.find(b => b.id === result.bookId)
-      router.push(imported?.format === 'pdf' ? `/read-pdf/${result.bookId}` : `/read/${result.bookId}`)
+      router.push(imported?.format === 'pdf' ? `/read-paper/${result.bookId}` : `/read/${result.bookId}`)
     } else {
       toast(t('catalog.bookImported', { title: book.title }), 'success')
     }
@@ -263,7 +263,7 @@ async function calibreImport(book: CalibreBook, thenOpen = false) {
 function openImported(book: CalibreBook) {
   const imported = library.books.find(b => b.source === 'Calibre' && b.title === book.title)
   if (!imported) return
-  router.push(imported.format === 'pdf' ? `/read-pdf/${imported.id}` : `/read/${imported.id}`)
+  router.push(imported.format === 'pdf' ? `/read-paper/${imported.id}` : `/read/${imported.id}`)
 }
 
 async function calibreImportAllNew() {

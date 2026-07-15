@@ -773,7 +773,7 @@ onMounted(async () => {
       return
     }
     if (meta.value.format === 'pdf') {
-      router.replace(`/read-pdf/${bookId}`)
+      router.replace(`/read-paper/${bookId}`)
       return
     }
     if (meta.value.format === 'djvu') {
