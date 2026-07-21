@@ -2441,7 +2441,7 @@ dependencies = [
 
 [[package]]
 name = "lightread"
-version = "1.0.1"
+version = "1.0.4"
 dependencies = [
  "bzip2 0.5.2",
  "fontdb",
@@ -2460,6 +2460,7 @@ dependencies = [
  "tauri-plugin-http",
  "tauri-plugin-log",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
  "tauri-plugin-sql",
  "tokio",
  "tokio-tungstenite",
@@ -4991,6 +4992,22 @@ dependencies = [
  "thiserror 2.0.18",
  "url",
  "windows",
+ "zbus",
+]
+
+[[package]]
+name = "tauri-plugin-single-instance"
+version = "2.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3214becf9ef5783c0ae99a3bb25adf5353a7a16ebf53e74b909e29205735c6c"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "windows-sys 0.60.2",
  "zbus",
 ]
 

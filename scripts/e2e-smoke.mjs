@@ -16,16 +16,28 @@ for (let i = 1; i <= 5; i++) {
 }
 writeFileSync(txtPath, chapters.join('\n\n'), 'utf-8')
 
-// 2. 最小合法 PDF
+// 2. 四页最小合法 PDF（覆盖适高、双页与双页翻页）
 const pdfContent = `%PDF-1.4
 1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
-2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R 6 0 R 8 0 R 10 0 R] /Count 4 >> endobj
 3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
 4 0 obj << /Length 60 >> stream
-BT /F1 24 Tf 100 700 Td (Hello LightRead PDF) Tj ET
+BT /F1 24 Tf 100 700 Td (Hello LightRead PDF 1) Tj ET
 endstream endobj
 5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
-trailer << /Root 1 0 R /Size 6 >>
+6 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+7 0 obj << /Length 60 >> stream
+BT /F1 24 Tf 100 700 Td (Hello LightRead PDF 2) Tj ET
+endstream endobj
+8 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 9 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+9 0 obj << /Length 60 >> stream
+BT /F1 24 Tf 100 700 Td (Hello LightRead PDF 3) Tj ET
+endstream endobj
+10 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 11 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+11 0 obj << /Length 60 >> stream
+BT /F1 24 Tf 100 700 Td (Hello LightRead PDF 4) Tj ET
+endstream endobj
+trailer << /Root 1 0 R /Size 12 >>
 %%EOF`
 const pdfPath = join(TMP, 'test-doc.pdf')
 writeFileSync(pdfPath, pdfContent)
@@ -117,10 +129,52 @@ await step('返回书架并打开 PDF', async () => {
   await page.click('button[title="返回藏书"]')
   await page.waitForSelector('.book-card', { timeout: 8000 })
   await page.click('.book-card:has-text("test-doc")')
-  // 藏书 PDF 统一走论文阅读器 (连续滚动 .p-holder)
+  // 藏书 PDF 统一走 PDFium 阅读器，默认翻页 + 适高
   await page.waitForSelector('.p-holder canvas', { timeout: 15000 })
 })
 await page.screenshot({ path: join(TMP, 'shots', '06-pdf.png') })
+
+await step('PDF 默认适高', async () => {
+  const fit = await page.evaluate(() => {
+    const box = document.querySelector('.paged-box')
+    const canvas = document.querySelector('.spread-host canvas')
+    return { boxH: box?.clientHeight ?? 0, canvasH: parseFloat(canvas?.style.height ?? '0') }
+  })
+  if (!(fit.canvasH <= fit.boxH && fit.canvasH > fit.boxH * 0.8)) {
+    throw new Error(`页高未适高: ${Math.round(fit.canvasH)} / ${fit.boxH}`)
+  }
+})
+
+await step('PDF 双页与翻页', async () => {
+  await page.click('.paper-actions .reader-tool:has-text("双页")')
+  await page.waitForFunction(() => document.querySelectorAll('.spread-host canvas').length === 2, null, { timeout: 8000 })
+  await page.screenshot({ path: join(TMP, 'shots', '06b-pdf-two-page.png') })
+  await page.locator('.paper-actions').screenshot({ path: join(TMP, 'shots', '06c-pdf-toolbar.png') })
+  await page.keyboard.press('ArrowRight')
+  await page.waitForFunction(() => document.querySelector('.page-input')?.value === '3', null, { timeout: 5000 })
+})
+
+await step('PDF 自动阅读控制条自动与手动收起', async () => {
+  await page.click('.paper-actions .reader-tool:has-text("自动阅读")')
+  await page.waitForSelector('.auto-panel')
+  await page.locator('.auto-panel').screenshot({ path: join(TMP, 'shots', '06d-pdf-auto-controls.png') })
+  await page.click('.auto-panel .auto-toggle')
+  await page.waitForSelector('.auto-panel', { state: 'hidden', timeout: 4000 })
+  await page.waitForSelector('.paper-actions .reader-tool:has-text("自动阅读中")')
+  await page.locator('.paper-actions').screenshot({ path: join(TMP, 'shots', '06e-pdf-auto-collapsed.png') })
+
+  // 自动收起后可从顶部状态按钮重新展开；手动收起不应停止阅读。
+  await page.click('.paper-actions .reader-tool:has-text("自动阅读中")')
+  await page.waitForSelector('.auto-panel')
+  await page.click('.auto-panel .auto-collapse')
+  await page.waitForSelector('.auto-panel', { state: 'hidden' })
+  await page.waitForSelector('.paper-actions .reader-tool:has-text("自动阅读中")')
+
+  // 清理运行状态，避免定时器影响后续持久化断言。
+  await page.click('.paper-actions .reader-tool:has-text("自动阅读中")')
+  await page.click('.auto-panel button[title="停止"]')
+  await page.waitForSelector('.paper-actions .reader-tool:has-text("自动阅读")')
+})
 
 await step('刷新后藏书与进度仍在 (持久化)', async () => {
   await page.goto('http://localhost:4173/#/library', { waitUntil: 'networkidle' })

@@ -1,12 +1,21 @@
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
-import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import ToastHost from './components/ToastHost.vue'
 import { useSettings } from './stores/settings'
 import { t } from './i18n'
+import { isTauri } from './storage'
+import { startExternalOpen } from './services/externalOpen'
 
 useSettings().persistOnChange()
 const route = useRoute()
+const router = useRouter()
+let stopExternalOpen: (() => void) | undefined
+
+onMounted(async () => {
+  if (isTauri()) stopExternalOpen = await startExternalOpen(router)
+})
+onBeforeUnmount(() => stopExternalOpen?.())
 // 阅读页全屏沉浸, 隐藏侧栏
 const immersive = computed(() => String(route.path).startsWith('/read'))
 

@@ -64,6 +64,7 @@ import { t } from '../i18n'
 const route = useRoute()
 const router = useRouter()
 const library = useLibrary()
+const settings = useSettings()
 const bookId = String(route.params.id)
 
 const meta = ref<BookMeta>()
@@ -73,6 +74,7 @@ const pageCount = ref(0)
 const currentPage = ref(1)
 const pageInput = ref('1')
 const scroller = ref<HTMLElement>()
+const pagedBox = ref<HTMLElement>()
 const rightPane = ref<HTMLElement>()
 
 /** 阅读引擎: PDFium (唯一) — 渲染 / 几何选择 / 链接 / 目录 / 文本与段落提取 */
@@ -87,9 +89,14 @@ useReadingTimer(bookId)
 
 const aiReady = computed(() => aiConfigured())
 /** 归属: 论文/藏书 (藏书 PDF 也走本阅读器, 返回目标随归属) */
-const isPaper = computed(() => (meta.value?.kind ?? 'paper') === 'paper')
+// kind 缺省是历史藏书记录；只有显式标记为 paper 才进入论文功能集。
+const isPaper = computed(() => meta.value?.kind === 'paper')
 const backTarget = computed(() => (isPaper.value ? '/papers' : '/library'))
 const backLabel = computed(() => (isPaper.value ? t('paper.backToPapers') : t('reader.backToLibrary')))
+/** 论文固定连续滚动；藏书 PDF 服从阅读设置，默认翻页。 */
+const mode = computed<'paged' | 'scroll'>(() => (isPaper.value ? 'scroll' : settings.pdf.mode))
+const bookPaged = computed(() => mode.value === 'paged')
+const spread = computed(() => bookPaged.value && settings.pdf.spread)
 
 /* ================= 连续滚动渲染 (虚拟化: 只渲染视口附近页) ================= */
 
@@ -120,13 +127,36 @@ const renderedScale = new Map<number, number>()
 const rendering = new Set<number>()
 
 function holderOf(num: number) {
-  return scroller.value?.querySelector<HTMLElement>(`[data-page="${num}"]`) ?? null
+  return paperRoot.value?.querySelector<HTMLElement>(`[data-page="${num}"]`) ?? null
 }
 
 function fitScale(): number {
   // 适宽仍保留呼吸边距, 页面不顶到面板边缘
   const width = Math.max((scroller.value?.clientWidth ?? 800) - 48, 320)
   return Math.min(width / baseDims.value.w, 2.5)
+}
+
+/** 当前页所在的页组；双页按 1-2、3-4 … 配对。 */
+function spreadOf(page: number): number[] {
+  const clamped = Math.min(Math.max(1, page || 1), Math.max(1, pageCount.value))
+  if (!spread.value) return [clamped]
+  const start = clamped % 2 === 1 ? clamped : clamped - 1
+  return start + 1 <= pageCount.value ? [start, start + 1] : [start]
+}
+
+const pagedPages = computed(() => spreadOf(currentPage.value))
+const atLastPage = computed(() => pagedPages.value.at(-1) === pageCount.value)
+
+/** 翻页模式默认适高；双页时同时受可用宽度约束，避免页面被裁掉。 */
+function pagedScale(): number {
+  const box = pagedBox.value
+  const availW = Math.max((box?.clientWidth ?? 800) - 32, 240)
+  const availH = Math.max((box?.clientHeight ?? 700) - 24, 240)
+  const pages = pagedPages.value.length
+  const totalW = baseDims.value.w * pages + GAP * (pages - 1)
+  return settings.pdf.fit === 'fitH'
+    ? Math.min(availH / baseDims.value.h, availW / totalW)
+    : availW / totalW
 }
 
 /** 整页位图 canvas (PDFium) */
@@ -160,6 +190,67 @@ async function renderScrollPage(num: number) {
   }
 }
 
+async function renderPaged() {
+  if (!pdm || !pagedBox.value || !bookPaged.value) return
+  const pages = pagedPages.value
+  curScale.value = pagedScale()
+  // 页组切换会创建新的 holder，不能沿用连续滚动视图的 DOM 渲染缓存。
+  for (const page of pages) renderedScale.delete(page)
+  await nextTick()
+  await Promise.all(pages.map(async page => {
+    // 模式切换时，旧滚动 holder 可能仍有同页渲染任务；等它收尾后再画入新 holder。
+    while (rendering.has(page)) await new Promise(resolve => setTimeout(resolve, 0))
+    await renderScrollPage(page)
+  }))
+  pagedBox.value.scrollTo({ top: 0, left: 0 })
+}
+
+async function pagedGoto(page: number) {
+  const pages = spreadOf(page)
+  const next = pages[0]
+  pageInput.value = String(next)
+  if (next === currentPage.value && pages.every(p => holderOf(p))) {
+    await renderPaged()
+    return
+  }
+  selection.value = null
+  currentPage.value = next
+  await nextTick()
+  await renderPaged()
+}
+
+async function switchMode(next: 'paged' | 'scroll') {
+  if (isPaper.value || settings.pdf.mode === next) return
+  stopAutoRead()
+  settings.pdf.mode = next
+  renderedScale.clear()
+  await nextTick()
+  if (next === 'paged') {
+    await pagedGoto(currentPage.value)
+  } else {
+    curScale.value = zoom.value === 'fit' ? fitScale() : zoom.value
+    attachScrollListener()
+    await nextTick()
+    scrollGoto(currentPage.value)
+    updateViewport()
+  }
+  observeActiveViewport()
+}
+
+async function toggleSpread() {
+  settings.pdf.spread = !settings.pdf.spread
+  currentPage.value = spreadOf(currentPage.value)[0]
+  renderedScale.clear()
+  await nextTick()
+  await renderPaged()
+}
+
+async function setPagedFit(fit: 'fitH' | 'fitW') {
+  settings.pdf.fit = fit
+  renderedScale.clear()
+  await renderPaged()
+}
+
 /** PDFium 链接层: 内链跳转 + 外链系统浏览器 */
 function renderPdmLinks(holder: HTMLElement, num: number, scale: number) {
   const host = holder.querySelector<HTMLElement>('.p-links')
@@ -182,7 +273,7 @@ function renderPdmLinks(holder: HTMLElement, num: number, scale: number) {
       el.addEventListener('click', e => {
         e.preventDefault()
         pushBack()
-        scrollGoto(ln.destPage! + 1, false, Math.max(0, (ln.destY ?? 0) * curScale.value - 60))
+        gotoPage(ln.destPage! + 1, false, Math.max(0, (ln.destY ?? 0) * curScale.value - 60))
       })
     }
     host.append(el)
@@ -226,6 +317,21 @@ function onScroll() {
   })
 }
 
+let listenedScroller: HTMLElement | undefined
+function attachScrollListener() {
+  if (listenedScroller === scroller.value) return
+  listenedScroller?.removeEventListener('scroll', onScroll)
+  listenedScroller = scroller.value
+  listenedScroller?.addEventListener('scroll', onScroll, { passive: true })
+}
+
+function observeActiveViewport() {
+  if (!resizeObserver) return
+  resizeObserver.disconnect()
+  const viewport = bookPaged.value ? pagedBox.value : scroller.value
+  if (viewport) resizeObserver.observe(viewport)
+}
+
 function pageTop(n: number): number {
   return PAD + (n - 1) * (holderH.value + GAP)
 }
@@ -233,6 +339,11 @@ function pageTop(n: number): number {
 function scrollGoto(n: number, smooth = false, yOffsetPx = 0) {
   const clamped = Math.min(Math.max(1, n || 1), pageCount.value)
   scroller.value?.scrollTo({ top: Math.max(0, pageTop(clamped) + yOffsetPx), behavior: smooth ? 'smooth' : 'auto' })
+}
+
+function gotoPage(n: number, smooth = false, yOffsetPx = 0) {
+  if (bookPaged.value) void pagedGoto(n)
+  else scrollGoto(n, smooth, yOffsetPx)
 }
 
 async function applyZoom(next: number | 'fit') {
@@ -314,17 +425,32 @@ function onPageSettled() {
 
 function jumpTo() {
   const n = parseInt(pageInput.value, 10)
-  if (Number.isFinite(n)) scrollGoto(n)
+  if (Number.isFinite(n)) gotoPage(n)
 }
 
-const prevPage = () => scrollGoto(currentPage.value - 1, true)
-const nextPage = () => scrollGoto(currentPage.value + 1, true)
+function prevPage() {
+  if (bookPaged.value) void pagedGoto(pagedPages.value[0] - 1)
+  else scrollGoto(currentPage.value - 1, true)
+}
+function nextPage() {
+  if (bookPaged.value) {
+    const next = (pagedPages.value.at(-1) ?? currentPage.value) + 1
+    if (next <= pageCount.value) void pagedGoto(next)
+  } else {
+    scrollGoto(currentPage.value + 1, true)
+  }
+}
 
 /* ================= 跳转返回 (引文 / 目录跳转后回到原位) ================= */
 
 const backStack = ref<number[]>([])
 
 function pushBack() {
+  if (bookPaged.value) {
+    backStack.value.push(-currentPage.value)
+    if (backStack.value.length > 20) backStack.value.shift()
+    return
+  }
   const top = scroller.value?.scrollTop
   if (top == null) return
   backStack.value.push(top)
@@ -333,7 +459,9 @@ function pushBack() {
 
 function goBack() {
   const top = backStack.value.pop()
-  if (top != null) scroller.value?.scrollTo({ top })
+  if (top == null) return
+  if (top < 0) gotoPage(-top)
+  else scroller.value?.scrollTo({ top })
 }
 
 async function openExternal(url: string) {
@@ -370,7 +498,7 @@ function tocNavigate(href: string) {
   const [p, y] = href.split('|')
   pushBack()
   const yOffset = y ? Math.max(0, parseFloat(y) * curScale.value - 60) : 0
-  scrollGoto(parseInt(p, 10), false, yOffset)
+  gotoPage(parseInt(p, 10), false, yOffset)
   tocOpen.value = false
 }
 
@@ -609,7 +737,7 @@ function gotoAnnotation(a: AnnotationRec) {
   if (!loc) return
   annoOpen.value = false
   pushBack()
-  scrollGoto(loc.page, false, Math.max(0, (loc.rects[0]?.y ?? 0) * curScale.value - 100))
+  gotoPage(loc.page, false, Math.max(0, (loc.rects[0]?.y ?? 0) * curScale.value - 100))
 }
 
 /** 点击命中已有高亮 → 打开想法编辑 (高亮矩形不拦截事件, 以免影响划词) */
@@ -1393,8 +1521,6 @@ function copyInstall() {
 
 /* ================= 读书功能集 (藏书 PDF): 听书 / 自动翻页 ================= */
 
-const settings = useSettings()
-
 /** 页文本 (听书 / AI 上下文) */
 async function pageTextFor(n: number): Promise<string> {
   return pdm ? pdm.pageText(n - 1).replace(/\s+/g, ' ').trim() : ''
@@ -1404,22 +1530,56 @@ async function pageTextFor(n: number): Promise<string> {
 const autoReading = ref(false)
 const autoPanel = ref(false)
 let autoTimer: ReturnType<typeof setInterval> | undefined
+let autoPanelTimer: ReturnType<typeof setTimeout> | undefined
+
+function cancelAutoPanelCollapse() {
+  clearTimeout(autoPanelTimer)
+  autoPanelTimer = undefined
+}
+
+/** 自动阅读运行时，控制条短暂展示反馈后收起到顶部状态按钮。 */
+function scheduleAutoPanelCollapse(delay = 1800) {
+  cancelAutoPanelCollapse()
+  if (!autoReading.value || !autoPanel.value) return
+  autoPanelTimer = setTimeout(() => {
+    autoPanel.value = false
+    autoPanelTimer = undefined
+  }, delay)
+}
+
+function collapseAutoPanel() {
+  cancelAutoPanelCollapse()
+  autoPanel.value = false
+}
+
+function toggleAutoPanel() {
+  if (autoPanel.value) {
+    collapseAutoPanel()
+    return
+  }
+  autoPanel.value = true
+  ttsPanel.value = false
+  if (autoReading.value) scheduleAutoPanelCollapse(4000)
+}
 
 function startAutoRead() {
   stopAutoRead()
   autoReading.value = true
   autoTimer = setInterval(() => {
-    if (currentPage.value >= pageCount.value) {
+    if (atLastPage.value) {
       stopAutoRead()
       return
     }
-    scrollGoto(currentPage.value + 1, true)
+    nextPage()
   }, settings.autoReadSeconds * 1000)
+  scheduleAutoPanelCollapse()
 }
 
 function stopAutoRead() {
   autoReading.value = false
   clearInterval(autoTimer)
+  autoTimer = undefined
+  cancelAutoPanelCollapse()
 }
 
 watch(() => settings.autoReadSeconds, () => {
@@ -1533,7 +1693,7 @@ async function startTTS() {
       if (session !== ttsSession || ttsStopped()) return
       pageNum++
       if (pageNum > pageCount.value) break
-      scrollGoto(pageNum)
+      gotoPage(pageNum)
       await new Promise(r => setTimeout(r, 300))
     }
     if (!spokeAnything && session === ttsSession) {
@@ -1600,23 +1760,33 @@ onMounted(async () => {
     pdm = await PdfiumDoc.open(await blob.arrayBuffer())
     pageCount.value = pdm.pages.length
     baseDims.value = { w: pdm.pages[0]?.w ?? 612, h: pdm.pages[0]?.h ?? 792 }
+    const saved = parseInt(meta.value.location ?? '1', 10)
+    currentPage.value = Number.isFinite(saved)
+      ? Math.min(Math.max(saved, 1), pageCount.value)
+      : 1
     loading.value = false
     await nextTick()
-    curScale.value = zoom.value === 'fit' ? fitScale() : zoom.value
-    scroller.value?.addEventListener('scroll', onScroll, { passive: true })
-    const saved = parseInt(meta.value.location ?? '1', 10)
-    await nextTick()
-    if (Number.isFinite(saved) && saved > 1) scrollGoto(saved)
-    updateViewport()
+    if (bookPaged.value) {
+      currentPage.value = spreadOf(currentPage.value)[0]
+      await nextTick()
+      await renderPaged()
+    } else {
+      curScale.value = zoom.value === 'fit' ? fitScale() : zoom.value
+      attachScrollListener()
+      await nextTick()
+      if (currentPage.value > 1) scrollGoto(currentPage.value)
+      updateViewport()
+    }
     buildOutline()
     resizeObserver = new ResizeObserver(() => {
       clearTimeout(resizeTimer)
       resizeTimer = setTimeout(() => {
-        if (zoom.value === 'fit') relayout()
+        if (bookPaged.value) void renderPaged()
+        else if (zoom.value === 'fit') relayout()
         if (translateOpen.value) mirLayoutNow()
       }, 200)
     })
-    if (scroller.value) resizeObserver.observe(scroller.value)
+    observeActiveViewport()
   } catch (e: any) {
     console.error(e)
     error.value = e?.message ?? t('reader.cantOpenPdf')
@@ -1634,7 +1804,8 @@ onBeforeUnmount(() => {
   stopAutoRead()
   clearTimeout(mirSettleTimer)
   resizeObserver?.disconnect()
-  scroller.value?.removeEventListener('scroll', onScroll)
+  listenedScroller?.removeEventListener('scroll', onScroll)
+  listenedScroller = undefined
   clearTimeout(saveTimer)
   clearTimeout(settleTimer)
   clearTimeout(resizeTimer)
@@ -1692,11 +1863,66 @@ onBeforeUnmount(() => {
         </template>
         <!-- 藏书 PDF: 读书功能集 (与 epub 一致) -->
         <template v-else>
-          <button class="btn btn-sm" :class="{ 'btn-active': autoReading }" @click="autoPanel = !autoPanel; if (autoPanel) ttsPanel = false">
-            {{ autoReading ? t('reader.autoReading') : t('reader.autoRead') }}
+          <div class="reader-segment" role="group" :aria-label="t('reader.mode')">
+            <button
+              type="button"
+              :class="{ active: mode === 'paged' }"
+              :aria-pressed="mode === 'paged'"
+              @click="switchMode('paged')"
+            >{{ t('reader.paginated') }}</button>
+            <button
+              type="button"
+              :class="{ active: mode === 'scroll' }"
+              :aria-pressed="mode === 'scroll'"
+              @click="switchMode('scroll')"
+            >{{ t('reader.scrolled') }}</button>
+          </div>
+          <template v-if="bookPaged">
+            <div class="reader-segment" role="group" :aria-label="t('reader.fitHeight') + ' / ' + t('reader.fitWidth')">
+              <button
+                type="button"
+                :class="{ active: settings.pdf.fit === 'fitH' }"
+                :aria-pressed="settings.pdf.fit === 'fitH'"
+                @click="setPagedFit('fitH')"
+              >{{ t('reader.fitHeight') }}</button>
+              <button
+                type="button"
+                :class="{ active: settings.pdf.fit === 'fitW' }"
+                :aria-pressed="settings.pdf.fit === 'fitW'"
+                @click="setPagedFit('fitW')"
+              >{{ t('reader.fitWidth') }}</button>
+            </div>
+            <button
+              type="button"
+              class="reader-tool"
+              :class="{ active: spread }"
+              :aria-pressed="spread"
+              @click="toggleSpread"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4.25h5.25v11.5H3.5zM11.25 4.25h5.25v11.5h-5.25z" /></svg>
+              <span>{{ t('reader.twoPage') }}</span>
+            </button>
+          </template>
+          <button
+            type="button"
+            class="reader-tool"
+            :class="{ active: autoReading || autoPanel }"
+            :aria-pressed="autoReading || autoPanel"
+            :title="autoReading && !autoPanel ? t('reader.expandAutoControls') : t('reader.autoRead')"
+            @click="toggleAutoPanel"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 5.25 7 4.75-7 4.75z" /></svg>
+            <span>{{ autoReading ? t('reader.autoReading') : t('reader.autoRead') }}</span>
           </button>
-          <button class="btn btn-sm" :class="{ 'btn-active': ttsState !== 'stopped' }" @click="openTTSPanel">
-            {{ ttsState !== 'stopped' ? t('tts.readingNow') : t('tts.title') }}
+          <button
+            type="button"
+            class="reader-tool"
+            :class="{ active: ttsState !== 'stopped' || ttsPanel }"
+            :aria-pressed="ttsState !== 'stopped' || ttsPanel"
+            @click="openTTSPanel"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 8h3l3-3v10l-3-3H4zM13 7.2a4 4 0 0 1 0 5.6M14.9 5.4a6.5 6.5 0 0 1 0 9.2" /></svg>
+            <span>{{ ttsState !== 'stopped' ? t('tts.readingNow') : t('tts.title') }}</span>
           </button>
         </template>
       </div>
@@ -1808,7 +2034,48 @@ onBeforeUnmount(() => {
 
       <!-- 左: 原文 PDF 连续滚动 (划词 / 高亮 / 链接跳转) + 底部悬浮工具条 -->
       <div class="pane-left-wrap">
+        <!-- 藏书默认翻页适高；双页时显示当前 1-2 / 3-4 页组。 -->
         <div
+          v-if="bookPaged"
+          ref="pagedBox"
+          class="paged-box"
+          @pointerdown="onScrollerPointerDown"
+          @dblclick="onScrollerDblClick"
+        >
+          <div class="spread-host">
+            <div
+              v-for="n in pagedPages"
+              :key="n"
+              class="p-holder"
+              :data-page="n"
+              :style="holderStyle"
+              @click="onHolderClick($event, n)"
+            >
+              <span class="p-num">{{ n }}</span>
+              <div class="p-canvas" />
+              <div class="p-hl">
+                <div v-for="h in pageHls.get(n) ?? []" :key="h.key" class="p-hl-rect" :style="hlStyle(h.r, h.a.color)" />
+              </div>
+              <div v-if="liveRects && liveRects.page === n" class="p-sel">
+                <div
+                  v-for="(r, i) in liveRects.rects"
+                  :key="i"
+                  class="p-sel-rect"
+                  :style="{
+                    left: `${r.x * curScale}px`,
+                    top: `${r.y * curScale}px`,
+                    width: `${r.w * curScale}px`,
+                    height: `${r.h * curScale}px`,
+                  }"
+                />
+              </div>
+              <div class="p-links" />
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-else
           ref="scroller"
           class="pane pane-left"
           @pointerdown="onScrollerPointerDown"
@@ -1854,25 +2121,27 @@ onBeforeUnmount(() => {
             <input v-model="pageInput" class="input page-input" @keyup.enter="jumpTo" @blur="jumpTo" />
             / {{ pageCount }}
           </span>
-          <button class="icon-btn" :title="t('reader.nextPage')" :disabled="currentPage >= pageCount" @click="nextPage">
+          <button class="icon-btn" :title="t('reader.nextPage')" :disabled="atLastPage" @click="nextPage">
             <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M9.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 0 1-1.4-1.4l5.29-5.3-5.3-5.3a1 1 0 0 1 0-1.4z"/></svg>
           </button>
           <span class="dock-sep" />
           <button class="icon-btn" :title="t('paper.fullscreen')" @click="toggleFullscreen">
             <svg viewBox="0 0 24 24" width="15" height="15"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>
           </button>
-          <span class="dock-sep" />
-          <button class="icon-btn" :title="t('reader.zoomOut')" @click="zoomStep(-1)">−</button>
-          <button class="dock-zoom" @click="zoomMenu = !zoomMenu">
-            {{ zoom === 'fit' ? t('reader.fitWidth') : `${Math.round(curScale * 100)}%` }}
-            <span class="dock-caret">▾</span>
-          </button>
-          <button class="icon-btn" :title="t('reader.zoomIn')" @click="zoomStep(1)">＋</button>
+          <template v-if="!bookPaged">
+            <span class="dock-sep" />
+            <button class="icon-btn" :title="t('reader.zoomOut')" @click="zoomStep(-1)">−</button>
+            <button class="dock-zoom" @click="zoomMenu = !zoomMenu">
+              {{ zoom === 'fit' ? t('reader.fitWidth') : `${Math.round(curScale * 100)}%` }}
+              <span class="dock-caret">▾</span>
+            </button>
+            <button class="icon-btn" :title="t('reader.zoomIn')" @click="zoomStep(1)">＋</button>
+          </template>
         </div>
 
         <!-- 缩放档位菜单 -->
-        <div v-if="zoomMenu" class="zoom-backdrop" @click="zoomMenu = false" />
-        <div v-if="zoomMenu" class="zoom-menu card">
+        <div v-if="zoomMenu && !bookPaged" class="zoom-backdrop" @click="zoomMenu = false" />
+        <div v-if="zoomMenu && !bookPaged" class="zoom-menu card">
           <button
             v-for="p in ZOOM_PRESETS"
             :key="p"
@@ -2149,16 +2418,29 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 自动翻页控制条 (藏书 PDF) -->
-    <div v-if="autoPanel" class="auto-panel card">
-      <button class="btn btn-sm" :class="{ 'btn-active': autoReading }" @click="autoReading ? stopAutoRead() : startAutoRead()">
-        {{ autoReading ? '⏸ ' + t('common.pause') : '▶ ' + t('common.start') }}
-      </button>
-      <label>{{ t('reader.speed') }}</label>
-      <input v-model.number="settings.autoReadSeconds" type="range" min="3" max="60" step="1" />
-      <span class="auto-speed">{{ t('reader.secPerPage', { n: settings.autoReadSeconds }) }}</span>
-      <button class="icon-btn" :title="t('common.close')" @click="autoPanel = false; stopAutoRead()">✕</button>
-    </div>
+    <!-- 自动翻页控制条：运行后自动收起到顶部状态按钮，避免遮挡正文。 -->
+    <Transition name="auto-float">
+      <section
+        v-if="autoPanel"
+        class="auto-panel card"
+        :aria-label="t('reader.autoRead')"
+        @pointerenter="cancelAutoPanelCollapse"
+        @pointerleave="scheduleAutoPanelCollapse(1800)"
+        @focusin="cancelAutoPanelCollapse"
+        @focusout="scheduleAutoPanelCollapse(1800)"
+      >
+        <button class="btn btn-sm auto-toggle" :class="{ 'btn-active': autoReading }" @click="autoReading ? stopAutoRead() : startAutoRead()">
+          {{ autoReading ? '⏸ ' + t('common.pause') : '▶ ' + t('common.start') }}
+        </button>
+        <label>{{ t('reader.speed') }}</label>
+        <input v-model.number="settings.autoReadSeconds" type="range" min="3" max="60" step="1" />
+        <span class="auto-speed">{{ t('reader.secPerPage', { n: settings.autoReadSeconds }) }}</span>
+        <button class="icon-btn auto-collapse" :title="t('reader.collapseControls')" @click="collapseAutoPanel">
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="m5.5 7.5 4.5 4.5 4.5-4.5" /></svg>
+        </button>
+        <button class="icon-btn" :title="t('common.stop')" @click="autoPanel = false; stopAutoRead()">✕</button>
+      </section>
+    </Transition>
   </div>
 </template>
 
@@ -2191,7 +2473,98 @@ onBeforeUnmount(() => {
 .paper-actions {
   display: flex;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.paper-actions::-webkit-scrollbar {
+  display: none;
+}
+
+/* 藏书 PDF 阅读控制：统一尺寸与选中语言，避免工具条像一排表单按钮。 */
+.reader-segment {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  height: 34px;
+  padding: 3px;
+  border-radius: 10px;
+  background: #f2f4f7;
+  box-shadow: inset 0 0 0 1px rgba(29, 33, 41, 0.045);
+}
+.reader-segment button {
+  min-width: 48px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+}
+.reader-segment button:hover:not(.active) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.62);
+}
+.reader-segment button.active {
+  color: var(--brand);
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(22, 100, 255, 0.12), 0 0 0 1px rgba(22, 100, 255, 0.08);
+}
+.reader-tool {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(29, 33, 41, 0.1);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(29, 33, 41, 0.035);
+  transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+}
+.reader-tool svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.reader-tool:hover {
+  color: var(--brand);
+  border-color: rgba(22, 100, 255, 0.25);
+  background: #f8faff;
+}
+.reader-tool.active {
+  color: var(--brand);
+  border-color: rgba(22, 100, 255, 0.18);
+  background: var(--brand-light, #e8f0ff);
+  box-shadow: inset 0 0 0 1px rgba(22, 100, 255, 0.04);
+}
+.reader-segment button:active,
+.reader-tool:active {
+  transform: translateY(1px);
+}
+.reader-segment button:focus-visible,
+.reader-tool:focus-visible {
+  outline: 2px solid rgba(22, 100, 255, 0.55);
+  outline-offset: 2px;
 }
 .paper-pagenum {
   font-size: 12px;
@@ -2266,6 +2639,25 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 16px;
   background: #f2f3f5;
+}
+.paged-box {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+  display: flex;
+  padding: 12px 16px;
+  background: #f2f3f5;
+}
+.spread-host {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 16px;
+  margin: auto;
+}
+.spread-host .p-holder {
+  margin: 0;
 }
 
 /* ---- 底部悬浮工具条 ---- */
@@ -2689,6 +3081,9 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 10px 14px;
   border-radius: 12px;
+  border: 1px solid rgba(29, 33, 41, 0.08);
+  box-shadow: 0 8px 26px rgba(22, 100, 255, 0.12), 0 2px 8px rgba(29, 33, 41, 0.08);
+  backdrop-filter: blur(14px);
 }
 .auto-panel label {
   font-size: 13px;
@@ -2702,6 +3097,22 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--text-3);
   width: 64px;
+  font-variant-numeric: tabular-nums;
+}
+.auto-collapse {
+  background: var(--bg);
+}
+.auto-collapse:hover {
+  background: var(--brand-light, #e8f0ff);
+}
+.auto-float-enter-active,
+.auto-float-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.auto-float-enter-from,
+.auto-float-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 8px);
 }
 
 /* ---- 返回原位 ---- */

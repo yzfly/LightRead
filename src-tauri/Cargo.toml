@@ -1,6 +1,6 @@
 [package]
 name = "lightread"
-version = "1.0.1"
+version = "1.0.4"
 description = "LightRead 轻阅 — 开源本地阅读器"
 authors = ["云中江树"]
 license = "MIT"
@@ -40,3 +40,4 @@ sherpa-onnx = "1.13.3"
 ureq = "2"
 bzip2 = "0.5.2"
 tar = "0.4.46"
+tauri-plugin-single-instance = "2"

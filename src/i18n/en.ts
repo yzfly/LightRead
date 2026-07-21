@@ -230,6 +230,8 @@ export default {
   'reader.nextPage': 'Next page',
   'reader.speed': 'Speed',
   'reader.secPerPage': '{n} s/page',
+  'reader.collapseControls': 'Collapse controls',
+  'reader.expandAutoControls': 'Expand auto-read controls',
   'reader.highlight': 'Highlight',
   'reader.writeNote': 'Add Note',
   'reader.notePlaceholder': 'Write down your thoughts…',

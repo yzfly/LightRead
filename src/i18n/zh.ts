@@ -230,6 +230,8 @@ export default {
   'reader.nextPage': '下一页',
   'reader.speed': '速度',
   'reader.secPerPage': '{n} 秒/页',
+  'reader.collapseControls': '收起控制条',
+  'reader.expandAutoControls': '展开自动阅读控制',
   'reader.highlight': '高亮',
   'reader.writeNote': '写想法',
   'reader.notePlaceholder': '写下这一刻的想法…',
