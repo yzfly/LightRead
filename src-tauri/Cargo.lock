@@ -2441,7 +2441,7 @@ dependencies = [
 
 [[package]]
 name = "lightread"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "bzip2 0.5.2",
  "fontdb",
