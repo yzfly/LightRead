@@ -145,6 +145,28 @@ await step('PDF 默认适高', async () => {
   }
 })
 
+await step('PDF 自动阅读按模式滚动或翻页', async () => {
+  await page.click('.paper-actions .reader-segment button:has-text("滚动")')
+  await page.waitForSelector('.pane-left .p-holder canvas', { timeout: 8000 })
+  await page.click('.paper-actions .reader-tool:has-text("自动阅读")')
+  await page.fill('.auto-panel input[type="range"]', '3')
+  const before = await page.locator('.pane-left').evaluate(el => el.scrollTop)
+  await page.click('.auto-panel .auto-toggle')
+  await page.waitForTimeout(600)
+  const after = await page.locator('.pane-left').evaluate(el => el.scrollTop)
+  if (after <= before + 1) throw new Error(`滚动模式没有连续下移: ${before} -> ${after}`)
+  await page.click('.auto-panel button[title="停止"]')
+
+  await page.click('.paper-actions .reader-segment button:has-text("翻页")')
+  await page.waitForSelector('.paged-box .p-holder canvas', { timeout: 8000 })
+  const pageBefore = await page.locator('.page-input').inputValue()
+  await page.click('.paper-actions .reader-tool:has-text("自动阅读")')
+  await page.click('.auto-panel .auto-toggle')
+  await page.waitForFunction(before => document.querySelector('.page-input')?.value !== before, pageBefore, { timeout: 4000 })
+  await page.click('.paper-actions .reader-tool:has-text("自动阅读中")')
+  await page.click('.auto-panel button[title="停止"]')
+})
+
 await step('PDF 双页与翻页', async () => {
   await page.click('.paper-actions .reader-tool:has-text("双页")')
   await page.waitForFunction(() => document.querySelectorAll('.spread-host canvas').length === 2, null, { timeout: 8000 })

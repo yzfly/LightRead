@@ -1526,10 +1526,12 @@ async function pageTextFor(n: number): Promise<string> {
   return pdm ? pdm.pageText(n - 1).replace(/\s+/g, ' ').trim() : ''
 }
 
-/* ---- 自动翻页 ---- */
+/* ---- 自动阅读：翻页模式按页前进，滚动模式连续下移 ---- */
 const autoReading = ref(false)
 const autoPanel = ref(false)
-let autoTimer: ReturnType<typeof setInterval> | undefined
+let autoPageTimer: ReturnType<typeof setInterval> | undefined
+let autoScrollFrame: number | undefined
+let autoScrollAt = 0
 let autoPanelTimer: ReturnType<typeof setTimeout> | undefined
 
 function cancelAutoPanelCollapse() {
@@ -1562,23 +1564,54 @@ function toggleAutoPanel() {
   if (autoReading.value) scheduleAutoPanelCollapse(4000)
 }
 
+function stepAutoScroll(now: number) {
+  if (!autoReading.value || bookPaged.value) return
+  const el = scroller.value
+  if (!el) {
+    stopAutoRead()
+    return
+  }
+
+  const maxTop = Math.max(0, el.scrollHeight - el.clientHeight)
+  if (el.scrollTop >= maxTop - 1) {
+    el.scrollTop = maxTop
+    stopAutoRead()
+    return
+  }
+
+  // “秒/页”在连续模式中换算为每秒滚动一个页面高度的速度。
+  const elapsed = Math.min(Math.max(0, now - autoScrollAt), 100)
+  const pixelsPerMs = (holderH.value + GAP) / (settings.autoReadSeconds * 1000)
+  autoScrollAt = now
+  el.scrollTop = Math.min(maxTop, el.scrollTop + elapsed * pixelsPerMs)
+  autoScrollFrame = requestAnimationFrame(stepAutoScroll)
+}
+
 function startAutoRead() {
   stopAutoRead()
   autoReading.value = true
-  autoTimer = setInterval(() => {
-    if (atLastPage.value) {
-      stopAutoRead()
-      return
-    }
-    nextPage()
-  }, settings.autoReadSeconds * 1000)
+  if (bookPaged.value) {
+    autoPageTimer = setInterval(() => {
+      if (atLastPage.value) {
+        stopAutoRead()
+        return
+      }
+      nextPage()
+    }, settings.autoReadSeconds * 1000)
+  } else {
+    autoScrollAt = performance.now()
+    autoScrollFrame = requestAnimationFrame(stepAutoScroll)
+  }
   scheduleAutoPanelCollapse()
 }
 
 function stopAutoRead() {
   autoReading.value = false
-  clearInterval(autoTimer)
-  autoTimer = undefined
+  clearInterval(autoPageTimer)
+  autoPageTimer = undefined
+  if (autoScrollFrame != null) cancelAnimationFrame(autoScrollFrame)
+  autoScrollFrame = undefined
+  autoScrollAt = 0
   cancelAutoPanelCollapse()
 }
 

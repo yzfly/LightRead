@@ -25,7 +25,8 @@ jobs:
             args: ''
             rust-targets: ''
           - platform: windows-latest
-            args: ''
+            # WiX/MSI 在包含多种文件关联时会稳定失败；NSIS 同样是原生安装器且兼容这些关联。
+            args: '--bundles nsis'
             rust-targets: ''
 
     runs-on: ${{ matrix.platform }}

@@ -128,25 +128,21 @@ export class PdfiumDoc {
   render(pageIdx: number, scale: number): ImageData {
     const m = this.m
     const pg = this.pages[pageIdx]
-    const w = Math.max(1, Math.floor(pg.w * scale))
-    const h = Math.max(1, Math.floor(pg.h * scale))
+    const w = Math.max(1, Math.round(pg.w * scale))
+    const h = Math.max(1, Math.round(pg.h * scale))
     const page = m.FPDF_LoadPage(this.doc, pageIdx)
     const bmp = m.FPDFBitmap_CreateEx(w, h, 4 /* BGRA */, 0, 0)
     m.FPDFBitmap_FillRect(bmp, 0, 0, w, h, 0xffffffff)
-    m.FPDF_RenderPageBitmap(bmp, page, 0, 0, w, h, 0, 0x01 /* FPDF_ANNOT */)
+    // 直接输出 RGBA，避免在 JS 中逐像素交换通道；LCD_TEXT 提升屏幕文字清晰度。
+    const flags = 0x01 /* FPDF_ANNOT */ | 0x02 /* FPDF_LCD_TEXT */ | 0x10 /* FPDF_REVERSE_BYTE_ORDER */
+    m.FPDF_RenderPageBitmap(bmp, page, 0, 0, w, h, 0, flags)
     const buf = m.FPDFBitmap_GetBuffer(bmp)
     const stride = m.FPDFBitmap_GetStride(bmp)
     const out = new Uint8ClampedArray(w * h * 4)
-    const out32 = new Uint32Array(out.buffer)
-    // BGRA → RGBA (按 32 位字交换 R/B 通道)
     const heapBuf: ArrayBuffer = this.rt.HEAPU8.buffer
     for (let row = 0; row < h; row++) {
-      const src32 = new Uint32Array(heapBuf, buf + row * stride, w)
-      const dst = row * w
-      for (let col = 0; col < w; col++) {
-        const v = src32[col]
-        out32[dst + col] = (v & 0xff00ff00) | ((v & 0xff) << 16) | ((v >>> 16) & 0xff)
-      }
+      const src = new Uint8Array(heapBuf, buf + row * stride, w * 4)
+      out.set(src, row * w * 4)
     }
     m.FPDFBitmap_Destroy(bmp)
     m.FPDF_ClosePage(page)
