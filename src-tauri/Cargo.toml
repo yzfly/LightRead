@@ -1,9 +1,9 @@
 [package]
 name = "lightread"
-version = "1.0.6"
+version = "1.1.0"
 description = "LightRead 轻阅 — 开源本地阅读器"
 authors = ["云中江树"]
-license = "MIT"
+license = "AGPL-3.0-or-later"
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"

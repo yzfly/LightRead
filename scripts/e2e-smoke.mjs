@@ -172,7 +172,7 @@ await step('PDF 画布按设备像素显示且文字无彩色雾边', async () =
   if (Math.abs(quality.bitmapToCss - quality.dpr) > 0.01) {
     throw new Error(`画布发生二次缩放: ${quality.bitmapToCss.toFixed(4)} / DPR ${quality.dpr}`)
   }
-  if (quality.renderer !== 'pdfjs') throw new Error(`清晰渲染引擎未启用: ${quality.renderer || 'unknown'}`)
+  if (quality.renderer !== 'mupdf') throw new Error(`清晰渲染引擎未启用: ${quality.renderer || 'unknown'}`)
   if (quality.colored) throw new Error(`文字存在 ${quality.colored} 个 LCD 彩色雾边像素`)
 })
 
@@ -237,7 +237,16 @@ await step('刷新后藏书与进度仍在 (持久化)', async () => {
 })
 await page.screenshot({ path: join(TMP, 'shots', '07-persisted.png') })
 
-const fatal = errors.filter(e => !e.includes('favicon') && !e.includes('sw.js'))
+const expectedPdfRepairLogs = [
+  'format error: cannot find startxref',
+  'warning: trying to repair broken xref',
+  'warning: repairing PDF document',
+]
+const fatal = errors.filter(e =>
+  !e.includes('favicon') &&
+  !e.includes('sw.js') &&
+  !expectedPdfRepairLogs.some(message => e.includes(message)),
+)
 if (fatal.length) {
   console.log('\n--- 页面错误 ---')
   for (const e of fatal.slice(0, 10)) console.log(e)

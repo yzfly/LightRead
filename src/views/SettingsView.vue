@@ -539,7 +539,7 @@ async function doImport(e: Event) {
           <a href="javascript:void 0" @click="download(RELEASES_URL)">{{ t('settings.releasesLink') }}</a>
         </p>
         <p class="muted">
-          {{ t('settings.author') }}: 云中江树 ({{ t('settings.wechat') }}: 云中江树) · {{ t('settings.license') }}: CC BY-NC 4.0
+          {{ t('settings.author') }}: 云中江树 ({{ t('settings.wechat') }}: 云中江树) · {{ t('settings.license') }}: GNU AGPL v3.0+
         </p>
       </div>
     </section>

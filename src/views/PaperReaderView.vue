@@ -18,7 +18,7 @@ import {
   wordRange,
   textRuns,
 } from '../services/pdfium'
-import { initPdfjs, pdfAssetOptions } from '../services/pdfjs'
+import { initMupdf } from '../services/mupdf'
 import {
   TEN_QUESTIONS,
   SUMMARY_PROMPT,
@@ -80,22 +80,22 @@ const rightPane = ref<HTMLElement>()
 
 /** PDFium 交互引擎：几何选择、链接、目录、文本与段落提取。 */
 let pdm: PdfiumDoc | null = null
-/** pdf.js 只负责可见位图，使用浏览器 Canvas 字形栅格化以获得更清晰的正文。 */
+/** MuPDF 只负责可见位图；交互能力继续由 PDFium 提供。 */
 let renderBytes: Uint8Array | null = null
-let pdfjsDocPromise: Promise<any> | null = null
-let pdfjsRenderFailed = false
+let mupdfDocPromise: Promise<any> | null = null
+let mupdfRenderFailed = false
 
-function pdfjsDoc(): Promise<any> {
-  if (!pdfjsDocPromise) {
-    pdfjsDocPromise = (async () => {
+function mupdfDoc(): Promise<any> {
+  if (!mupdfDocPromise) {
+    mupdfDocPromise = (async () => {
       if (!renderBytes) throw new Error('PDF render data unavailable')
-      const pdfjs = await initPdfjs()
+      const mupdf = await initMupdf()
       const bytes = renderBytes
       renderBytes = null
-      return pdfjs.getDocument({ data: bytes, ...pdfAssetOptions }).promise
+      return mupdf.Document.openDocument(bytes, 'application/pdf')
     })()
   }
-  return pdfjsDocPromise
+  return mupdfDocPromise
 }
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 let settleTimer: ReturnType<typeof setTimeout> | undefined
@@ -178,8 +178,8 @@ function pagedScale(): number {
 }
 
 /**
- * 整页位图 canvas：pdf.js 的 Canvas 渲染比当前 PDFium WASM 位图
- * 更接近原生阅读器；PDFium 仍负责所有交互几何。失败时无感回退 PDFium。
+ * 整页位图 canvas：MuPDF 与 SumatraPDF 使用同一渲染内核，正文边缘更锐利。
+ * PDFium 仍负责所有交互几何；MuPDF 失败时无感回退 PDFium。
  */
 async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLCanvasElement> {
   const px = Math.min(scale * DPR(), MAX_DIM / baseDims.value.w, MAX_DIM / baseDims.value.h)
@@ -187,19 +187,44 @@ async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLC
   canvas.style.width = `${baseDims.value.w * scale}px`
   canvas.style.height = `${baseDims.value.h * scale}px`
 
-  if (!pdfjsRenderFailed) {
+  if (!mupdfRenderFailed) {
+    let page: any = null
+    let pixmap: any = null
     try {
-      const page = await (await pdfjsDoc()).getPage(pageNum)
-      const viewport = page.getViewport({ scale: px })
-      canvas.width = Math.max(1, Math.round(viewport.width))
-      canvas.height = Math.max(1, Math.round(viewport.height))
+      const mupdf = await initMupdf()
+      page = (await mupdfDoc()).loadPage(pageNum - 1)
+      pixmap = page.toPixmap(
+        mupdf.Matrix.scale(px, px),
+        mupdf.ColorSpace.DeviceRGB,
+        false,
+        true,
+      )
+      canvas.width = Math.max(1, pixmap.getWidth())
+      canvas.height = Math.max(1, pixmap.getHeight())
       const context = canvas.getContext('2d', { alpha: false })!
-      await page.render({ canvas, canvasContext: context, viewport, background: '#fff' }).promise
-      canvas.dataset.renderer = 'pdfjs'
+      const source: Uint8ClampedArray = pixmap.getPixels()
+      const sourceStride: number = pixmap.getStride()
+      const rgba = new Uint8ClampedArray(canvas.width * canvas.height * 4)
+      for (let y = 0; y < canvas.height; y++) {
+        let src = y * sourceStride
+        let dst = y * canvas.width * 4
+        const rowEnd = dst + canvas.width * 4
+        while (dst < rowEnd) {
+          rgba[dst++] = source[src++]
+          rgba[dst++] = source[src++]
+          rgba[dst++] = source[src++]
+          rgba[dst++] = 255
+        }
+      }
+      context.putImageData(new ImageData(rgba, canvas.width, canvas.height), 0, 0)
+      canvas.dataset.renderer = 'mupdf'
       return canvas
     } catch (e) {
-      pdfjsRenderFailed = true
-      console.warn('pdf.js render failed; falling back to PDFium', e)
+      mupdfRenderFailed = true
+      console.warn('MuPDF render failed; falling back to PDFium', e)
+    } finally {
+      pixmap?.destroy?.()
+      page?.destroy?.()
     }
   }
 
@@ -1886,8 +1911,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onDragMove)
   pdm?.close()
   pdm = null
-  pdfjsDocPromise?.then(doc => doc?.destroy?.()).catch(() => {})
-  pdfjsDocPromise = null
+  mupdfDocPromise?.then(doc => doc?.destroy?.()).catch(() => {})
+  mupdfDocPromise = null
   renderBytes = null
   bdUnlisten?.()
   if (bd.value.phase === 'running') babeldocCancel().catch(() => {})

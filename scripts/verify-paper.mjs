@@ -312,7 +312,17 @@ await step('分栏拖拽调宽', async () => {
 })
 await pg.screenshot({ path: join(TMP, 'shots', '09-split.png') })
 
-const fatal = errors.filter(e => !e.includes('favicon') && !e.includes('sw.js') && !e.includes('workbox'))
+const expectedPdfRepairLogs = [
+  'format error: cannot find startxref',
+  'warning: trying to repair broken xref',
+  'warning: repairing PDF document',
+]
+const fatal = errors.filter(e =>
+  !e.includes('favicon') &&
+  !e.includes('sw.js') &&
+  !e.includes('workbox') &&
+  !expectedPdfRepairLogs.some(message => e.includes(message)),
+)
 if (fatal.length) {
   console.log('\n--- 页面错误 ---')
   for (const e of fatal.slice(0, 10)) console.log(e)

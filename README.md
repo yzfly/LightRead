@@ -8,7 +8,7 @@
 
 你的书、你的进度、你的批注，全部在你自己的设备上。<br/>没有账号，没有云端，没有追踪。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: AGPL v3+](https://img.shields.io/badge/License-AGPL_v3%2B-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Web-1664FF)
 ![Tauri](https://img.shields.io/badge/Tauri%202-Rust-orange)
 ![Vue 3](https://img.shields.io/badge/Vue%203-TypeScript-42b883)
@@ -22,7 +22,7 @@
 ## 为什么是轻阅
 
 - **全格式**：EPUB · MOBI · AZW / AZW3 · FB2 / FB2.zip · CBZ / CBR 漫画 · PDF · **DjVu** · TXT · HTML · Markdown ——一个阅读器读完所有书
-- **轻**：安装包仅 ~8MB（Tauri 2 / Rust），冷启动秒开
+- **轻**：Tauri 2 / Rust 原生外壳，冷启动秒开
 - **本地优先**：书籍文件就在你选的文件夹里，Finder 可见、随时拿走；放进 iCloud / 网盘同步文件夹即可多设备共享
 - **找书不求人**：统一搜书跨古登堡计划 / GitHub 书库 / arXiv，搜《百年孤独》《万历十五年》，点一下下载入库即读
 - **认真做阅读**：对标微信读书的完整阅读体验，做给每天真的在读书的人
@@ -56,6 +56,7 @@
 <div align="center"><img src="docs/screenshots/pdf-spread.png" width="880" alt="PDF 双页并列" /></div>
 
 - 默认**适高整页**，像拿着一本真书；**双页并列**像摊开书
+- 使用与 SumatraPDF 同源的 **MuPDF** 内核绘制页面，按设备像素比渲染清晰正文
 - 连续滚动模式细读大图，视口外内存自动回收，千页扫描件不卡
 - 触摸滑动翻页（触控板 / 移动端）
 
@@ -107,7 +108,7 @@ npm run tauri build    # 打包
 ┌─────────────────────────────────────────────┐
 │  Vue 3 + TypeScript (界面层)                 │
 ├──────────────┬───────────────┬──────────────┤
-│  foliate-js  │    pdf.js     │  TXT/MD/HTML │
+│  foliate-js  │ MuPDF+PDFium  │  TXT/MD/HTML │
 │  EPUB MOBI   │     PDF       │  → 动态转EPUB │
 │  AZW3 FB2 CBZ│               │              │
 ├──────────────┴───────────────┴──────────────┤
@@ -150,8 +151,10 @@ npm run tauri build    # 打包
 
 ## 📄 协议
 
-[MIT](LICENSE)
+[GNU Affero General Public License v3.0 or later](LICENSE)
+
+LightRead 使用 AGPL 授权的 MuPDF，因此本项目整体以 AGPL-3.0-or-later 发布。分发修改版或通过网络向用户提供修改版服务时，须依照该协议提供对应源代码。
 
 作者：**云中江树**（微信公众号：云中江树）
 
-致谢：[foliate-js](https://github.com/johnfactotum/foliate-js) (MIT) · [pdf.js](https://mozilla.github.io/pdf.js/) (Apache-2.0) · 截图书籍来自 [古登堡计划](https://www.gutenberg.org/)
+致谢：[foliate-js](https://github.com/johnfactotum/foliate-js) (MIT) · [MuPDF](https://mupdf.com/) (AGPL-3.0-or-later) · [PDFium](https://pdfium.googlesource.com/pdfium/) (BSD-3-Clause) · 截图书籍来自 [古登堡计划](https://www.gutenberg.org/)

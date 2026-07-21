@@ -1,11 +1,11 @@
 /**
- * PDFium 阅读引擎 (Chrome 同款渲染引擎的 WASM 版):
- *  - 页面位图渲染 (画质与 Chrome 一致)
+ * PDFium 交互引擎 (Chrome 同源内核的 WASM 版):
+ *  - MuPDF 不可用时的页面位图回退
  *  - 字符级几何文本模型: 行切分 / 坐标命中 / 选区矩形 / 双击取词
  *    —— 原生阅读器选择手感的来源: 选区不走 DOM, 全部按引擎给的字符坐标计算
  *  - 链接热区与内嵌目录
  *
- * pdf.js 仍负责翻译版式对照与 AI 文本提取; 本引擎初始化失败时阅读器整体回退 pdf.js。
+ * MuPDF 只负责可见位图；PDFium 是交互几何、翻译与 AI 文本提取的数据源。
  * 坐标约定: 除注明外均为 PDF 点 (page point), 左上原点。
  */
 import { init, type WrappedPdfiumModule } from '@embedpdf/pdfium'
@@ -439,7 +439,7 @@ const isWordCode = (c: number) =>
   c > 0x2e00 // CJK 等宽字符双击按单字扩展亦可接受
 
 /**
- * 字符流 → 文本项 runs (供段落提取管线, 对齐 pdf.js textContent item 语义):
+ * 字符流 → 文本项 runs（供段落提取管线使用）：
  * 按行遍历, 行内在字号突变 / 数学字符边界 / 大间距处断 run。
  * 坐标: x 左缘, y 盒底 (转为 PDF 左下原点), h 用字号。
  */

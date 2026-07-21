@@ -1,11 +1,10 @@
 // PDF 兼容性语料库回归测试
 //
-// 对 .corpus/ 下的所有 PDF, 用与应用完全相同的 pdf.js 配置 (直接 import
-// src/services/importer.ts) 渲染第 1 页, 按结果分类:
+// 对 .corpus/ 下的所有 PDF，用与应用完全相同的 MuPDF 渲染第 1 页，按结果分类：
 //   ok       正常渲染且画布有内容
 //   blank    渲染成功但整页空白 (疑似解码静默失败, 重点排查对象)
 //   password 需要密码 (阅读器暂不支持, 单独统计)
-//   invalid  pdf.js 判定文件损坏
+//   invalid  MuPDF 判定文件损坏
 //   error    渲染抛错
 //   timeout  单文件超时
 //
@@ -62,48 +61,53 @@ const browser = await chromium.launch()
 const PAGE_INIT = async (page) => {
   await page.goto(origin, { waitUntil: 'domcontentloaded' })
   await page.evaluate(async () => {
-    const mod = await import('/src/services/importer.ts')
-    window.__pdfjs = await mod.initPdfjs()
-    window.__opts = mod.pdfAssetOptions
+    const mod = await import('/src/services/mupdf.ts')
+    window.__mupdf = await mod.initMupdf()
   })
 }
 
 const checkInPage = async (page, idx) => {
-  return await page.evaluate(async ({ idx, timeout }) => {
-    const withTimeout = (p) => Promise.race([
-      p, new Promise((_, rej) => setTimeout(() => rej(new Error('__timeout')), timeout)),
-    ])
-    let task
+  let timer
+  try {
+    return await Promise.race([page.evaluate(async (idx) => {
+    let doc, pdfPage, pixmap
     try {
       const buf = await (await fetch(`/__corpus/${idx}`)).arrayBuffer()
-      task = window.__pdfjs.getDocument({ data: buf, ...window.__opts })
-      const pdf = await withTimeout(task.promise)
-      const pg = await withTimeout(pdf.getPage(1))
-      const vp = pg.getViewport({ scale: 1.5 })
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.min(2000, Math.floor(vp.width))
-      canvas.height = Math.min(2000, Math.floor(vp.height))
-      const ctx = canvas.getContext('2d')
-      await withTimeout(pg.render({ canvas, canvasContext: ctx, viewport: vp }).promise)
-      const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+      doc = window.__mupdf.Document.openDocument(new Uint8Array(buf), 'application/pdf')
+      pdfPage = doc.loadPage(0)
+      pixmap = pdfPage.toPixmap(
+        window.__mupdf.Matrix.scale(1.5, 1.5),
+        window.__mupdf.ColorSpace.DeviceRGB,
+        false,
+        true,
+      )
+      const d = pixmap.getPixels()
       let nonWhite = 0, total = 0
-      for (let i = 0; i < d.length; i += 16) {
+      for (let i = 0; i < d.length; i += 12) {
         total++
-        if (d[i] < 245 || d[i + 1] < 245 || d[i + 2] < 245 || d[i + 3] < 250) nonWhite++
+        if (d[i] < 245 || d[i + 1] < 245 || d[i + 2] < 245) nonWhite++
       }
       const ratio = nonWhite / total
-      await task.destroy()
+      pixmap.destroy(); pixmap = null
+      pdfPage.destroy(); pdfPage = null
+      doc.destroy(); doc = null
       return { status: ratio > 0.0005 ? 'ok' : 'blank', ratio: +ratio.toFixed(5) }
     } catch (e) {
-      try { await task?.destroy() } catch {}
+      try { pixmap?.destroy() } catch {}
+      try { pdfPage?.destroy() } catch {}
+      try { doc?.destroy() } catch {}
       const name = e?.name ?? ''
       const msg = String(e?.message ?? e)
-      if (msg === '__timeout') return { status: 'timeout' }
-      if (name === 'PasswordException') return { status: 'password' }
-      if (name === 'InvalidPDFException') return { status: 'invalid', msg }
+      if (/password/i.test(msg)) return { status: 'password', msg }
+      if (/invalid|format|syntax/i.test(msg)) return { status: 'invalid', msg }
       return { status: 'error', msg: `${name}: ${msg}`.slice(0, 200) }
     }
-  }, { idx, timeout: FILE_TIMEOUT })
+    }, idx), new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('__timeout')), FILE_TIMEOUT)
+    })])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // 工作池
@@ -122,7 +126,9 @@ await Promise.all(Array.from({ length: WORKERS }, async () => {
       if (results[idx].status === 'blank') results[idx] = await checkInPage(page, idx)
     } catch (e) {
       // 页面崩溃: 记录并重建页面
-      results[idx] = { status: 'crash', msg: String(e.message).slice(0, 200) }
+      results[idx] = e.message === '__timeout'
+        ? { status: 'timeout' }
+        : { status: 'crash', msg: String(e.message).slice(0, 200) }
       try { await page.close() } catch {}
       page = await browser.newPage()
       await PAGE_INIT(page)
@@ -135,7 +141,7 @@ await browser.close()
 await vite.close()
 
 // blank 交叉验证: poppler (pdftoppm) 也渲染为空 → 文件本身空白, 放行;
-// poppler 有内容而 pdf.js 空白 → 真问题 (blank_suspect)
+// poppler 有内容而 MuPDF 空白 → 真问题 (blank_suspect)
 const popplerBlankRatio = (file) => {
   const dir = mkdtempSync(join(tmpdir(), 'corpus-'))
   try {
