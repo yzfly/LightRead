@@ -1,5 +1,5 @@
 // LightRead 端到端冒烟: 导入 TXT → 书架出现 → 打开阅读器 → 目录/翻页 → PDF 导入打开
-import { chromium } from 'playwright'
+import { chromium, webkit } from 'playwright'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -16,36 +16,38 @@ for (let i = 1; i <= 5; i++) {
 }
 writeFileSync(txtPath, chapters.join('\n\n'), 'utf-8')
 
-// 2. 四页最小合法 PDF（覆盖适高、双页与双页翻页）
+// 2. 四页最小合法 PDF（覆盖小字号清晰度、适高、双页与双页翻页）
+const pdfPageText = page => `BT
+/F1 24 Tf 100 700 Td (Hello LightRead PDF ${page}) Tj
+/F1 10 Tf 0 -36 Td (The quick brown fox jumps over the lazy dog 0123456789.) Tj
+0 -14 Td (Small body text should keep neutral gray antialiasing.) Tj
+ET`
+const pdfStream = page => {
+  const body = pdfPageText(page)
+  return `<< /Length ${body.length} >> stream\n${body}\nendstream`
+}
 const pdfContent = `%PDF-1.4
 1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
 2 0 obj << /Type /Pages /Kids [3 0 R 6 0 R 8 0 R 10 0 R] /Count 4 >> endobj
 3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
-4 0 obj << /Length 60 >> stream
-BT /F1 24 Tf 100 700 Td (Hello LightRead PDF 1) Tj ET
-endstream endobj
+4 0 obj ${pdfStream(1)} endobj
 5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
 6 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
-7 0 obj << /Length 60 >> stream
-BT /F1 24 Tf 100 700 Td (Hello LightRead PDF 2) Tj ET
-endstream endobj
+7 0 obj ${pdfStream(2)} endobj
 8 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 9 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
-9 0 obj << /Length 60 >> stream
-BT /F1 24 Tf 100 700 Td (Hello LightRead PDF 3) Tj ET
-endstream endobj
+9 0 obj ${pdfStream(3)} endobj
 10 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 11 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
-11 0 obj << /Length 60 >> stream
-BT /F1 24 Tf 100 700 Td (Hello LightRead PDF 4) Tj ET
-endstream endobj
+11 0 obj ${pdfStream(4)} endobj
 trailer << /Root 1 0 R /Size 12 >>
 %%EOF`
 const pdfPath = join(TMP, 'test-doc.pdf')
 writeFileSync(pdfPath, pdfContent)
 
-const browser = await chromium.launch()
-const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+const browserType = process.env.ENGINE === 'webkit' ? webkit : chromium
+const browser = await browserType.launch()
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })
 const errors = []
-page.on('pageerror', e => errors.push('PAGE_ERROR: ' + e.message))
+page.on('pageerror', e => errors.push('PAGE_ERROR: ' + (e.stack || e.message)))
 page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()) })
 
 const step = async (name, fn) => {
@@ -143,6 +145,35 @@ await step('PDF 默认适高', async () => {
   if (!(fit.canvasH <= fit.boxH && fit.canvasH > fit.boxH * 0.8)) {
     throw new Error(`页高未适高: ${Math.round(fit.canvasH)} / ${fit.boxH}`)
   }
+})
+
+await step('PDF 画布按设备像素显示且文字无彩色雾边', async () => {
+  const quality = await page.evaluate(() => {
+    const canvas = document.querySelector('.spread-host canvas')
+    if (!(canvas instanceof HTMLCanvasElement)) return null
+    const rect = canvas.getBoundingClientRect()
+    const pixels = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data
+    let colored = 0
+    if (pixels) {
+      for (let i = 0; i < pixels.length; i += 4) {
+        const max = Math.max(pixels[i], pixels[i + 1], pixels[i + 2])
+        const min = Math.min(pixels[i], pixels[i + 1], pixels[i + 2])
+        if (max - min > 1) colored++
+      }
+    }
+    return {
+      bitmapToCss: canvas.width / rect.width,
+      dpr: window.devicePixelRatio,
+      colored,
+      renderer: canvas.dataset.renderer,
+    }
+  })
+  if (!quality) throw new Error('找不到 PDF canvas')
+  if (Math.abs(quality.bitmapToCss - quality.dpr) > 0.01) {
+    throw new Error(`画布发生二次缩放: ${quality.bitmapToCss.toFixed(4)} / DPR ${quality.dpr}`)
+  }
+  if (quality.renderer !== 'pdfjs') throw new Error(`清晰渲染引擎未启用: ${quality.renderer || 'unknown'}`)
+  if (quality.colored) throw new Error(`文字存在 ${quality.colored} 个 LCD 彩色雾边像素`)
 })
 
 await step('PDF 自动阅读按模式滚动或翻页', async () => {

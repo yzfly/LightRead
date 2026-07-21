@@ -18,6 +18,7 @@ import {
   wordRange,
   textRuns,
 } from '../services/pdfium'
+import { initPdfjs, pdfAssetOptions } from '../services/pdfjs'
 import {
   TEN_QUESTIONS,
   SUMMARY_PROMPT,
@@ -77,8 +78,25 @@ const scroller = ref<HTMLElement>()
 const pagedBox = ref<HTMLElement>()
 const rightPane = ref<HTMLElement>()
 
-/** 阅读引擎: PDFium (唯一) — 渲染 / 几何选择 / 链接 / 目录 / 文本与段落提取 */
+/** PDFium 交互引擎：几何选择、链接、目录、文本与段落提取。 */
 let pdm: PdfiumDoc | null = null
+/** pdf.js 只负责可见位图，使用浏览器 Canvas 字形栅格化以获得更清晰的正文。 */
+let renderBytes: Uint8Array | null = null
+let pdfjsDocPromise: Promise<any> | null = null
+let pdfjsRenderFailed = false
+
+function pdfjsDoc(): Promise<any> {
+  if (!pdfjsDocPromise) {
+    pdfjsDocPromise = (async () => {
+      if (!renderBytes) throw new Error('PDF render data unavailable')
+      const pdfjs = await initPdfjs()
+      const bytes = renderBytes
+      renderBytes = null
+      return pdfjs.getDocument({ data: bytes, ...pdfAssetOptions }).promise
+    })()
+  }
+  return pdfjsDocPromise
+}
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 let settleTimer: ReturnType<typeof setTimeout> | undefined
 let resizeTimer: ReturnType<typeof setTimeout> | undefined
@@ -159,16 +177,37 @@ function pagedScale(): number {
     : availW / totalW
 }
 
-/** 整页位图 canvas (PDFium) */
+/**
+ * 整页位图 canvas：pdf.js 的 Canvas 渲染比当前 PDFium WASM 位图
+ * 更接近原生阅读器；PDFium 仍负责所有交互几何。失败时无感回退 PDFium。
+ */
 async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLCanvasElement> {
   const px = Math.min(scale * DPR(), MAX_DIM / baseDims.value.w, MAX_DIM / baseDims.value.h)
-  const img = pdm!.render(pageNum - 1, px)
   const canvas = document.createElement('canvas')
+  canvas.style.width = `${baseDims.value.w * scale}px`
+  canvas.style.height = `${baseDims.value.h * scale}px`
+
+  if (!pdfjsRenderFailed) {
+    try {
+      const page = await (await pdfjsDoc()).getPage(pageNum)
+      const viewport = page.getViewport({ scale: px })
+      canvas.width = Math.max(1, Math.round(viewport.width))
+      canvas.height = Math.max(1, Math.round(viewport.height))
+      const context = canvas.getContext('2d', { alpha: false })!
+      await page.render({ canvas, canvasContext: context, viewport, background: '#fff' }).promise
+      canvas.dataset.renderer = 'pdfjs'
+      return canvas
+    } catch (e) {
+      pdfjsRenderFailed = true
+      console.warn('pdf.js render failed; falling back to PDFium', e)
+    }
+  }
+
+  const img = pdm!.render(pageNum - 1, px)
   canvas.width = img.width
   canvas.height = img.height
   canvas.getContext('2d')!.putImageData(img, 0, 0)
-  canvas.style.width = `${baseDims.value.w * scale}px`
-  canvas.style.height = `${baseDims.value.h * scale}px`
+  canvas.dataset.renderer = 'pdfium'
   return canvas
 }
 
@@ -1790,7 +1829,9 @@ onMounted(async () => {
       annotations.value = list.filter(a => decodeLoc(a.cfi))
     })
     const blob = await storage.getBookFile(bookId)
-    pdm = await PdfiumDoc.open(await blob.arrayBuffer())
+    const fileData = await blob.arrayBuffer()
+    pdm = await PdfiumDoc.open(fileData)
+    renderBytes = new Uint8Array(fileData.slice(0))
     pageCount.value = pdm.pages.length
     baseDims.value = { w: pdm.pages[0]?.w ?? 612, h: pdm.pages[0]?.h ?? 792 }
     const saved = parseInt(meta.value.location ?? '1', 10)
@@ -1845,6 +1886,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onDragMove)
   pdm?.close()
   pdm = null
+  pdfjsDocPromise?.then(doc => doc?.destroy?.()).catch(() => {})
+  pdfjsDocPromise = null
+  renderBytes = null
   bdUnlisten?.()
   if (bd.value.phase === 'running') babeldocCancel().catch(() => {})
 })
