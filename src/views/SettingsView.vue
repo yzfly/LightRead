@@ -529,6 +529,17 @@ async function doImport(e: Event) {
         </p>
       </div>
 
+      <div class="star-callout">
+        <div class="star-mark" aria-hidden="true">⭐</div>
+        <div class="star-copy">
+          <div class="star-title">{{ t('settings.starTitle') }}</div>
+          <div class="star-desc">{{ t('settings.starDesc') }}</div>
+        </div>
+        <button class="btn btn-primary star-action" @click="download(REPO_URL)">
+          {{ t('settings.starAction') }}
+        </button>
+      </div>
+
       <div class="about">
         <p>
           {{ t('settings.aboutFormats') }}
@@ -841,6 +852,46 @@ h2 {
   margin-top: 10px;
   line-height: 1.7;
 }
+.star-callout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 4px 0 16px;
+  border: 1px solid var(--brand-light);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--brand-light), var(--card) 72%);
+}
+.star-mark {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+  font-size: 18px;
+}
+.star-copy {
+  flex: 1;
+  min-width: 0;
+}
+.star-title {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.star-desc {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 2px;
+}
+.star-action {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .about {
   border-top: 1px solid var(--border);
   padding-top: 12px;
@@ -861,5 +912,14 @@ h2 {
 .muted {
   color: var(--text-3);
   font-size: 12px;
+}
+@media (max-width: 600px) {
+  .star-callout {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .star-action {
+    width: 100%;
+  }
 }
 </style>
