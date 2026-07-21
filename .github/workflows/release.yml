@@ -116,4 +116,15 @@ jobs:
         run: |
           APK=$(find src-tauri/gen/android -name "*.apk" | head -1)
           cp "$APK" "LightRead_${{ github.ref_name }}_android_arm64.apk"
+          # 桌面矩阵负责创建 Release；Android 偶尔先编译完，需要等待 Release 可见。
+          for attempt in $(seq 1 60); do
+            if gh release view ${{ github.ref_name }} >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              echo "Release ${{ github.ref_name }} was not created in time" >&2
+              exit 1
+            fi
+            sleep 10
+          done
           gh release upload ${{ github.ref_name }} "LightRead_${{ github.ref_name }}_android_arm64.apk" --clobber
