@@ -3,7 +3,11 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { getStorage, isTauri } from '../storage'
 import { useSettings } from '../stores/settings'
 import { useLibrary } from '../stores/library'
-import { exportBackup, importBackup } from '../services/backup'
+import {
+  exportBackup,
+  importBackup,
+  LIBRARY_ARCHIVE_EXTENSION,
+} from '../services/backup'
 import { backupToWebdav, restoreFromWebdav, testWebdav, webdavBackupInfo } from '../services/webdav'
 import { fetchRemote } from '../services/net'
 import { toast } from '../services/toast'
@@ -277,7 +281,7 @@ async function doExport() {
     const blob = await exportBackup(msg => (busy.value = msg))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `lightread-backup-${new Date().toISOString().slice(0, 10)}.zip`
+    a.download = `lightread-library-${new Date().toISOString().slice(0, 10)}${LIBRARY_ARCHIVE_EXTENSION}`
     a.click()
     URL.revokeObjectURL(a.href)
     toast(t('settings.backupExported'), 'success')
@@ -353,7 +357,7 @@ async function doImport(e: Event) {
         <div class="row-actions">
           <button class="btn" :disabled="!!busy" @click="doExport">{{ t('settings.exportBackup') }}</button>
           <button class="btn" :disabled="!!busy" @click="backupInput?.click()">{{ t('settings.importBackup') }}</button>
-          <input ref="backupInput" type="file" accept=".zip" hidden @change="doImport" />
+          <input ref="backupInput" type="file" accept=".lightread,.zip" hidden @change="doImport" />
         </div>
       </div>
       <div class="row">

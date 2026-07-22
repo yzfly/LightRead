@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
+    "test:archive": "node scripts/test-library-archive.mjs",
     "preview": "npm run build && wrangler dev",
     "tauri": "tauri",
     "e2e": "node scripts/e2e-smoke.mjs",
