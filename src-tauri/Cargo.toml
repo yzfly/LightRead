@@ -1,6 +1,6 @@
 [package]
 name = "lightread"
-version = "1.1.0"
+version = "1.1.1"
 description = "LightRead 轻阅 — 开源本地阅读器"
 authors = ["云中江树"]
 license = "AGPL-3.0-or-later"

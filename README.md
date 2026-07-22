@@ -41,7 +41,7 @@
 
 只从本项目的 [GitHub Releases](https://github.com/yzfly/LightRead/releases/latest) 下载。页面打开后，找到 **Assets**，按照自己的系统选择文件。
 
-文件名中的 `x.y.z` 是版本号，例如 `1.1.0`。
+文件名中的 `x.y.z` 是版本号，例如 `1.1.1`。
 
 | 你的设备 | 应下载的文件 | 说明 |
 |---|---|---|
