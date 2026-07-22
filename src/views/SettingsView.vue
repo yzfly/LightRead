@@ -357,7 +357,7 @@ async function doImport(e: Event) {
         <div class="row-actions">
           <button class="btn" :disabled="!!busy" @click="doExport">{{ t('settings.exportBackup') }}</button>
           <button class="btn" :disabled="!!busy" @click="backupInput?.click()">{{ t('settings.importBackup') }}</button>
-          <input ref="backupInput" type="file" accept=".lightread,.zip" hidden @change="doImport" />
+          <input ref="backupInput" type="file" accept=".okf.zip,.lightread,.zip" hidden @change="doImport" />
         </div>
       </div>
       <div class="row">

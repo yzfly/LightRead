@@ -124,7 +124,7 @@ export default {
   'settings.changeLocation': 'Change Location',
   'settings.restoreDefault': 'Restore Default',
   'settings.backupRestore': 'Library Import & Export',
-  'settings.backupDesc': 'Export book files, metadata, reading progress and annotations as a checksummed .lightread archive; legacy .zip backups remain importable',
+  'settings.backupDesc': 'Import and export books, metadata, reading state and annotations as an open Google OKF v0.1 bundle readable by other OKF tools',
   'settings.exportBackup': 'Export Library',
   'settings.importBackup': 'Import Library',
   'settings.webdavTitle': 'WebDAV Cloud Backup',
@@ -191,7 +191,7 @@ export default {
   'settings.preparingExport': 'Preparing export…',
   'settings.backupExported': 'Library archive exported',
   'settings.exportFailed': 'Export failed: {msg}',
-  'settings.readingBackup': 'Reading library archive…',
+  'settings.readingBackup': 'Reading OKF library bundle…',
   'settings.importDone': 'Restored {books} books, {annotations} annotations, {sources} catalogs',
 
   // ---- 版本更新 ----

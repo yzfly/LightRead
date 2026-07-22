@@ -264,7 +264,7 @@ check('备份导出', true, backupPath)
 // 新环境恢复
 const page2 = await browser.newPage({ viewport: { width: 1280, height: 800 } })
 await page2.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle' })
-await page2.setInputFiles('input[accept=".lightread,.zip"]', backupPath)
+await page2.setInputFiles('input[accept=".okf.zip,.lightread,.zip"]', backupPath)
 await page2.waitForSelector('.toast.success', { timeout: 30000 })
 await page2.goto(`${BASE}/#/library`, { waitUntil: 'networkidle' })
 await page2.waitForFunction(() => document.querySelectorAll('.book-card').length >= 2, null, { timeout: 10000 })

@@ -124,7 +124,7 @@ export default {
   'settings.changeLocation': '更改位置',
   'settings.restoreDefault': '恢复默认',
   'settings.backupRestore': '藏书导入与导出',
-  'settings.backupDesc': '将藏书文件、元数据、阅读进度和标注导出为可校验的 .lightread 藏书包；兼容导入旧版 .zip 备份',
+  'settings.backupDesc': '按开放的 Google OKF v0.1 导入导出书籍、元数据、阅读进度与标注；.okf.zip 可由其他 OKF 工具直接读取',
   'settings.exportBackup': '导出藏书包',
   'settings.importBackup': '导入藏书包',
   'settings.webdavTitle': 'WebDAV 云备份',
@@ -191,7 +191,7 @@ export default {
   'settings.preparingExport': '准备导出…',
   'settings.backupExported': '藏书包已导出',
   'settings.exportFailed': '导出失败: {msg}',
-  'settings.readingBackup': '读取藏书包…',
+  'settings.readingBackup': '读取 OKF 藏书包…',
   'settings.importDone': '恢复完成: {books} 本书, {annotations} 条标注, {sources} 个书源',
 
   // ---- 版本更新 ----

@@ -1,10 +1,11 @@
 /**
  * LightRead 藏书交换包。
  *
- * v2 是带明确格式标识、版本和 SHA-256 完整性校验的 ZIP 容器；导入仍兼容
- * 早期的 v1 `lightread` 备份。规范见 docs/藏书交换格式.md。
+ * 当前导出是符合 OKF v0.1 的开放知识包；导入仍兼容早期 JSON v1/v2 备份。
+ * 开放 Profile 见 docs/library-okf-profile.md。
  */
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate'
+import { parseDocument, stringify } from 'yaml'
 import {
   getStorage,
   type AnnotationRec,
@@ -13,29 +14,18 @@ import {
   type CatalogSourceRec,
 } from '../storage'
 
-export const LIBRARY_ARCHIVE_FORMAT = 'org.lightread.library'
-export const LIBRARY_ARCHIVE_VERSION = 2
-export const LIBRARY_ARCHIVE_EXTENSION = '.lightread'
+const LEGACY_JSON_FORMAT = 'org.lightread.library'
+const LEGACY_JSON_VERSION = 2
+export const LIBRARY_ARCHIVE_EXTENSION = '.okf.zip'
+export const OKF_VERSION = '0.1'
+export const LIBRARY_OKF_PROFILE =
+  'https://github.com/yzfly/LightRead/blob/main/docs/library-okf-profile.md#profile-version-10'
 
 interface AssetDescriptor {
   path: string
   mediaType: string
   byteLength: number
   sha256: string
-}
-
-interface ManifestV2 {
-  format: typeof LIBRARY_ARCHIVE_FORMAT
-  version: typeof LIBRARY_ARCHIVE_VERSION
-  exportedAt: string
-  generator: {
-    name: 'LightRead'
-    version: string
-  }
-  books: Array<BookMeta & { content: AssetDescriptor; cover?: AssetDescriptor }>
-  annotations: AnnotationRec[]
-  /** 只导出公开书源信息，绝不包含 username/password。 */
-  sources: Array<Omit<CatalogSourceRec, 'username' | 'password'>>
 }
 
 interface RestorableAsset {
@@ -52,7 +42,7 @@ interface RestorableBook {
 }
 
 interface RestorableManifest {
-  version: 1 | 2
+  version: 1 | 2 | 'okf-0.1'
   books: RestorableBook[]
   annotations: AnnotationRec[]
   sources: CatalogSourceRec[]
@@ -117,6 +107,142 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function optionalRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
+}
+
+function stringList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter(item => typeof item === 'string')
+  return typeof value === 'string' && value ? [value] : []
+}
+
+function toIso(value?: number): string | undefined {
+  return value === undefined ? undefined : new Date(value).toISOString()
+}
+
+function toTimestamp(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function compactRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined))
+}
+
+function okfDocument(frontmatter: Record<string, unknown>, body: string): Uint8Array {
+  const yaml = stringify(compactRecord(frontmatter), { lineWidth: 0 }).trimEnd()
+  return strToU8(`---\n${yaml}\n---\n\n${body.trim()}\n`)
+}
+
+function readOkfDocument(
+  bytes: Uint8Array,
+  path: string,
+  frontmatterOptional = false,
+): { frontmatter: Record<string, unknown>; body: string } {
+  const text = strFromU8(bytes).replace(/\r\n/g, '\n')
+  if (!text.startsWith('---\n')) {
+    if (frontmatterOptional) return { frontmatter: {}, body: text }
+    archiveError(`${path} 缺少 YAML frontmatter`)
+  }
+  const end = text.indexOf('\n---\n', 4)
+  if (end < 0) archiveError(`${path} 的 YAML frontmatter 未闭合`)
+  const document = parseDocument(text.slice(4, end), { prettyErrors: false })
+  if (document.errors.length) archiveError(`${path} 的 YAML frontmatter 无法解析`)
+  const frontmatter = document.toJS({ maxAliasCount: 20 }) as unknown
+  if (!isRecord(frontmatter)) archiveError(`${path} 的 YAML frontmatter 必须是对象`)
+  return { frontmatter, body: text.slice(end + 5) }
+}
+
+function normalizeBundlePath(value: string): string {
+  const clean = value.split(/[?#]/, 1)[0].replace(/^\/+/, '')
+  if (/^[a-z][a-z0-9+.-]*:/i.test(clean)) archiveError(`不支持外部资源 ${value}`)
+  const parts: string[] = []
+  for (const part of clean.split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') {
+      if (!parts.length) archiveError(`资源路径越界 ${value}`)
+      parts.pop()
+    } else {
+      parts.push(part)
+    }
+  }
+  if (!parts.length) archiveError(`资源路径无效 ${value}`)
+  return parts.join('/')
+}
+
+function resolveConceptResource(conceptPath: string, value: string): string {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) archiveError(`不支持外部资源 ${value}`)
+  if (value.startsWith('/')) return normalizeBundlePath(value)
+  const directory = conceptPath.includes('/')
+    ? conceptPath.slice(0, conceptPath.lastIndexOf('/') + 1)
+    : ''
+  return normalizeBundlePath(directory + value)
+}
+
+function formatFromPath(path: string): BookFormat | undefined {
+  const lower = path.toLowerCase()
+  if (lower.endsWith('.fb2.zip')) return 'fbz'
+  const extension = lower.split('.').pop()
+  return extension && BOOK_FORMATS.has(extension as BookFormat)
+    ? extension as BookFormat
+    : undefined
+}
+
+function assetToOkf(
+  asset: AssetDescriptor,
+  name: string,
+  format?: BookFormat,
+): Record<string, unknown> {
+  return compactRecord({
+    path: asset.path,
+    name,
+    format,
+    media_type: asset.mediaType,
+    byte_length: asset.byteLength,
+    sha256: asset.sha256,
+  })
+}
+
+function parseOkfAsset(
+  value: unknown,
+  conceptPath: string,
+  label: string,
+  fallbackResource?: string,
+): RestorableAsset {
+  const record = optionalRecord(value)
+  const declaredPath = optionalString(record?.path)
+  const path = declaredPath
+    ? normalizeBundlePath(declaredPath)
+    : fallbackResource
+      ? resolveConceptResource(conceptPath, fallbackResource)
+      : archiveError(`${label}.path 缺失`)
+  const byteLength = optionalNumber(record?.byte_length ?? record?.byteLength)
+  const digest = optionalString(record?.sha256)?.toLowerCase()
+  if (digest && !/^[0-9a-f]{64}$/.test(digest)) archiveError(`${label}.sha256 无效`)
+  return {
+    path,
+    mediaType: optionalString(record?.media_type ?? record?.mediaType),
+    byteLength,
+    sha256: digest,
+  }
+}
+
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function markdownQuote(value: string): string {
+  return value.split(/\r?\n/).map(line => `> ${line}`).join('\n')
+}
+
+function markdownLabel(value: string): string {
+  return value.replace(/([\\[\]])/g, '\\$1')
 }
 
 /** 只接受存储层明确支持的字段，避免把包中的任意键写入数据库。 */
@@ -243,8 +369,8 @@ function parseManifest(raw: Uint8Array): RestorableManifest {
   }
   if (!isRecord(value)) archiveError('manifest.json 顶层必须是对象')
 
-  if (value.format === LIBRARY_ARCHIVE_FORMAT) {
-    if (value.version !== LIBRARY_ARCHIVE_VERSION) {
+  if (value.format === LEGACY_JSON_FORMAT) {
+    if (value.version !== LEGACY_JSON_VERSION) {
       archiveError(`不支持的格式版本 ${String(value.version)}`)
     }
     if (!Array.isArray(value.books)) archiveError('books 必须是数组')
@@ -294,6 +420,130 @@ function parseManifest(raw: Uint8Array): RestorableManifest {
   archiveError('不是 LightRead 藏书包')
 }
 
+/**
+ * 导入开放 OKF bundle。LightRead Profile 字段可完整恢复；其他生产者只要提供
+ * Book/Publication concept 和本地 file/resource，也能以通用元数据导入。
+ */
+function parseOkfBundle(entries: Record<string, Uint8Array>): RestorableManifest {
+  const rootIndex = entries['index.md']
+  if (rootIndex) {
+    const { frontmatter } = readOkfDocument(rootIndex, 'index.md', true)
+    const declared = optionalString(frontmatter.okf_version)
+    if (declared && declared !== OKF_VERSION) {
+      archiveError(`暂不支持 OKF ${declared}`)
+    }
+  }
+
+  const books: RestorableBook[] = []
+  const annotations: AnnotationRec[] = []
+  const sources: CatalogSourceRec[] = []
+  const conceptEntries = Object.entries(entries)
+    .filter(([path]) => path.endsWith('.md'))
+    .filter(([path]) => !['index.md', 'log.md'].includes(path.split('/').pop() ?? ''))
+
+  for (const [conceptPath, bytes] of conceptEntries) {
+    const { frontmatter } = readOkfDocument(bytes, conceptPath)
+    const type = optionalString(frontmatter.type)
+    if (!type) archiveError(`${conceptPath} 缺少 OKF 必需字段 type`)
+    const entity = optionalString(frontmatter.entity)?.toLowerCase()
+    const typeLower = type.toLowerCase()
+
+    if (entity === 'catalog' || typeLower.includes('catalog')) {
+      const resource = optionalString(frontmatter.url ?? frontmatter.resource)
+      if (!resource) continue
+      sources.push({
+        id: optionalString(frontmatter.id) ?? conceptPath,
+        title: optionalString(frontmatter.title) ?? resource,
+        url: resource,
+        kind: frontmatter.catalog_kind === 'arxiv' ? 'arxiv' : 'opds',
+        builtin: false,
+        addedAt: toTimestamp(frontmatter.added_at ?? frontmatter.timestamp, Date.now()),
+      })
+      continue
+    }
+
+    const fileRecord = optionalRecord(frontmatter.file)
+    const looksLikeBook = entity === 'book'
+      || ['book', 'publication', 'paper', 'article'].some(name => typeLower.includes(name))
+      || Boolean(fileRecord)
+    if (!looksLikeBook) continue
+
+    const resource = optionalString(frontmatter.resource)
+    const content = parseOkfAsset(fileRecord, conceptPath, `${conceptPath}.file`, resource)
+    const declaredFormat = optionalString(fileRecord?.format)
+    const format = declaredFormat && BOOK_FORMATS.has(declaredFormat as BookFormat)
+      ? declaredFormat as BookFormat
+      : formatFromPath(content.path)
+    if (!format) archiveError(`${conceptPath} 的书籍格式不受支持`)
+    const fileName = optionalString(fileRecord?.name)
+      ?? content.path.split('/').pop()
+      ?? `book.${format}`
+    const title = optionalString(frontmatter.title)
+      ?? fileName.replace(/\.[^.]+$/, '')
+    const authors = stringList(frontmatter.authors ?? frontmatter.author)
+    const reading = optionalRecord(frontmatter.reading_state) ?? {}
+    const addedAt = toTimestamp(
+      reading.added_at ?? frontmatter.timestamp,
+      Date.now(),
+    )
+    const id = optionalString(frontmatter.id) ?? conceptPath
+    const cover = frontmatter.cover == null
+      ? undefined
+      : parseOkfAsset(frontmatter.cover, conceptPath, `${conceptPath}.cover`)
+    const collection = optionalString(frontmatter.collection)
+
+    books.push({
+      meta: {
+        id,
+        title,
+        author: authors.join(', '),
+        format,
+        fileName,
+        description: optionalString(frontmatter.description),
+        language: optionalString(frontmatter.language),
+        tags: stringList(frontmatter.tags),
+        addedAt,
+        lastReadAt: reading.last_read_at == null
+          ? undefined
+          : toTimestamp(reading.last_read_at, addedAt),
+        location: optionalString(reading.location),
+        progress: optionalNumber(reading.progress),
+        source: optionalString(frontmatter.provenance),
+        hasCover: Boolean(cover),
+        readingSeconds: optionalNumber(reading.reading_seconds),
+        pinnedAt: reading.pinned_at == null
+          ? undefined
+          : toTimestamp(reading.pinned_at, addedAt),
+        kind: collection === 'papers' || typeLower.includes('paper') ? 'paper' : 'book',
+      },
+      content: {
+        ...content,
+        mediaType: content.mediaType ?? MEDIA_TYPES[format],
+      },
+      cover,
+    })
+
+    const conceptAnnotations = Array.isArray(frontmatter.annotations)
+      ? frontmatter.annotations
+      : []
+    for (const [annotationIndex, value] of conceptAnnotations.entries()) {
+      if (!isRecord(value)) continue
+      annotations.push({
+        id: optionalString(value.id) ?? `${id}:annotation:${annotationIndex}`,
+        bookId: id,
+        kind: value.type === 'bookmark' ? 'bookmark' : 'highlight',
+        cfi: optionalString(value.location ?? value.cfi) ?? '',
+        text: optionalString(value.text) ?? '',
+        note: optionalString(value.note),
+        color: optionalString(value.color) ?? 'yellow',
+        createdAt: toTimestamp(value.created_at, addedAt),
+      })
+    }
+  }
+
+  return { version: 'okf-0.1', books, annotations, sources }
+}
+
 async function verifyAsset(
   entries: Record<string, Uint8Array>,
   asset: RestorableAsset,
@@ -321,21 +571,11 @@ export async function exportBackup(onProgress?: (msg: string) => void): Promise<
   const storage = await getStorage()
   const books = await storage.listBooks()
   const entries: Record<string, Uint8Array> = {}
-  const manifest: ManifestV2 = {
-    format: LIBRARY_ARCHIVE_FORMAT,
-    version: LIBRARY_ARCHIVE_VERSION,
-    exportedAt: new Date().toISOString(),
-    generator: { name: 'LightRead', version: __APP_VERSION__ },
-    books: [],
-    annotations: [],
-    sources: (await storage.listSources())
-      .filter(source => !source.builtin)
-      .map(({ username: _username, password: _password, ...source }) => source),
-  }
+  const bookIndex: string[] = []
 
   for (const [index, book] of books.entries()) {
     onProgress?.(`打包 ${book.title} (${index + 1}/${books.length})`)
-    const contentPath = `books/${book.id}/content${contentSuffix(book.format)}`
+    const contentPath = `assets/books/${book.id}/content${contentSuffix(book.format)}`
     const file = await storage.getBookFile(book.id)
     const fileBytes = new Uint8Array(await file.arrayBuffer())
     entries[contentPath] = fileBytes
@@ -345,22 +585,134 @@ export async function exportBackup(onProgress?: (msg: string) => void): Promise<
     const coverUrl = await storage.getCoverUrl(book.id)
     if (coverUrl) {
       const coverBlob = await (await fetch(coverUrl)).blob()
-      const coverPath = `books/${book.id}/cover.jpg`
+      const coverPath = `assets/books/${book.id}/cover.jpg`
       const coverBytes = new Uint8Array(await coverBlob.arrayBuffer())
       entries[coverPath] = coverBytes
       cover = await describeAsset(coverPath, coverBlob.type || 'image/jpeg', coverBytes)
     }
 
-    manifest.books.push({ ...book, hasCover: Boolean(cover), content, cover })
-    manifest.annotations.push(...(await storage.listAnnotations(book.id)))
+    const annotations = await storage.listAnnotations(book.id)
+    const timestamp = Math.max(book.addedAt, book.lastReadAt ?? 0, book.pinnedAt ?? 0)
+    const frontmatter = compactRecord({
+      type: book.kind === 'paper' ? 'Scholarly Paper' : 'Book',
+      title: book.title,
+      description: book.description ? oneLine(book.description) : undefined,
+      resource: `../${contentPath}`,
+      tags: book.tags,
+      timestamp: toIso(timestamp),
+      profile: LIBRARY_OKF_PROFILE,
+      entity: 'book',
+      id: book.id,
+      authors: book.author ? [book.author] : [],
+      language: book.language,
+      collection: book.kind === 'paper' ? 'papers' : 'books',
+      provenance: book.source,
+      file: assetToOkf(content, book.fileName, book.format),
+      cover: cover ? assetToOkf(cover, 'cover.jpg') : undefined,
+      reading_state: compactRecord({
+        added_at: toIso(book.addedAt),
+        last_read_at: toIso(book.lastReadAt),
+        location: book.location,
+        progress: book.progress,
+        reading_seconds: book.readingSeconds,
+        pinned_at: toIso(book.pinnedAt),
+      }),
+      annotations: annotations.map(annotation => compactRecord({
+        id: annotation.id,
+        type: annotation.kind ?? 'highlight',
+        location: annotation.cfi,
+        text: annotation.text,
+        note: annotation.note,
+        color: annotation.color,
+        created_at: toIso(annotation.createdAt),
+      })),
+    })
+
+    const body: string[] = [
+      '# Bibliographic metadata',
+      '',
+      `- **Title:** ${book.title}`,
+      `- **Authors:** ${book.author || 'Unknown'}`,
+      `- **Language:** ${book.language || 'Unspecified'}`,
+      `- **Format:** ${book.format.toUpperCase()}`,
+      `- **Collection:** ${book.kind === 'paper' ? 'Papers' : 'Books'}`,
+    ]
+    if (book.description) body.push('', '# Description', '', book.description)
+    body.push(
+      '',
+      '# Reading state',
+      '',
+      `- **Progress:** ${Math.round((book.progress ?? 0) * 100)}%`,
+      `- **Reading time:** ${book.readingSeconds ?? 0} seconds`,
+    )
+    if (annotations.length) {
+      body.push('', '# Annotations')
+      for (const annotation of annotations) {
+        body.push(
+          '',
+          `## ${annotation.kind === 'bookmark' ? 'Bookmark' : 'Highlight'} · ${toIso(annotation.createdAt)}`,
+        )
+        if (annotation.text) body.push('', markdownQuote(annotation.text))
+        if (annotation.note) body.push('', annotation.note)
+      }
+    }
+    body.push('', '# Resources', '', `- [Original file](../${contentPath})`)
+    if (cover) body.push(`- [Cover](../${cover.path})`)
+
+    const conceptPath = `books/${book.id}.md`
+    entries[conceptPath] = okfDocument(frontmatter, body.join('\n'))
+    const summary = oneLine(book.description ?? `${book.author || 'Unknown author'} · ${book.format.toUpperCase()}`)
+    bookIndex.push(`* [${markdownLabel(book.title)}](${book.id}.md) - ${summary}`)
+  }
+
+  entries['books/index.md'] = strToU8(`# Books\n\n${bookIndex.join('\n') || 'No books.'}\n`)
+
+  const catalogIndex: string[] = []
+  const sources = (await storage.listSources()).filter(source => !source.builtin)
+  for (const source of sources) {
+    const conceptPath = `catalogs/${source.id}.md`
+    const frontmatter = compactRecord({
+      type: source.kind === 'arxiv' ? 'Scholarly Catalog' : 'OPDS Catalog',
+      title: source.title,
+      description: `An open ${source.kind === 'arxiv' ? 'scholarly' : 'publication'} catalog.`,
+      resource: source.url,
+      tags: ['catalog', source.kind],
+      timestamp: toIso(source.addedAt),
+      profile: LIBRARY_OKF_PROFILE,
+      entity: 'catalog',
+      id: source.id,
+      catalog_kind: source.kind,
+      url: source.url,
+      added_at: toIso(source.addedAt),
+    })
+    entries[conceptPath] = okfDocument(frontmatter, [
+      '# Catalog',
+      '',
+      `- **Name:** ${source.title}`,
+      `- **Protocol:** ${source.kind === 'arxiv' ? 'arXiv API' : 'OPDS'}`,
+      `- **URL:** ${source.url}`,
+    ].join('\n'))
+    catalogIndex.push(`* [${markdownLabel(source.title)}](${source.id}.md) - ${source.url}`)
+  }
+  if (catalogIndex.length) {
+    entries['catalogs/index.md'] = strToU8(`# Catalogs\n\n${catalogIndex.join('\n')}\n`)
   }
 
   onProgress?.('压缩中…')
-  entries['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2))
+  const rootSections = [
+    '# Books',
+    '',
+    `* [Books](books/) - ${books.length} publication${books.length === 1 ? '' : 's'}`,
+  ]
+  if (sources.length) {
+    rootSections.push('', '# Catalogs', '', `* [Catalogs](catalogs/) - ${sources.length} catalog${sources.length === 1 ? '' : 's'}`)
+  }
+  rootSections.push('', `Exported by LightRead ${__APP_VERSION__} at ${new Date().toISOString()}.`)
+  entries['index.md'] = okfDocument({ okf_version: OKF_VERSION }, rootSections.join('\n'))
   // 书籍文件通常已压缩，容器使用 store 模式，优先速度并避免无意义的重复压缩。
   const zipped = zipSync(entries, { level: 0 })
   return new Blob([zipped.buffer as ArrayBuffer], {
-    type: 'application/vnd.lightread.library+zip',
+    type: 'application/zip',
   })
 }
 
@@ -370,9 +722,11 @@ export async function importBackup(
 ): Promise<{ books: number; annotations: number; sources: number }> {
   const storage = await getStorage()
   const entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
-  const manifestRaw = entries['manifest.json']
-  if (!manifestRaw) archiveError('缺少 manifest.json')
-  const manifest = parseManifest(manifestRaw)
+  const manifest = entries['index.md']
+    ? parseOkfBundle(entries)
+    : entries['manifest.json']
+      ? parseManifest(entries['manifest.json'])
+      : archiveError('缺少 OKF index.md 或旧版 manifest.json')
 
   // 在写入任何数据前验证所有载荷，防止损坏的包只恢复一半。
   onProgress?.('校验藏书包…')

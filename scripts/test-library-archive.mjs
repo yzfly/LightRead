@@ -1,15 +1,16 @@
-/** LightRead 藏书交换包的定向端到端测试。 */
+/** LightRead OKF 藏书协议的定向端到端测试。 */
 import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { zipSync, unzipSync, strFromU8, strToU8 } from 'fflate'
+import { parse } from 'yaml'
 import { chromium } from 'playwright'
 
 const port = 4177
 const base = `http://127.0.0.1:${port}`
-const temp = await mkdtemp(join(tmpdir(), 'lightread-archive-'))
+const temp = await mkdtemp(join(tmpdir(), 'lightread-okf-'))
 const server = spawn(
   'npm',
   ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(port)],
@@ -27,12 +28,29 @@ async function waitForServer() {
   throw new Error('Vite 启动超时')
 }
 
+function frontmatter(bytes) {
+  const text = strFromU8(bytes).replace(/\r\n/g, '\n')
+  if (!text.startsWith('---\n')) throw new Error('缺少 YAML frontmatter')
+  const end = text.indexOf('\n---\n', 4)
+  if (end < 0) throw new Error('YAML frontmatter 未闭合')
+  return parse(text.slice(4, end))
+}
+
 async function importArchive(context, archivePath) {
   const page = await context.newPage()
   await page.goto(`${base}/#/settings`, { waitUntil: 'networkidle' })
-  await page.setInputFiles('input[accept=".lightread,.zip"]', archivePath)
+  await page.setInputFiles('input[accept=".okf.zip,.lightread,.zip"]', archivePath)
   await page.locator('.toast').waitFor({ timeout: 15_000 })
   return page
+}
+
+async function expectOneBook(page, title) {
+  await page.goto(`${base}/#/library`, { waitUntil: 'networkidle' })
+  await page.locator('.book-card').waitFor({ timeout: 10_000 })
+  if (await page.locator('.book-card').count() !== 1) throw new Error(`${title}: 书籍数量错误`)
+  if (!(await page.locator('.book-card').innerText()).includes(title)) {
+    throw new Error(`${title}: 元数据未导入`)
+  }
 }
 
 let browser
@@ -54,23 +72,31 @@ try {
   const downloadPromise = sourcePage.waitForEvent('download')
   await sourcePage.getByRole('button', { name: '导出藏书包' }).click()
   const download = await downloadPromise
-  if (!download.suggestedFilename().endsWith('.lightread')) {
+  if (!download.suggestedFilename().endsWith('.okf.zip')) {
     throw new Error(`导出扩展名错误: ${download.suggestedFilename()}`)
   }
-  const archivePath = join(temp, 'library.lightread')
+  const archivePath = join(temp, 'library.okf.zip')
   await download.saveAs(archivePath)
 
   const archiveBytes = new Uint8Array(await readFile(archivePath))
   const entries = unzipSync(archiveBytes)
-  const manifest = JSON.parse(strFromU8(entries['manifest.json']))
-  if (manifest.format !== 'org.lightread.library' || manifest.version !== 2) {
-    throw new Error('v2 格式标识或版本错误')
+  if (entries['manifest.json']) throw new Error('OKF 导出不应依赖私有 manifest.json')
+  const root = frontmatter(entries['index.md'])
+  if (root.okf_version !== '0.1') throw new Error('未声明 OKF v0.1')
+  const bookConceptPath = Object.keys(entries)
+    .find(path => /^books\/[^/]+\.md$/.test(path) && !path.endsWith('/index.md'))
+  if (!bookConceptPath) throw new Error('缺少一书一 concept 的 OKF 文档')
+  const bookConcept = frontmatter(entries[bookConceptPath])
+  if (bookConcept.type !== 'Book' || bookConcept.entity !== 'book') {
+    throw new Error('出版物 concept 缺少通用 OKF/Profile 类型')
   }
-  if (manifest.books.length !== 1) throw new Error('导出书籍数量错误')
-  const asset = manifest.books[0].content
+  if (!String(bookConcept.profile).includes('library-okf-profile.md')) {
+    throw new Error('未声明公开的 Open Library OKF Profile')
+  }
+  const asset = bookConcept.file
   const content = entries[asset.path]
   const digest = createHash('sha256').update(content).digest('hex')
-  if (asset.byteLength !== content.byteLength || asset.sha256 !== digest) {
+  if (asset.byte_length !== content.byteLength || asset.sha256 !== digest) {
     throw new Error('载荷长度或 SHA-256 错误')
   }
 
@@ -78,21 +104,19 @@ try {
   const targetContext = await browser.newContext()
   let targetPage = await importArchive(targetContext, archivePath)
   if (!(await targetPage.locator('.toast.success').count())) {
-    throw new Error(`v2 导入失败: ${await targetPage.locator('.toast').innerText()}`)
+    throw new Error(`OKF 导入失败: ${await targetPage.locator('.toast').innerText()}`)
   }
   await targetPage.close()
   targetPage = await importArchive(targetContext, archivePath)
-  if (!(await targetPage.locator('.toast.success').count())) throw new Error('v2 重复导入失败')
-  await targetPage.goto(`${base}/#/library`, { waitUntil: 'networkidle' })
-  await targetPage.locator('.book-card').waitFor({ timeout: 10_000 })
-  if (await targetPage.locator('.book-card').count() !== 1) throw new Error('重复导入不幂等')
+  if (!(await targetPage.locator('.toast.success').count())) throw new Error('OKF 重复导入失败')
+  await expectOneBook(targetPage, 'archive-test')
   await targetContext.close()
 
   // 摘要被篡改时必须在写库前拒绝。
   const brokenEntries = unzipSync(archiveBytes)
   brokenEntries[asset.path] = new Uint8Array(brokenEntries[asset.path])
   brokenEntries[asset.path][0] ^= 0xff
-  const brokenPath = join(temp, 'broken.lightread')
+  const brokenPath = join(temp, 'broken.okf.zip')
   await writeFile(brokenPath, zipSync(brokenEntries, { level: 0 }))
   const brokenContext = await browser.newContext()
   const brokenPage = await importArchive(brokenContext, brokenPath)
@@ -101,36 +125,111 @@ try {
   if (await brokenPage.locator('.book-card').count() !== 0) throw new Error('损坏包发生了部分写入')
   await brokenContext.close()
 
-  // 把同一份载荷改写成 v1 manifest，确认旧备份仍可导入。
-  const legacyEntries = unzipSync(archiveBytes)
-  const legacyBooks = manifest.books.map(book => {
-    const { content: bookContent, cover, ...meta } = book
-    return {
-      ...meta,
-      fileEntry: bookContent.path,
-      coverEntry: cover?.path,
-    }
-  })
-  legacyEntries['manifest.json'] = strToU8(JSON.stringify({
-    app: 'lightread',
-    version: 1,
-    exportedAt: Date.now(),
-    books: legacyBooks,
-    annotations: manifest.annotations,
-    sources: manifest.sources,
-  }))
-  const legacyPath = join(temp, 'legacy.zip')
-  await writeFile(legacyPath, zipSync(legacyEntries, { level: 0 }))
-  const legacyContext = await browser.newContext()
-  const legacyPage = await importArchive(legacyContext, legacyPath)
-  if (!(await legacyPage.locator('.toast.success').count())) throw new Error('v1 兼容导入失败')
-  await legacyPage.goto(`${base}/#/library`, { waitUntil: 'networkidle' })
-  await legacyPage.locator('.book-card').waitFor({ timeout: 10_000 })
-  if (await legacyPage.locator('.book-card').count() !== 1) throw new Error('v1 恢复数量错误')
-  await legacyContext.close()
+  // 模拟其他软件生成的纯 OKF Publication：不含 LightRead Profile 或私有字段。
+  const genericContent = strToU8('Generic OKF publication')
+  const genericEntries = {
+    'index.md': strToU8('---\nokf_version: "0.1"\n---\n\n# Publications\n\n* [Portable Book](publications/portable.md)\n'),
+    'publications/portable.md': strToU8([
+      '---',
+      'type: Publication',
+      'title: Portable Book',
+      'description: Produced by another OKF application.',
+      'resource: ../assets/portable.txt',
+      'authors: [Open Author]',
+      'language: en',
+      'tags: [portable, open]',
+      '---',
+      '',
+      '# Portable Book',
+      '',
+      'This concept intentionally contains no LightRead-specific profile.',
+      '',
+    ].join('\n')),
+    'assets/portable.txt': genericContent,
+  }
+  const genericPath = join(temp, 'generic.okf.zip')
+  await writeFile(genericPath, zipSync(genericEntries, { level: 0 }))
+  const genericContext = await browser.newContext()
+  const genericPage = await importArchive(genericContext, genericPath)
+  if (!(await genericPage.locator('.toast.success').count())) {
+    throw new Error(`第三方 OKF 导入失败: ${await genericPage.locator('.toast').innerText()}`)
+  }
+  await expectOneBook(genericPage, 'Portable Book')
+  await genericContext.close()
+
+  // 根据 OKF concept 构造旧 JSON v2，确认升级前的备份仍可导入。
+  const legacyMeta = {
+    id: bookConcept.id,
+    title: bookConcept.title,
+    author: bookConcept.authors.join(', '),
+    format: asset.format,
+    fileName: asset.name,
+    description: bookConcept.description,
+    language: bookConcept.language,
+    tags: bookConcept.tags,
+    addedAt: Date.parse(bookConcept.reading_state.added_at),
+    hasCover: Boolean(bookConcept.cover),
+    kind: bookConcept.collection === 'papers' ? 'paper' : 'book',
+  }
+  const legacyContent = {
+    path: asset.path,
+    mediaType: asset.media_type,
+    byteLength: asset.byte_length,
+    sha256: asset.sha256,
+  }
+  const legacyCover = bookConcept.cover && {
+    path: bookConcept.cover.path,
+    mediaType: bookConcept.cover.media_type,
+    byteLength: bookConcept.cover.byte_length,
+    sha256: bookConcept.cover.sha256,
+  }
+  const payloadEntries = {
+    [asset.path]: entries[asset.path],
+    ...(legacyCover ? { [legacyCover.path]: entries[legacyCover.path] } : {}),
+  }
+  const v2Path = join(temp, 'legacy-v2.zip')
+  await writeFile(v2Path, zipSync({
+    ...payloadEntries,
+    'manifest.json': strToU8(JSON.stringify({
+      format: 'org.lightread.library',
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      generator: { name: 'LightRead', version: '1.1.0' },
+      books: [{ ...legacyMeta, content: legacyContent, cover: legacyCover }],
+      annotations: [],
+      sources: [],
+    })),
+  }, { level: 0 }))
+  const v2Context = await browser.newContext()
+  const v2Page = await importArchive(v2Context, v2Path)
+  if (!(await v2Page.locator('.toast.success').count())) throw new Error('JSON v2 兼容导入失败')
+  await expectOneBook(v2Page, 'archive-test')
+  await v2Context.close()
+
+  const v1Path = join(temp, 'legacy-v1.zip')
+  await writeFile(v1Path, zipSync({
+    ...payloadEntries,
+    'manifest.json': strToU8(JSON.stringify({
+      app: 'lightread',
+      version: 1,
+      exportedAt: Date.now(),
+      books: [{
+        ...legacyMeta,
+        fileEntry: asset.path,
+        coverEntry: legacyCover?.path,
+      }],
+      annotations: [],
+      sources: [],
+    })),
+  }, { level: 0 }))
+  const v1Context = await browser.newContext()
+  const v1Page = await importArchive(v1Context, v1Path)
+  if (!(await v1Page.locator('.toast.success').count())) throw new Error('JSON v1 兼容导入失败')
+  await expectOneBook(v1Page, 'archive-test')
+  await v1Context.close()
 
   await sourceContext.close()
-  console.log('藏书交换包测试通过：v2 导出/导入、幂等、完整性校验、v1 兼容')
+  console.log('OKF 藏书协议测试通过：标准结构、往返、第三方导入、幂等、完整性、JSON v1/v2 兼容')
 } finally {
   await browser?.close()
   server.kill('SIGTERM')
