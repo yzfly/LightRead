@@ -15,6 +15,10 @@ export interface ReaderPrefs {
 }
 
 export interface PdfPrefs {
+  /** 可见页面位图渲染引擎；文字几何与交互仍由 PDFium 提供 */
+  renderer: 'mupdf' | 'pdfium'
+  /** original: 保留版式；reflow: 按文本层重排为单栏阅读 */
+  layout: 'original' | 'reflow'
   /** paged: 整页翻页 (阅读); scroll: 连续滚动 (细读大图) */
   mode: 'paged' | 'scroll'
   /** 翻页模式缩放: fitH 适高整页 (默认) / fitW 适宽 */
@@ -99,6 +103,8 @@ const defaults: SettingsState = {
     justify: true,
   },
   pdf: {
+    renderer: 'mupdf',
+    layout: 'original',
     mode: 'paged',
     fit: 'fitH',
     spread: false,

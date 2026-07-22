@@ -459,6 +459,16 @@ async function doImport(e: Event) {
       <h2>{{ t('settings.reading') }}</h2>
       <div class="row">
         <div>
+          <div class="row-title">{{ t('settings.pdfRenderer') }}</div>
+          <div class="row-desc">{{ t('settings.pdfRendererDesc') }}</div>
+        </div>
+        <div class="seg">
+          <button :class="{ active: settings.pdf.renderer === 'mupdf' }" @click="settings.pdf.renderer = 'mupdf'">MuPDF</button>
+          <button :class="{ active: settings.pdf.renderer === 'pdfium' }" @click="settings.pdf.renderer = 'pdfium'">PDFium</button>
+        </div>
+      </div>
+      <div class="row">
+        <div>
           <div class="row-title">{{ t('settings.resetTypography') }}</div>
           <div class="row-desc">{{ t('settings.resetTypographyDesc') }}</div>
         </div>

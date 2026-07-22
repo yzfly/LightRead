@@ -29,7 +29,8 @@ import {
   askDoc,
   type DocText,
 } from '../services/paperAI'
-import { HIGHLIGHT_COLORS } from '../services/readerTheme'
+import { FONT_FAMILIES, HIGHLIGHT_COLORS, READER_THEMES } from '../services/readerTheme'
+import { injectFontIntoDoc, resolveFontFamily } from '../services/fonts'
 import {
   INSTALL_CMD,
   stageLabel,
@@ -113,7 +114,8 @@ const backTarget = computed(() => (isPaper.value ? '/papers' : '/library'))
 const backLabel = computed(() => (isPaper.value ? t('paper.backToPapers') : t('reader.backToLibrary')))
 /** 论文固定连续滚动；藏书 PDF 服从阅读设置，默认翻页。 */
 const mode = computed<'paged' | 'scroll'>(() => (isPaper.value ? 'scroll' : settings.pdf.mode))
-const bookPaged = computed(() => mode.value === 'paged')
+const pdfLayout = computed(() => settings.pdf.layout)
+const bookPaged = computed(() => pdfLayout.value === 'original' && mode.value === 'paged')
 const spread = computed(() => bookPaged.value && settings.pdf.spread)
 
 /* ================= 连续滚动渲染 (虚拟化: 只渲染视口附近页) ================= */
@@ -163,7 +165,12 @@ function spreadOf(page: number): number[] {
 }
 
 const pagedPages = computed(() => spreadOf(currentPage.value))
-const atLastPage = computed(() => pagedPages.value.at(-1) === pageCount.value)
+const atFirstPage = computed(() => pdfLayout.value === 'reflow'
+  ? currentPage.value <= (reflowPages.value[0]?.page ?? 1)
+  : currentPage.value <= 1)
+const atLastPage = computed(() => pdfLayout.value === 'reflow'
+  ? currentPage.value >= (reflowPages.value.at(-1)?.page ?? pageCount.value)
+  : pagedPages.value.at(-1) === pageCount.value)
 
 /** 翻页模式默认适高；双页时同时受可用宽度约束，避免页面被裁掉。 */
 function pagedScale(): number {
@@ -187,7 +194,7 @@ async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLC
   canvas.style.width = `${baseDims.value.w * scale}px`
   canvas.style.height = `${baseDims.value.h * scale}px`
 
-  if (!mupdfRenderFailed) {
+  if (settings.pdf.renderer === 'mupdf' && !mupdfRenderFailed) {
     let page: any = null
     let pixmap: any = null
     try {
@@ -392,7 +399,9 @@ function attachScrollListener() {
 function observeActiveViewport() {
   if (!resizeObserver) return
   resizeObserver.disconnect()
-  const viewport = bookPaged.value ? pagedBox.value : scroller.value
+  const viewport = pdfLayout.value === 'reflow'
+    ? reflowScroller.value
+    : bookPaged.value ? pagedBox.value : scroller.value
   if (viewport) resizeObserver.observe(viewport)
 }
 
@@ -406,7 +415,8 @@ function scrollGoto(n: number, smooth = false, yOffsetPx = 0) {
 }
 
 function gotoPage(n: number, smooth = false, yOffsetPx = 0) {
-  if (bookPaged.value) void pagedGoto(n)
+  if (pdfLayout.value === 'reflow') reflowGoto(n, smooth)
+  else if (bookPaged.value) void pagedGoto(n)
   else scrollGoto(n, smooth, yOffsetPx)
 }
 
@@ -493,11 +503,14 @@ function jumpTo() {
 }
 
 function prevPage() {
-  if (bookPaged.value) void pagedGoto(pagedPages.value[0] - 1)
+  if (pdfLayout.value === 'reflow') reflowStep(-1)
+  else if (bookPaged.value) void pagedGoto(pagedPages.value[0] - 1)
   else scrollGoto(currentPage.value - 1, true)
 }
 function nextPage() {
-  if (bookPaged.value) {
+  if (pdfLayout.value === 'reflow') {
+    reflowStep(1)
+  } else if (bookPaged.value) {
     const next = (pagedPages.value.at(-1) ?? currentPage.value) + 1
     if (next <= pageCount.value) void pagedGoto(next)
   } else {
@@ -510,6 +523,13 @@ function nextPage() {
 const backStack = ref<number[]>([])
 
 function pushBack() {
+  if (pdfLayout.value === 'reflow') {
+    const top = reflowScroller.value?.scrollTop
+    if (top == null) return
+    backStack.value.push(top)
+    if (backStack.value.length > 20) backStack.value.shift()
+    return
+  }
   if (bookPaged.value) {
     backStack.value.push(-currentPage.value)
     if (backStack.value.length > 20) backStack.value.shift()
@@ -525,6 +545,7 @@ function goBack() {
   const top = backStack.value.pop()
   if (top == null) return
   if (top < 0) gotoPage(-top)
+  else if (pdfLayout.value === 'reflow') reflowScroller.value?.scrollTo({ top })
   else scroller.value?.scrollTo({ top })
 }
 
@@ -1104,6 +1125,188 @@ async function ensureParas(page: number): Promise<MirPageData> {
   return d
 }
 
+/* ================= PDF 流式阅读：文本层重排为单栏正文 ================= */
+
+interface ReflowParagraph {
+  id: number
+  text: string
+  fontSize: number
+}
+
+interface ReflowPage {
+  page: number
+  paras: ReflowParagraph[]
+}
+
+const reflowScroller = ref<HTMLElement>()
+const reflowPages = ref<ReflowPage[]>([])
+const reflowBuilding = ref(false)
+const reflowBuilt = ref(false)
+const reflowProcessed = ref(0)
+const reflowError = ref('')
+const reflowBodyFont = ref(10)
+const typographyOpen = ref(false)
+let reflowBuildPromise: Promise<void> | null = null
+let reflowSession = 0
+let reflowScrollScheduled = false
+
+const reflowStyle = computed<Record<string, string>>(() => {
+  const colors = READER_THEMES[settings.reader.theme]
+  return {
+    '--reflow-bg': colors.bg,
+    '--reflow-fg': colors.fg,
+    '--reflow-link': colors.link,
+    '--reflow-font-size': `${settings.reader.fontSize}px`,
+    '--reflow-line-height': String(settings.reader.lineHeight),
+    '--reflow-font-family': resolveFontFamily(settings.reader.fontFamily) || 'inherit',
+    '--reflow-align': settings.reader.justify ? 'justify' : 'start',
+    '--reflow-side-pad': `${Math.max(2, settings.reader.gap)}%`,
+  }
+})
+
+function isReflowHeading(p: ReflowParagraph): boolean {
+  return p.text.length <= 180 && p.fontSize >= reflowBodyFont.value * 1.28
+}
+
+async function ensureReflowFont() {
+  const m = settings.reader.fontFamily.match(/^custom:(.+)$/)
+  const font = m ? settings.customFonts.find(f => f.name === m[1]) : undefined
+  if (font) await injectFontIntoDoc(document, font)
+}
+
+watch(
+  () => [pdfLayout.value, settings.reader.fontFamily] as const,
+  ([layout]) => {
+    if (layout === 'reflow') void ensureReflowFont()
+  },
+)
+
+async function buildReflow() {
+  const session = ++reflowSession
+  reflowBuilding.value = true
+  reflowError.value = ''
+  reflowProcessed.value = 0
+  const pages: ReflowPage[] = []
+  const sizes: number[] = []
+  try {
+    for (let page = 1; page <= pageCount.value; page++) {
+      const data = await ensureParas(page)
+      if (session !== reflowSession) return
+      const paras = data.paras
+        .map(p => ({
+          id: p.id,
+          text: origText(p),
+          fontSize: p.fontSize ?? 10,
+        }))
+        .filter(p => p.text.trim())
+      if (paras.length) {
+        pages.push({ page, paras })
+        sizes.push(...paras.map(p => p.fontSize).filter(Boolean))
+      }
+      reflowProcessed.value = page
+      if (page % 4 === 0) {
+        reflowPages.value = [...pages]
+        await new Promise<void>(resolve => setTimeout(resolve, 0))
+      }
+    }
+    sizes.sort((a, b) => a - b)
+    reflowBodyFont.value = sizes[Math.floor(sizes.length / 2)] || 10
+    reflowPages.value = pages
+    reflowBuilt.value = true
+    await ensureReflowFont()
+  } catch (e: any) {
+    console.error('reflow extraction failed:', e)
+    reflowError.value = String(e?.message ?? e).slice(0, 200)
+  } finally {
+    if (session === reflowSession) reflowBuilding.value = false
+  }
+}
+
+function ensureReflow(): Promise<void> {
+  if (reflowBuilt.value) return Promise.resolve()
+  if (!reflowBuildPromise) {
+    reflowBuildPromise = buildReflow().finally(() => {
+      reflowBuildPromise = null
+    })
+  }
+  return reflowBuildPromise
+}
+
+function reflowPageAtCenter(): number {
+  const el = reflowScroller.value
+  if (!el) return currentPage.value
+  const anchor = el.scrollTop + el.clientHeight * 0.32
+  let page = reflowPages.value[0]?.page ?? currentPage.value
+  for (const section of Array.from(el.querySelectorAll<HTMLElement>('[data-reflow-page]'))) {
+    if (section.offsetTop > anchor) break
+    page = Number(section.dataset.reflowPage) || page
+  }
+  return page
+}
+
+function onReflowScroll() {
+  if (reflowScrollScheduled) return
+  reflowScrollScheduled = true
+  requestAnimationFrame(() => {
+    reflowScrollScheduled = false
+    const page = reflowPageAtCenter()
+    if (page !== currentPage.value) currentPage.value = page
+  })
+}
+
+function reflowGoto(n: number, smooth = false) {
+  const el = reflowScroller.value
+  if (!el || !reflowPages.value.length) return
+  const clamped = Math.min(Math.max(1, n || 1), pageCount.value)
+  const target = reflowPages.value.find(p => p.page >= clamped) ?? reflowPages.value.at(-1)
+  if (!target) return
+  const section = el.querySelector<HTMLElement>(`[data-reflow-page="${target.page}"]`)
+  if (!section) return
+  el.scrollTo({ top: Math.max(0, section.offsetTop - 24), behavior: smooth ? 'smooth' : 'auto' })
+  currentPage.value = target.page
+}
+
+function reflowStep(direction: -1 | 1) {
+  const pages = reflowPages.value
+  if (!pages.length) return
+  let index = pages.findIndex(p => p.page >= currentPage.value)
+  if (index < 0) index = pages.length - 1
+  const target = pages[Math.min(Math.max(0, index + direction), pages.length - 1)]
+  reflowGoto(target.page, true)
+}
+
+async function switchPdfLayout(next: 'original' | 'reflow') {
+  if (pdfLayout.value === next) return
+  const targetPage = currentPage.value
+  stopAutoRead()
+  selection.value = null
+  closeSelTr()
+  zoomMenu.value = false
+  typographyOpen.value = false
+  backStack.value = []
+  settings.pdf.layout = next
+  renderedScale.clear()
+  await nextTick()
+  if (next === 'reflow') {
+    void ensureReflow().then(() => {
+      if (pdfLayout.value === 'reflow') nextTick(() => reflowGoto(targetPage))
+    })
+    reflowGoto(targetPage)
+  } else if (bookPaged.value) {
+    await pagedGoto(targetPage)
+  } else {
+    attachScrollListener()
+    scrollGoto(targetPage)
+    updateViewport()
+  }
+  observeActiveViewport()
+}
+
+async function openOriginalPage(page: number) {
+  currentPage.value = page
+  await switchPdfLayout('original')
+}
+
 /* ---- 对照视图: 连续滚动 (虚拟化渲染 + 停稳翻译) ---- */
 
 function mirHolderOf(n: number) {
@@ -1630,7 +1833,7 @@ function toggleAutoPanel() {
 
 function stepAutoScroll(now: number) {
   if (!autoReading.value || bookPaged.value) return
-  const el = scroller.value
+  const el = pdfLayout.value === 'reflow' ? reflowScroller.value : scroller.value
   if (!el) {
     stopAutoRead()
     return
@@ -1645,7 +1848,8 @@ function stepAutoScroll(now: number) {
 
   // “秒/页”在连续模式中换算为每秒滚动一个页面高度的速度。
   const elapsed = Math.min(Math.max(0, now - autoScrollAt), 100)
-  const pixelsPerMs = (holderH.value + GAP) / (settings.autoReadSeconds * 1000)
+  const stepHeight = pdfLayout.value === 'reflow' ? el.clientHeight : holderH.value + GAP
+  const pixelsPerMs = stepHeight / (settings.autoReadSeconds * 1000)
   autoScrollAt = now
   el.scrollTop = Math.min(maxTop, el.scrollTop + elapsed * pixelsPerMs)
   autoScrollFrame = requestAnimationFrame(stepAutoScroll)
@@ -1856,7 +2060,7 @@ onMounted(async () => {
     const blob = await storage.getBookFile(bookId)
     const fileData = await blob.arrayBuffer()
     pdm = await PdfiumDoc.open(fileData)
-    renderBytes = new Uint8Array(fileData.slice(0))
+    renderBytes = settings.pdf.renderer === 'mupdf' ? new Uint8Array(fileData.slice(0)) : null
     pageCount.value = pdm.pages.length
     baseDims.value = { w: pdm.pages[0]?.w ?? 612, h: pdm.pages[0]?.h ?? 792 }
     const saved = parseInt(meta.value.location ?? '1', 10)
@@ -1865,7 +2069,12 @@ onMounted(async () => {
       : 1
     loading.value = false
     await nextTick()
-    if (bookPaged.value) {
+    if (pdfLayout.value === 'reflow') {
+      const targetPage = currentPage.value
+      void ensureReflow().then(() => {
+        if (pdfLayout.value === 'reflow') nextTick(() => reflowGoto(targetPage))
+      })
+    } else if (bookPaged.value) {
       currentPage.value = spreadOf(currentPage.value)[0]
       await nextTick()
       await renderPaged()
@@ -1880,8 +2089,10 @@ onMounted(async () => {
     resizeObserver = new ResizeObserver(() => {
       clearTimeout(resizeTimer)
       resizeTimer = setTimeout(() => {
-        if (bookPaged.value) void renderPaged()
-        else if (zoom.value === 'fit') relayout()
+        if (pdfLayout.value === 'original') {
+          if (bookPaged.value) void renderPaged()
+          else if (zoom.value === 'fit') relayout()
+        }
         if (translateOpen.value) mirLayoutNow()
       }, 200)
     })
@@ -1895,6 +2106,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  reflowSession++
   window.removeEventListener('keydown', handleKeydown)
   translateSession++
   selTrSession++
@@ -1943,6 +2155,20 @@ onBeforeUnmount(() => {
       </button>
       <div class="paper-title"><strong>{{ meta?.title }}</strong></div>
       <div class="paper-actions">
+        <div class="reader-segment" role="group" :aria-label="t('reader.pdfLayout')">
+          <button
+            type="button"
+            :class="{ active: pdfLayout === 'original' }"
+            :aria-pressed="pdfLayout === 'original'"
+            @click="switchPdfLayout('original')"
+          >{{ t('reader.originalPdf') }}</button>
+          <button
+            type="button"
+            :class="{ active: pdfLayout === 'reflow' }"
+            :aria-pressed="pdfLayout === 'reflow'"
+            @click="switchPdfLayout('reflow')"
+          >{{ t('reader.reflowPdf') }}</button>
+        </div>
         <!-- 论文: 英文精读功能集 -->
         <template v-if="isPaper">
           <button
@@ -1965,45 +2191,47 @@ onBeforeUnmount(() => {
         </template>
         <!-- 藏书 PDF: 读书功能集 (与 epub 一致) -->
         <template v-else>
-          <div class="reader-segment" role="group" :aria-label="t('reader.mode')">
-            <button
-              type="button"
-              :class="{ active: mode === 'paged' }"
-              :aria-pressed="mode === 'paged'"
-              @click="switchMode('paged')"
-            >{{ t('reader.paginated') }}</button>
-            <button
-              type="button"
-              :class="{ active: mode === 'scroll' }"
-              :aria-pressed="mode === 'scroll'"
-              @click="switchMode('scroll')"
-            >{{ t('reader.scrolled') }}</button>
-          </div>
-          <template v-if="bookPaged">
-            <div class="reader-segment" role="group" :aria-label="t('reader.fitHeight') + ' / ' + t('reader.fitWidth')">
+          <template v-if="pdfLayout === 'original'">
+            <div class="reader-segment" role="group" :aria-label="t('reader.mode')">
               <button
                 type="button"
-                :class="{ active: settings.pdf.fit === 'fitH' }"
-                :aria-pressed="settings.pdf.fit === 'fitH'"
-                @click="setPagedFit('fitH')"
-              >{{ t('reader.fitHeight') }}</button>
+                :class="{ active: mode === 'paged' }"
+                :aria-pressed="mode === 'paged'"
+                @click="switchMode('paged')"
+              >{{ t('reader.paginated') }}</button>
               <button
                 type="button"
-                :class="{ active: settings.pdf.fit === 'fitW' }"
-                :aria-pressed="settings.pdf.fit === 'fitW'"
-                @click="setPagedFit('fitW')"
-              >{{ t('reader.fitWidth') }}</button>
+                :class="{ active: mode === 'scroll' }"
+                :aria-pressed="mode === 'scroll'"
+                @click="switchMode('scroll')"
+              >{{ t('reader.scrolled') }}</button>
             </div>
-            <button
-              type="button"
-              class="reader-tool"
-              :class="{ active: spread }"
-              :aria-pressed="spread"
-              @click="toggleSpread"
-            >
-              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4.25h5.25v11.5H3.5zM11.25 4.25h5.25v11.5h-5.25z" /></svg>
-              <span>{{ t('reader.twoPage') }}</span>
-            </button>
+            <template v-if="bookPaged">
+              <div class="reader-segment" role="group" :aria-label="t('reader.fitHeight') + ' / ' + t('reader.fitWidth')">
+                <button
+                  type="button"
+                  :class="{ active: settings.pdf.fit === 'fitH' }"
+                  :aria-pressed="settings.pdf.fit === 'fitH'"
+                  @click="setPagedFit('fitH')"
+                >{{ t('reader.fitHeight') }}</button>
+                <button
+                  type="button"
+                  :class="{ active: settings.pdf.fit === 'fitW' }"
+                  :aria-pressed="settings.pdf.fit === 'fitW'"
+                  @click="setPagedFit('fitW')"
+                >{{ t('reader.fitWidth') }}</button>
+              </div>
+              <button
+                type="button"
+                class="reader-tool"
+                :class="{ active: spread }"
+                :aria-pressed="spread"
+                @click="toggleSpread"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4.25h5.25v11.5H3.5zM11.25 4.25h5.25v11.5h-5.25z" /></svg>
+                <span>{{ t('reader.twoPage') }}</span>
+              </button>
+            </template>
           </template>
           <button
             type="button"
@@ -2136,9 +2364,44 @@ onBeforeUnmount(() => {
 
       <!-- 左: 原文 PDF 连续滚动 (划词 / 高亮 / 链接跳转) + 底部悬浮工具条 -->
       <div class="pane-left-wrap">
+        <!-- 流式阅读：复用 PDF 文本层与阅读偏好，按原页保留跳转锚点。 -->
+        <div
+          v-if="pdfLayout === 'reflow'"
+          ref="reflowScroller"
+          class="reflow-scroll"
+          :style="reflowStyle"
+          @scroll.passive="onReflowScroll"
+        >
+          <div v-if="reflowBuilding" class="reflow-progress">
+            {{ t('reader.reflowBuilding', { current: reflowProcessed, total: pageCount }) }}
+          </div>
+          <article v-if="reflowPages.length" class="reflow-article">
+            <section
+              v-for="page in reflowPages"
+              :key="page.page"
+              class="reflow-page"
+              :data-reflow-page="page.page"
+            >
+              <button class="reflow-page-link" @click="openOriginalPage(page.page)">
+                {{ t('reader.originalPage', { page: page.page }) }}
+              </button>
+              <template v-for="p in page.paras" :key="p.id">
+                <h2 v-if="isReflowHeading(p)" class="reflow-heading">{{ p.text }}</h2>
+                <p v-else>{{ p.text }}</p>
+              </template>
+            </section>
+          </article>
+          <div v-else-if="reflowBuilt || reflowError" class="reflow-empty">
+            <strong>{{ t('reader.reflowNoText') }}</strong>
+            <span>{{ t('reader.reflowNoTextHint') }}</span>
+            <small v-if="reflowError">{{ reflowError }}</small>
+            <button class="btn btn-sm" @click="switchPdfLayout('original')">{{ t('reader.originalPdf') }}</button>
+          </div>
+        </div>
+
         <!-- 藏书默认翻页适高；双页时显示当前 1-2 / 3-4 页组。 -->
         <div
-          v-if="bookPaged"
+          v-else-if="bookPaged"
           ref="pagedBox"
           class="paged-box"
           @pointerdown="onScrollerPointerDown"
@@ -2216,7 +2479,7 @@ onBeforeUnmount(() => {
 
         <!-- 底部悬浮工具条: 页码 / 全屏 / 缩放档位 -->
         <div class="dock card">
-          <button class="icon-btn" :title="t('reader.prevPage')" :disabled="currentPage <= 1" @click="prevPage">
+          <button class="icon-btn" :title="t('reader.prevPage')" :disabled="atFirstPage" @click="prevPage">
             <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M14.7 5.3a1 1 0 0 1 0 1.4L9.42 12l5.3 5.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.42 0z"/></svg>
           </button>
           <span class="paper-pagenum">
@@ -2230,7 +2493,7 @@ onBeforeUnmount(() => {
           <button class="icon-btn" :title="t('paper.fullscreen')" @click="toggleFullscreen">
             <svg viewBox="0 0 24 24" width="15" height="15"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>
           </button>
-          <template v-if="!bookPaged">
+          <template v-if="pdfLayout === 'original' && !bookPaged">
             <span class="dock-sep" />
             <button class="icon-btn" :title="t('reader.zoomOut')" @click="zoomStep(-1)">−</button>
             <button class="dock-zoom" @click="zoomMenu = !zoomMenu">
@@ -2239,11 +2502,18 @@ onBeforeUnmount(() => {
             </button>
             <button class="icon-btn" :title="t('reader.zoomIn')" @click="zoomStep(1)">＋</button>
           </template>
+          <template v-else-if="pdfLayout === 'reflow'">
+            <span class="dock-sep" />
+            <button class="dock-zoom" @click="typographyOpen = !typographyOpen">
+              Aa · {{ settings.reader.fontSize }}
+              <span class="dock-caret">▾</span>
+            </button>
+          </template>
         </div>
 
         <!-- 缩放档位菜单 -->
-        <div v-if="zoomMenu && !bookPaged" class="zoom-backdrop" @click="zoomMenu = false" />
-        <div v-if="zoomMenu && !bookPaged" class="zoom-menu card">
+        <div v-if="zoomMenu && pdfLayout === 'original' && !bookPaged" class="zoom-backdrop" @click="zoomMenu = false" />
+        <div v-if="zoomMenu && pdfLayout === 'original' && !bookPaged" class="zoom-menu card">
           <button
             v-for="p in ZOOM_PRESETS"
             :key="p"
@@ -2254,6 +2524,38 @@ onBeforeUnmount(() => {
           <button class="zoom-item" :class="{ active: zoom === 'fit' }" @click="pickZoom('fit')">
             {{ t('reader.fitWidth') }}
           </button>
+        </div>
+
+        <div v-if="typographyOpen && pdfLayout === 'reflow'" class="zoom-backdrop" @click="typographyOpen = false" />
+        <div v-if="typographyOpen && pdfLayout === 'reflow'" class="reflow-settings card">
+          <label>
+            <span>{{ t('reader.fontSize') }}</span>
+            <input v-model.number="settings.reader.fontSize" type="range" min="12" max="36" step="1" />
+            <strong>{{ settings.reader.fontSize }}</strong>
+          </label>
+          <label>
+            <span>{{ t('reader.lineHeight') }}</span>
+            <input v-model.number="settings.reader.lineHeight" type="range" min="1.2" max="2.6" step="0.1" />
+            <strong>{{ settings.reader.lineHeight.toFixed(1) }}</strong>
+          </label>
+          <label>
+            <span>{{ t('reader.font') }}</span>
+            <select v-model="settings.reader.fontFamily" class="input">
+              <option v-for="font in FONT_FAMILIES" :key="font.value" :value="font.value">{{ t(font.labelKey) }}</option>
+              <option v-for="font in settings.customFonts" :key="font.file" :value="`custom:${font.name}`">{{ font.name }}</option>
+            </select>
+          </label>
+          <div class="reflow-theme-row">
+            <span>{{ t('reader.theme') }}</span>
+            <button
+              v-for="(colors, name) in READER_THEMES"
+              :key="name"
+              :class="{ active: settings.reader.theme === name }"
+              :style="{ background: colors.bg, color: colors.fg }"
+              :title="String(name)"
+              @click="settings.reader.theme = name as any"
+            >Aa</button>
+          </div>
         </div>
       </div>
 
@@ -2742,6 +3044,96 @@ onBeforeUnmount(() => {
   padding: 16px;
   background: #f2f3f5;
 }
+.reflow-scroll {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+  background: var(--reflow-bg);
+  color: var(--reflow-fg);
+}
+.reflow-progress {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 7px 16px;
+  color: var(--text-3);
+  background: color-mix(in srgb, var(--reflow-bg) 92%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--reflow-fg) 10%, transparent);
+  font-size: 12px;
+  text-align: center;
+  backdrop-filter: blur(8px);
+}
+.reflow-article {
+  box-sizing: border-box;
+  width: min(100%, 820px);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 52px max(28px, var(--reflow-side-pad)) 112px;
+  color: var(--reflow-fg);
+  font-family: var(--reflow-font-family);
+  font-size: var(--reflow-font-size);
+}
+.reflow-page {
+  scroll-margin-top: 28px;
+}
+.reflow-page + .reflow-page {
+  margin-top: 2.8em;
+  padding-top: 1.2em;
+  border-top: 1px solid color-mix(in srgb, var(--reflow-fg) 10%, transparent);
+}
+.reflow-page-link {
+  display: block;
+  margin: 0 auto 1.35em;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--reflow-fg) 7%, transparent);
+  color: color-mix(in srgb, var(--reflow-fg) 58%, transparent);
+  font: 500 11px/1.7 system-ui, sans-serif;
+}
+.reflow-page-link:hover {
+  background: color-mix(in srgb, var(--reflow-link) 12%, transparent);
+  color: var(--reflow-link);
+}
+.reflow-page p {
+  margin: 0 0 1em;
+  color: inherit;
+  font-size: 1em;
+  line-height: var(--reflow-line-height);
+  text-align: var(--reflow-align);
+  text-indent: 2em;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+.reflow-heading {
+  margin: 1.8em 0 0.9em;
+  color: inherit;
+  font-size: 1.34em;
+  line-height: 1.45;
+  text-align: start;
+  text-wrap: balance;
+}
+.reflow-page-link + .reflow-heading {
+  margin-top: 0;
+}
+.reflow-empty {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px;
+  color: var(--reflow-fg);
+  text-align: center;
+}
+.reflow-empty span,
+.reflow-empty small {
+  max-width: 480px;
+  color: color-mix(in srgb, var(--reflow-fg) 60%, transparent);
+  line-height: 1.7;
+}
 .paged-box {
   flex: 1;
   min-width: 0;
@@ -2837,6 +3229,53 @@ onBeforeUnmount(() => {
 .zoom-item.active {
   color: var(--brand);
   font-weight: 600;
+}
+.reflow-settings {
+  position: absolute;
+  bottom: 62px;
+  left: 50%;
+  z-index: 28;
+  width: min(340px, calc(100% - 32px));
+  padding: 14px 16px;
+  border-radius: 12px;
+  transform: translateX(-50%);
+}
+.reflow-settings label {
+  display: grid;
+  grid-template-columns: 64px 1fr 34px;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.reflow-settings label strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.reflow-settings select {
+  grid-column: 2 / 4;
+  min-width: 0;
+}
+.reflow-theme-row {
+  display: grid;
+  grid-template-columns: 64px repeat(4, 34px);
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.reflow-theme-row button {
+  width: 32px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font: 600 13px/1 serif;
+}
+.reflow-theme-row button.active {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
 }
 
 /* ---- 连续滚动页 ---- */

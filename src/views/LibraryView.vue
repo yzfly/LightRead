@@ -115,7 +115,7 @@ function onDrop(e: DragEvent) {
 }
 
 function openBook(book: BookMeta) {
-  // PDF 统一走论文阅读器 (PDFium 渲染 + 几何选择 + 翻译/AI), 藏书与论文一套引擎
+  // PDF 统一走论文阅读器 (可选 MuPDF/PDFium 渲染 + PDFium 交互几何), 藏书与论文共用
   const target = book.format === 'pdf'
     ? `/read-paper/${book.id}`
     : book.format === 'djvu' ? `/read-djvu/${book.id}`

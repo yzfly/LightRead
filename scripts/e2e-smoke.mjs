@@ -131,7 +131,7 @@ await step('返回书架并打开 PDF', async () => {
   await page.click('button[title="返回藏书"]')
   await page.waitForSelector('.book-card', { timeout: 8000 })
   await page.click('.book-card:has-text("test-doc")')
-  // 藏书 PDF 统一走 PDFium 阅读器，默认翻页 + 适高
+  // 藏书 PDF 统一走 PDF 阅读器，默认 MuPDF 渲染 + 翻页 + 适高
   await page.waitForSelector('.p-holder canvas', { timeout: 15000 })
 })
 await page.screenshot({ path: join(TMP, 'shots', '06-pdf.png') })
@@ -174,6 +174,37 @@ await step('PDF 画布按设备像素显示且文字无彩色雾边', async () =
   }
   if (quality.renderer !== 'mupdf') throw new Error(`清晰渲染引擎未启用: ${quality.renderer || 'unknown'}`)
   if (quality.colored) throw new Error(`文字存在 ${quality.colored} 个 LCD 彩色雾边像素`)
+})
+
+await step('PDF 渲染引擎可切换为 PDFium', async () => {
+  await page.goto('http://localhost:4173/#/settings', { waitUntil: 'networkidle' })
+  const reading = page.locator('.section').filter({ hasText: '阅读偏好' })
+  await reading.getByRole('button', { name: 'PDFium', exact: true }).click()
+  await page.waitForTimeout(400)
+  await page.goto('http://localhost:4173/#/library', { waitUntil: 'networkidle' })
+  await page.click('.book-card:has-text("test-doc")')
+  await page.waitForSelector('.p-holder canvas', { timeout: 15000 })
+  const renderer = await page.locator('.p-holder canvas').first().getAttribute('data-renderer')
+  if (renderer !== 'pdfium') throw new Error(`PDFium 渲染引擎未启用: ${renderer || 'unknown'}`)
+})
+
+await step('PDF 可切换流式阅读并返回原页', async () => {
+  await page.getByRole('button', { name: '流式', exact: true }).click()
+  await page.waitForSelector('.reflow-page', { timeout: 10000 })
+  const text = await page.locator('.reflow-article').innerText()
+  if (!text.includes('Hello LightRead PDF 1') || !text.includes('Small body text')) {
+    throw new Error('流式正文未按 PDF 文本层生成')
+  }
+  if (await page.locator('.pane-left-wrap canvas').count()) throw new Error('流式模式仍在显示 PDF 位图')
+
+  await page.locator('.dock-zoom', { hasText: 'Aa' }).click()
+  await page.locator('.reflow-settings input[type="range"]').first().fill('22')
+  const fontSize = await page.locator('.reflow-article').evaluate(el => getComputedStyle(el).fontSize)
+  if (fontSize !== '22px') throw new Error(`流式字号未生效: ${fontSize}`)
+  await page.locator('.zoom-backdrop').click({ position: { x: 4, y: 4 } })
+
+  await page.getByRole('button', { name: '第 1 页 · 查看原版', exact: true }).click()
+  await page.waitForSelector('.p-holder canvas', { timeout: 10000 })
 })
 
 await step('PDF 自动阅读按模式滚动或翻页', async () => {
