@@ -13,6 +13,7 @@ A conforming distribution is an OKF bundle directory or a ZIP archive of that di
 ```text
 bundle/
 ├── index.md
+├── manifest.json                       # optional producer cache
 ├── books/
 │   ├── index.md
 │   └── <concept-id>.md
@@ -26,6 +27,8 @@ bundle/
 ```
 
 The root `index.md` declares `okf_version: "0.1"` in its frontmatter as permitted by OKF 0.1. All non-reserved Markdown documents are OKF concepts and contain the required `type` field. Binary assets are ordinary bundle resources; they do not need Markdown wrappers.
+
+`manifest.json`, when present, is an optional, non-authoritative producer cache. Profile consumers must discover and import the bundle from `index.md` and the OKF concepts, must not require this file, and should ignore it when they do not understand its producer-specific schema. LightRead emits a v2 compatibility manifest so older LightRead-aware tooling can inspect the same asset descriptors efficiently; the OKF documents win if the two representations disagree.
 
 Paths in the `file` and `cover` objects are bundle-root-relative. The standard OKF `resource` field is a URI reference relative to the concept document.
 
@@ -137,12 +140,13 @@ added_at: 2026-07-22T08:00:00.000Z
 
 A Profile 1.0 consumer should:
 
-1. Parse every non-reserved Markdown concept as OKF and tolerate unknown types and extension fields.
-2. Select publication concepts by `entity: book`, or generically by a publication-like `type` plus a local `file`/`resource`.
-3. Resolve bundle resources without allowing paths to escape the bundle root.
-4. Verify declared byte lengths and SHA-256 values before writing any library data.
-5. Preserve unknown fields when editing a bundle in place. An application ingesting concepts into a narrower database may ignore fields it cannot represent.
-6. Keep existing local publications on identity conflicts and merge annotations by content identity, unless the user chooses another conflict policy.
+1. Treat `index.md` and its referenced OKF concepts as authoritative; optional producer files such as `manifest.json` must not be required.
+2. Parse every non-reserved Markdown concept as OKF and tolerate unknown types and extension fields.
+3. Select publication concepts by `entity: book`, or generically by a publication-like `type` plus a local `file`/`resource`.
+4. Resolve bundle resources without allowing paths to escape the bundle root.
+5. Verify declared byte lengths and SHA-256 values before writing any library data.
+6. Preserve unknown fields when editing a bundle in place. An application ingesting concepts into a narrower database may ignore fields it cannot represent.
+7. Keep existing local publications on identity conflicts and merge annotations by content identity, unless the user chooses another conflict policy.
 
 A generic OKF producer does not have to emit every Profile field to be useful. LightRead accepts publication concepts from other producers when they have a supported bundled resource; missing reading state defaults to an unread local import.
 

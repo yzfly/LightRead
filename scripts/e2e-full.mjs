@@ -194,6 +194,31 @@ const fit = await page.evaluate(() => {
 check('默认翻页+适高', fit.cH <= fit.boxH && fit.cH > fit.boxH * 0.8, `页高 ${Math.round(fit.cH)} / 容器 ${fit.boxH}`)
 check('打开在第 1 页', await page.inputValue('.page-input') === '1')
 
+// 跨平台主修饰键缩放；+ 不要求用户额外按 Shift，0 恢复当前适配策略。
+const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+await page.keyboard.press(`${primaryKey}+=`)
+await page.waitForFunction(
+  height => parseFloat(document.querySelector('.spread-host canvas')?.style.height || '0') > height,
+  fit.cH,
+  { timeout: 8000 },
+)
+const shortcutZoomHeight = await page.locator('.spread-host canvas').evaluate(el => parseFloat(el.style.height))
+check('快捷键放大 PDF', shortcutZoomHeight > fit.cH, `${Math.round(fit.cH)} → ${Math.round(shortcutZoomHeight)}`)
+await page.keyboard.press(`${primaryKey}+-`)
+await page.waitForTimeout(500)
+const shortcutZoomOutHeight = await page.locator('.spread-host canvas').evaluate(el => parseFloat(el.style.height))
+check('快捷键缩小 PDF', shortcutZoomOutHeight < shortcutZoomHeight)
+await page.keyboard.press(`${primaryKey}+0`)
+await page.waitForTimeout(500)
+const resetZoomHeight = await page.locator('.spread-host canvas').evaluate(el => parseFloat(el.style.height))
+check('快捷键恢复适配', Math.abs(resetZoomHeight - fit.cH) < 4)
+
+await page.keyboard.press('Shift+/')
+await page.waitForSelector('.shortcut-menu', { timeout: 3000 })
+check('快捷键帮助可发现', await page.locator('.shortcut-row').count() >= 8)
+await page.keyboard.press('Escape')
+await page.waitForSelector('.shortcut-menu', { state: 'detached', timeout: 3000 })
+
 // 双页: 首页立即生效 (bug 回归)
 await page.click('.btn:has-text("双页")')
 await page.waitForFunction(() => document.querySelectorAll('.spread-host canvas').length === 2, null, { timeout: 8000 })

@@ -80,7 +80,14 @@ try {
 
   const archiveBytes = new Uint8Array(await readFile(archivePath))
   const entries = unzipSync(archiveBytes)
-  if (entries['manifest.json']) throw new Error('OKF 导出不应依赖私有 manifest.json')
+  if (!entries['manifest.json']) throw new Error('缺少同级 JSON 兼容清单')
+  const compatibilityManifest = JSON.parse(strFromU8(entries['manifest.json']))
+  if (compatibilityManifest.format !== 'org.lightread.library' || compatibilityManifest.version !== 2) {
+    throw new Error('JSON 兼容清单格式错误')
+  }
+  if (compatibilityManifest.books?.length !== 1 || compatibilityManifest.annotations?.length !== 0) {
+    throw new Error('JSON 兼容清单内容错误')
+  }
   const root = frontmatter(entries['index.md'])
   if (root.okf_version !== '0.1') throw new Error('未声明 OKF v0.1')
   const bookConceptPath = Object.keys(entries)
@@ -100,14 +107,22 @@ try {
     throw new Error('载荷长度或 SHA-256 错误')
   }
 
+  // manifest 是可选兼容层：故意制造冲突，导入必须仍以 OKF concept 为准。
+  compatibilityManifest.books[0].title = 'Manifest Must Not Win'
+  const authorityPath = join(temp, 'okf-authoritative.zip')
+  await writeFile(authorityPath, zipSync({
+    ...entries,
+    'manifest.json': strToU8(JSON.stringify(compatibilityManifest)),
+  }, { level: 0 }))
+
   // 新环境导入，并验证重复导入不会产生第二本书。
   const targetContext = await browser.newContext()
-  let targetPage = await importArchive(targetContext, archivePath)
+  let targetPage = await importArchive(targetContext, authorityPath)
   if (!(await targetPage.locator('.toast.success').count())) {
     throw new Error(`OKF 导入失败: ${await targetPage.locator('.toast').innerText()}`)
   }
   await targetPage.close()
-  targetPage = await importArchive(targetContext, archivePath)
+  targetPage = await importArchive(targetContext, authorityPath)
   if (!(await targetPage.locator('.toast.success').count())) throw new Error('OKF 重复导入失败')
   await expectOneBook(targetPage, 'archive-test')
   await targetContext.close()
@@ -229,7 +244,7 @@ try {
   await v1Context.close()
 
   await sourceContext.close()
-  console.log('OKF 藏书协议测试通过：标准结构、往返、第三方导入、幂等、完整性、JSON v1/v2 兼容')
+  console.log('OKF 藏书协议测试通过：标准结构、可选兼容 manifest、OKF 权威优先、往返、第三方导入、幂等、完整性、JSON v1/v2 兼容')
 } finally {
   await browser?.close()
   server.kill('SIGTERM')

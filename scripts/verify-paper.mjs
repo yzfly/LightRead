@@ -122,7 +122,7 @@ await step('滚动更新页码', async () => {
 
 await step('缩放: 放大与底部档位菜单', async () => {
   const w0 = await pg.locator('.p-holder').first().evaluate(el => el.clientWidth)
-  await pg.click('button[title="放大"]')
+  await pg.click('button[title^="放大"]')
   await pg.waitForTimeout(500)
   const w1 = await pg.locator('.p-holder').first().evaluate(el => el.clientWidth)
   if (w1 <= w0) throw new Error(`宽度未增加 ${w0} -> ${w1}`)
@@ -135,6 +135,30 @@ await step('缩放: 放大与底部档位菜单', async () => {
   await pg.click('.dock-zoom')
   await pg.click('.zoom-item:has-text("适宽")')
   await pg.waitForTimeout(400)
+})
+
+await step('键盘缩放、复位与快捷键面板', async () => {
+  const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+  const w0 = await pg.locator('.p-holder').first().evaluate(el => el.clientWidth)
+  await pg.keyboard.press(`${primaryKey}+=`)
+  await pg.waitForFunction(
+    width => document.querySelector('.p-holder')?.clientWidth > width,
+    w0,
+    { timeout: 5000 },
+  )
+  const w1 = await pg.locator('.p-holder').first().evaluate(el => el.clientWidth)
+  await pg.keyboard.press(`${primaryKey}+-`)
+  await pg.waitForTimeout(400)
+  const w2 = await pg.locator('.p-holder').first().evaluate(el => el.clientWidth)
+  if (w2 >= w1) throw new Error(`快捷键缩小未生效 ${w1} -> ${w2}`)
+  await pg.keyboard.press(`${primaryKey}+0`)
+  await pg.waitForTimeout(400)
+  if (!(await pg.locator('.dock-zoom').innerText()).includes('适宽')) throw new Error('快捷键复位未恢复适宽')
+  await pg.keyboard.press('Shift+/')
+  await pg.waitForSelector('.shortcut-menu', { timeout: 3000 })
+  if (await pg.locator('.shortcut-row').count() < 8) throw new Error('快捷键面板内容不完整')
+  await pg.keyboard.press('Escape')
+  await pg.waitForSelector('.shortcut-menu', { state: 'detached', timeout: 3000 })
 })
 
 await step('目录抽屉与跳转', async () => {
@@ -283,9 +307,24 @@ await step('藏书 PDF 同样走论文阅读器', async () => {
   await pg.setInputFiles('input[type=file][multiple]', pdfPath)
   await pg.waitForSelector('.book-card', { timeout: 15000 })
   await pg.click('.book-card')
+  await pg.waitForSelector('.paged-box', { timeout: 15000 })
   await pg.waitForSelector('.p-holder canvas', { timeout: 15000 })
   const backTitle = await pg.locator('header .icon-btn').first().getAttribute('title')
   if (backTitle !== '返回藏书') throw new Error(`返回目标错误: ${backTitle}`)
+  const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+  const h0 = await pg.locator('.spread-host canvas').evaluate(el => parseFloat(el.style.height))
+  await pg.keyboard.press(`${primaryKey}+=`)
+  await pg.waitForFunction(
+    height => parseFloat(document.querySelector('.spread-host canvas')?.style.height || '0') > height,
+    h0,
+    { timeout: 5000 },
+  )
+  await pg.keyboard.press(`${primaryKey}+0`)
+  await pg.waitForFunction(
+    height => Math.abs(parseFloat(document.querySelector('.spread-host canvas')?.style.height || '0') - height) < 3,
+    h0,
+    { timeout: 5000 },
+  )
   // 藏书功能集: 听书/自动阅读, 无翻译/AI 辅读
   await pg.waitForSelector('header button:has-text("听书")', { timeout: 4000 })
   await pg.waitForSelector('header button:has-text("自动阅读")', { timeout: 4000 })

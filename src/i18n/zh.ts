@@ -297,6 +297,16 @@ export default {
   'reader.twoPage': '双页',
   'reader.zoomIn': '放大',
   'reader.zoomOut': '缩小',
+  'reader.keyboardShortcuts': '键盘快捷键',
+  'reader.shortcutZoomIn': '放大内容',
+  'reader.shortcutZoomOut': '缩小内容',
+  'reader.shortcutResetZoom': '恢复适配',
+  'reader.shortcutPrevPage': '上一页',
+  'reader.shortcutNextPage': '下一页',
+  'reader.shortcutFirstLast': '第一页 / 最后一页',
+  'reader.shortcutFullscreen': '切换全屏',
+  'reader.shortcutHelp': '打开快捷键面板',
+  'reader.shortcutClose': '关闭面板',
   'reader.extracting': '解压中…',
 
   // ---- 听书 ----

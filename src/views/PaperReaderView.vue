@@ -174,6 +174,7 @@ const atLastPage = computed(() => pdfLayout.value === 'reflow'
 
 /** 翻页模式默认适高；双页时同时受可用宽度约束，避免页面被裁掉。 */
 function pagedScale(): number {
+  if (zoom.value !== 'fit') return zoom.value
   const box = pagedBox.value
   const availW = Math.max((box?.clientWidth ?? 800) - 32, 240)
   const availH = Math.max((box?.clientHeight ?? 700) - 24, 240)
@@ -318,8 +319,7 @@ async function toggleSpread() {
 
 async function setPagedFit(fit: 'fitH' | 'fitW') {
   settings.pdf.fit = fit
-  renderedScale.clear()
-  await renderPaged()
+  await applyZoom('fit')
 }
 
 /** PDFium 链接层: 内链跳转 + 外链系统浏览器 */
@@ -424,12 +424,17 @@ async function applyZoom(next: number | 'fit') {
   zoom.value = next
   if (next === 'fit') localStorage.removeItem(ZOOM_KEY)
   else localStorage.setItem(ZOOM_KEY, String(next))
-  relayout(true)
+  if (bookPaged.value) {
+    renderedScale.clear()
+    await renderPaged()
+  } else {
+    relayout(true)
+  }
 }
 
 function zoomStep(dir: 1 | -1) {
   const cur = zoom.value === 'fit' ? curScale.value : zoom.value
-  applyZoom(Math.max(0.4, Math.min(4, +(cur + dir * 0.2).toFixed(2))))
+  void applyZoom(Math.max(0.4, Math.min(4, +(cur + dir * 0.2).toFixed(2))))
 }
 
 /** 缩放档位菜单 (ReadPaper 式: 固定档 + 自适应) */
@@ -438,7 +443,44 @@ const zoomMenu = ref(false)
 
 function pickZoom(z: number | 'fit') {
   zoomMenu.value = false
-  applyZoom(z)
+  void applyZoom(z)
+}
+
+const isMacPlatform = typeof navigator !== 'undefined'
+  && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
+const primaryShortcutLabel = isMacPlatform ? '⌘' : 'Ctrl'
+const shortcutsOpen = ref(false)
+const shortcutRows = computed(() => [
+  { shortcuts: [[primaryShortcutLabel, '＋']], label: t('reader.shortcutZoomIn') },
+  { shortcuts: [[primaryShortcutLabel, '−']], label: t('reader.shortcutZoomOut') },
+  { shortcuts: [[primaryShortcutLabel, '0']], label: t('reader.shortcutResetZoom') },
+  { shortcuts: [['←'], ['Page Up'], ['⇧', 'Space']], label: t('reader.shortcutPrevPage') },
+  { shortcuts: [['→'], ['Page Down'], ['Space']], label: t('reader.shortcutNextPage') },
+  { shortcuts: [['Home'], ['End']], label: t('reader.shortcutFirstLast') },
+  { shortcuts: [['F']], label: t('reader.shortcutFullscreen') },
+  { shortcuts: [['?']], label: t('reader.shortcutHelp') },
+  { shortcuts: [['Esc']], label: t('reader.shortcutClose') },
+])
+
+function changeReaderZoom(dir: 1 | -1) {
+  zoomMenu.value = false
+  if (pdfLayout.value === 'reflow') {
+    settings.reader.fontSize = Math.min(36, Math.max(12, settings.reader.fontSize + dir * 2))
+  } else {
+    zoomStep(dir)
+  }
+}
+
+function resetReaderZoom() {
+  zoomMenu.value = false
+  if (pdfLayout.value === 'reflow') settings.reader.fontSize = 18
+  else void applyZoom('fit')
+}
+
+function toggleShortcutGuide() {
+  shortcutsOpen.value = !shortcutsOpen.value
+  zoomMenu.value = false
+  typographyOpen.value = false
 }
 
 /* ---- 全屏 ---- */
@@ -1282,6 +1324,7 @@ async function switchPdfLayout(next: 'original' | 'reflow') {
   selection.value = null
   closeSelTr()
   zoomMenu.value = false
+  shortcutsOpen.value = false
   typographyOpen.value = false
   backStack.value = []
   settings.pdf.layout = next
@@ -2026,8 +2069,21 @@ function stopTTS() {
 /* ================= 生命周期 ================= */
 
 function handleKeydown(e: KeyboardEvent) {
-  const target = e.target as HTMLElement
-  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+  const primaryPressed = isMacPlatform ? e.metaKey : e.ctrlKey
+  const zoomInKey = e.key === '+' || e.key === '=' || e.code === 'Equal' || e.code === 'NumpadAdd'
+  const zoomOutKey = e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract'
+  const resetZoomKey = e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0'
+  if (primaryPressed && !e.altKey && (zoomInKey || zoomOutKey || resetZoomKey)) {
+    e.preventDefault()
+    if (zoomInKey) changeReaderZoom(1)
+    else if (zoomOutKey) changeReaderZoom(-1)
+    else resetReaderZoom()
+    return
+  }
+
+  const target = e.target instanceof HTMLElement ? e.target : null
+  if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return
+  if (e.metaKey || e.ctrlKey || e.altKey) return
   if (e.key === 'Escape') {
     selection.value = null
     liveSel.value = null
@@ -2037,12 +2093,31 @@ function handleKeydown(e: KeyboardEvent) {
     tocOpen.value = false
     annoOpen.value = false
     zoomMenu.value = false
+    typographyOpen.value = false
+    shortcutsOpen.value = false
     stopAutoRead()
     autoPanel.value = false
     return
   }
-  if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevPage()
-  else if (e.key === 'ArrowRight' || e.key === 'PageDown') nextPage()
+  if (e.key === '?' || (e.shiftKey && (e.key === '/' || e.code === 'Slash'))) {
+    e.preventDefault()
+    toggleShortcutGuide()
+  } else if (e.key.toLowerCase() === 'f') {
+    e.preventDefault()
+    void toggleFullscreen()
+  } else if (e.key === 'Home') {
+    e.preventDefault()
+    gotoPage(1)
+  } else if (e.key === 'End') {
+    e.preventDefault()
+    gotoPage(pageCount.value)
+  } else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || (e.key === ' ' && e.shiftKey)) {
+    e.preventDefault()
+    prevPage()
+  } else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+    e.preventDefault()
+    nextPage()
+  }
 }
 
 onMounted(async () => {
@@ -2210,14 +2285,14 @@ onBeforeUnmount(() => {
               <div class="reader-segment" role="group" :aria-label="t('reader.fitHeight') + ' / ' + t('reader.fitWidth')">
                 <button
                   type="button"
-                  :class="{ active: settings.pdf.fit === 'fitH' }"
-                  :aria-pressed="settings.pdf.fit === 'fitH'"
+                  :class="{ active: zoom === 'fit' && settings.pdf.fit === 'fitH' }"
+                  :aria-pressed="zoom === 'fit' && settings.pdf.fit === 'fitH'"
                   @click="setPagedFit('fitH')"
                 >{{ t('reader.fitHeight') }}</button>
                 <button
                   type="button"
-                  :class="{ active: settings.pdf.fit === 'fitW' }"
-                  :aria-pressed="settings.pdf.fit === 'fitW'"
+                  :class="{ active: zoom === 'fit' && settings.pdf.fit === 'fitW' }"
+                  :aria-pressed="zoom === 'fit' && settings.pdf.fit === 'fitW'"
                   @click="setPagedFit('fitW')"
                 >{{ t('reader.fitWidth') }}</button>
               </div>
@@ -2490,17 +2565,17 @@ onBeforeUnmount(() => {
             <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M9.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 0 1-1.4-1.4l5.29-5.3-5.3-5.3a1 1 0 0 1 0-1.4z"/></svg>
           </button>
           <span class="dock-sep" />
-          <button class="icon-btn" :title="t('paper.fullscreen')" @click="toggleFullscreen">
+          <button class="icon-btn" :title="`${t('paper.fullscreen')} (F)`" @click="toggleFullscreen">
             <svg viewBox="0 0 24 24" width="15" height="15"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>
           </button>
-          <template v-if="pdfLayout === 'original' && !bookPaged">
+          <template v-if="pdfLayout === 'original'">
             <span class="dock-sep" />
-            <button class="icon-btn" :title="t('reader.zoomOut')" @click="zoomStep(-1)">−</button>
+            <button class="icon-btn" :title="`${t('reader.zoomOut')} (${primaryShortcutLabel} −)`" @click="zoomStep(-1)">−</button>
             <button class="dock-zoom" @click="zoomMenu = !zoomMenu">
-              {{ zoom === 'fit' ? t('reader.fitWidth') : `${Math.round(curScale * 100)}%` }}
+              {{ zoom === 'fit' ? (bookPaged && settings.pdf.fit === 'fitH' ? t('reader.fitHeight') : t('reader.fitWidth')) : `${Math.round(curScale * 100)}%` }}
               <span class="dock-caret">▾</span>
             </button>
-            <button class="icon-btn" :title="t('reader.zoomIn')" @click="zoomStep(1)">＋</button>
+            <button class="icon-btn" :title="`${t('reader.zoomIn')} (${primaryShortcutLabel} +)`" @click="zoomStep(1)">＋</button>
           </template>
           <template v-else-if="pdfLayout === 'reflow'">
             <span class="dock-sep" />
@@ -2509,11 +2584,20 @@ onBeforeUnmount(() => {
               <span class="dock-caret">▾</span>
             </button>
           </template>
+          <span class="dock-sep" />
+          <button
+            class="icon-btn shortcut-trigger"
+            :class="{ 'icon-active': shortcutsOpen }"
+            :title="`${t('reader.keyboardShortcuts')} (?)`"
+            :aria-label="t('reader.keyboardShortcuts')"
+            :aria-pressed="shortcutsOpen"
+            @click="toggleShortcutGuide"
+          >?</button>
         </div>
 
         <!-- 缩放档位菜单 -->
-        <div v-if="zoomMenu && pdfLayout === 'original' && !bookPaged" class="zoom-backdrop" @click="zoomMenu = false" />
-        <div v-if="zoomMenu && pdfLayout === 'original' && !bookPaged" class="zoom-menu card">
+        <div v-if="zoomMenu && pdfLayout === 'original'" class="zoom-backdrop" @click="zoomMenu = false" />
+        <div v-if="zoomMenu && pdfLayout === 'original'" class="zoom-menu card">
           <button
             v-for="p in ZOOM_PRESETS"
             :key="p"
@@ -2522,9 +2606,31 @@ onBeforeUnmount(() => {
             @click="pickZoom(p)"
           >{{ Math.round(p * 100) }}%</button>
           <button class="zoom-item" :class="{ active: zoom === 'fit' }" @click="pickZoom('fit')">
-            {{ t('reader.fitWidth') }}
+            {{ bookPaged && settings.pdf.fit === 'fitH' ? t('reader.fitHeight') : t('reader.fitWidth') }}
           </button>
         </div>
+
+        <div v-if="shortcutsOpen" class="zoom-backdrop" @click="shortcutsOpen = false" />
+        <section v-if="shortcutsOpen" class="shortcut-menu card" role="dialog" :aria-label="t('reader.keyboardShortcuts')">
+          <header class="shortcut-head">
+            <strong>{{ t('reader.keyboardShortcuts') }}</strong>
+            <button class="icon-btn" :aria-label="t('common.close')" @click="shortcutsOpen = false">×</button>
+          </header>
+          <div v-for="row in shortcutRows" :key="row.label" class="shortcut-row">
+            <span class="shortcut-keys">
+              <template v-for="(combo, comboIndex) in row.shortcuts" :key="combo.join('-')">
+                <span v-if="comboIndex" class="shortcut-or">/</span>
+                <span class="shortcut-combo">
+                  <template v-for="(key, keyIndex) in combo" :key="key">
+                    <span v-if="keyIndex" class="shortcut-plus">+</span>
+                    <kbd>{{ key }}</kbd>
+                  </template>
+                </span>
+              </template>
+            </span>
+            <span>{{ row.label }}</span>
+          </div>
+        </section>
 
         <div v-if="typographyOpen && pdfLayout === 'reflow'" class="zoom-backdrop" @click="typographyOpen = false" />
         <div v-if="typographyOpen && pdfLayout === 'reflow'" class="reflow-settings card">
@@ -3213,6 +3319,68 @@ onBeforeUnmount(() => {
   padding: 6px;
   border-radius: 10px;
   min-width: 96px;
+}
+.shortcut-trigger {
+  font-size: 14px;
+  font-weight: 700;
+}
+.shortcut-menu {
+  position: absolute;
+  bottom: 62px;
+  left: 50%;
+  z-index: 28;
+  width: min(430px, calc(100% - 32px));
+  padding: 10px 14px 12px;
+  border-radius: 14px;
+  transform: translateX(-50%);
+}
+.shortcut-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  margin-bottom: 4px;
+}
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(178px, auto) 1fr;
+  align-items: center;
+  gap: 16px;
+  min-height: 39px;
+  border-top: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.shortcut-keys {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.shortcut-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.shortcut-or {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.shortcut-plus {
+  color: var(--text-3);
+  font-size: 10px;
+}
+.shortcut-keys kbd {
+  min-width: 26px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-1);
+  font: 600 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-align: center;
+  white-space: nowrap;
 }
 .zoom-item {
   border: none;
@@ -4166,6 +4334,11 @@ onBeforeUnmount(() => {
   }
   .side-drawer {
     width: min(280px, calc(100vw - 40px));
+  }
+  .shortcut-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 8px 0;
   }
 }
 </style>

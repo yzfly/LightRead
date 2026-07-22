@@ -297,6 +297,16 @@ export default {
   'reader.twoPage': 'Two-Page',
   'reader.zoomIn': 'Zoom in',
   'reader.zoomOut': 'Zoom out',
+  'reader.keyboardShortcuts': 'Keyboard shortcuts',
+  'reader.shortcutZoomIn': 'Zoom in',
+  'reader.shortcutZoomOut': 'Zoom out',
+  'reader.shortcutResetZoom': 'Reset to fit',
+  'reader.shortcutPrevPage': 'Previous page',
+  'reader.shortcutNextPage': 'Next page',
+  'reader.shortcutFirstLast': 'First / last page',
+  'reader.shortcutFullscreen': 'Toggle fullscreen',
+  'reader.shortcutHelp': 'Open shortcut guide',
+  'reader.shortcutClose': 'Close panels',
   'reader.extracting': 'Extracting…',
 
   // ---- 听书 ----

@@ -28,6 +28,20 @@ interface AssetDescriptor {
   sha256: string
 }
 
+/** Optional producer cache beside the authoritative OKF index.md. */
+interface CompatibilityManifest {
+  format: typeof LEGACY_JSON_FORMAT
+  version: typeof LEGACY_JSON_VERSION
+  exportedAt: string
+  generator: { name: 'LightRead'; version: string }
+  books: Array<BookMeta & {
+    content: AssetDescriptor
+    cover?: AssetDescriptor
+  }>
+  annotations: AnnotationRec[]
+  sources: Array<Omit<CatalogSourceRec, 'username' | 'password'>>
+}
+
 interface RestorableAsset {
   path: string
   mediaType?: string
@@ -572,6 +586,16 @@ export async function exportBackup(onProgress?: (msg: string) => void): Promise<
   const books = await storage.listBooks()
   const entries: Record<string, Uint8Array> = {}
   const bookIndex: string[] = []
+  const exportedAt = new Date().toISOString()
+  const compatibilityManifest: CompatibilityManifest = {
+    format: LEGACY_JSON_FORMAT,
+    version: LEGACY_JSON_VERSION,
+    exportedAt,
+    generator: { name: 'LightRead', version: __APP_VERSION__ },
+    books: [],
+    annotations: [],
+    sources: [],
+  }
 
   for (const [index, book] of books.entries()) {
     onProgress?.(`打包 ${book.title} (${index + 1}/${books.length})`)
@@ -592,6 +616,13 @@ export async function exportBackup(onProgress?: (msg: string) => void): Promise<
     }
 
     const annotations = await storage.listAnnotations(book.id)
+    compatibilityManifest.books.push({
+      ...book,
+      hasCover: Boolean(cover),
+      content,
+      cover,
+    })
+    compatibilityManifest.annotations.push(...annotations)
     const timestamp = Math.max(book.addedAt, book.lastReadAt ?? 0, book.pinnedAt ?? 0)
     const frontmatter = compactRecord({
       type: book.kind === 'paper' ? 'Scholarly Paper' : 'Book',
@@ -669,6 +700,10 @@ export async function exportBackup(onProgress?: (msg: string) => void): Promise<
 
   const catalogIndex: string[] = []
   const sources = (await storage.listSources()).filter(source => !source.builtin)
+  compatibilityManifest.sources = sources.map(source => {
+    const { username: _username, password: _password, ...publicSource } = source
+    return publicSource
+  })
   for (const source of sources) {
     const conceptPath = `catalogs/${source.id}.md`
     const frontmatter = compactRecord({
@@ -707,8 +742,9 @@ export async function exportBackup(onProgress?: (msg: string) => void): Promise<
   if (sources.length) {
     rootSections.push('', '# Catalogs', '', `* [Catalogs](catalogs/) - ${sources.length} catalog${sources.length === 1 ? '' : 's'}`)
   }
-  rootSections.push('', `Exported by LightRead ${__APP_VERSION__} at ${new Date().toISOString()}.`)
+  rootSections.push('', `Exported by LightRead ${__APP_VERSION__} at ${exportedAt}.`)
   entries['index.md'] = okfDocument({ okf_version: OKF_VERSION }, rootSections.join('\n'))
+  entries['manifest.json'] = strToU8(JSON.stringify(compatibilityManifest, null, 2))
   // 书籍文件通常已压缩，容器使用 store 模式，优先速度并避免无意义的重复压缩。
   const zipped = zipSync(entries, { level: 0 })
   return new Blob([zipped.buffer as ArrayBuffer], {
