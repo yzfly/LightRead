@@ -205,6 +205,14 @@ await step('几何选择: 拖选连续文本', async () => {
   await pg.waitForSelector('.p-sel-rect', { timeout: 4000 })
   await pg.mouse.up()
   await pg.waitForSelector('.sel-bar', { timeout: 4000 })
+  await pg.waitForTimeout(220) // 等待浮条入场动画结束后再做视觉断言与截图
+  const toolbar = await pg.locator('.sel-bar').boundingBox()
+  const viewport = pg.viewportSize()
+  if (!toolbar || toolbar.x < 0 || toolbar.y < 0
+    || toolbar.x + toolbar.width > viewport.width
+    || toolbar.y + toolbar.height > viewport.height) {
+    throw new Error(`划词浮条超出视口: ${JSON.stringify(toolbar)}`)
+  }
 })
 await pg.screenshot({ path: join(TMP, 'shots', '03-selbar.png') })
 

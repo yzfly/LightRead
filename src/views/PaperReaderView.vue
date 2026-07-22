@@ -801,9 +801,18 @@ function onScrollerDblClick(e: MouseEvent) {
 const selBarStyle = computed(() => {
   if (!selection.value) return {}
   const { x, y } = selection.value.anchor
+  const toolbarWidth = Math.min(420, window.innerWidth - 24)
+  const centerX = window.innerWidth <= toolbarWidth + 24
+    ? window.innerWidth / 2
+    : Math.min(Math.max(x, toolbarWidth / 2 + 12), window.innerWidth - toolbarWidth / 2 - 12)
+  const toolbarHeight = 48
+  const below = y + 12
+  const top = below + toolbarHeight <= window.innerHeight - 12
+    ? below
+    : Math.max(12, y - toolbarHeight - 12)
   return {
-    left: `${Math.max(12, Math.min(x - 140, window.innerWidth - 320))}px`,
-    top: `${Math.min(y + 10, window.innerHeight - 56)}px`,
+    left: `${centerX}px`,
+    top: `${top}px`,
   }
 })
 
@@ -2825,20 +2834,44 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 划词浮条: 高亮 / 想法 / 复制 / AI 翻译 -->
-    <div v-if="selection" class="sel-bar card" :style="selBarStyle" @mousedown.prevent>
-      <button
-        v-for="(hex, name) in HIGHLIGHT_COLORS"
-        :key="name"
-        class="sel-color"
-        :style="{ background: hex }"
-        :title="t('reader.highlight')"
-        @click="addHighlight(name as string)"
-      />
+    <div
+      v-if="selection"
+      class="sel-bar"
+      :style="selBarStyle"
+      role="toolbar"
+      :aria-label="t('reader.selectionActions')"
+      @mousedown.prevent
+    >
+      <div class="sel-colors" role="group" :aria-label="t('reader.highlight')">
+        <button
+          v-for="(hex, name) in HIGHLIGHT_COLORS"
+          :key="name"
+          type="button"
+          class="sel-color"
+          :title="`${t('reader.highlight')} · ${t(`reader.highlightColor.${name}`)}`"
+          :aria-label="`${t('reader.highlight')} · ${t(`reader.highlightColor.${name}`)}`"
+          @click="addHighlight(name as string)"
+        >
+          <span class="sel-color-dot" :style="{ background: hex }" />
+        </button>
+      </div>
       <span class="sel-sep" />
-      <button class="sel-act" @click="addHighlight('yellow', true)">💬 {{ t('reader.writeNote') }}</button>
-      <button class="sel-act" @click="translateSelection">✦ {{ isPaper ? t('paper.selTranslateBtn') : t('ai.explain') }}</button>
-      <button class="sel-act" @click="copySelection">{{ t('paper.copy') }}</button>
-      <button class="icon-btn sel-close" @click="selection = null">✕</button>
+      <button type="button" class="sel-act" @click="addHighlight('yellow', true)">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.25 3.75h11.5v9H9l-3.25 2.7v-2.7h-1.5z" /><path d="M10 6.25v4M8 8.25h4" /></svg>
+        <span>{{ t('reader.writeNote') }}</span>
+      </button>
+      <button type="button" class="sel-act sel-act-ai" @click="translateSelection">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10.2 2.75c.45 3.2 1.85 4.6 5.05 5.05-3.2.45-4.6 1.85-5.05 5.05-.45-3.2-1.85-4.6-5.05-5.05 3.2-.45 4.6-1.85 5.05-5.05Z" /><path d="M15.15 12.65c.2 1.45.85 2.1 2.3 2.3-1.45.2-2.1.85-2.3 2.3-.2-1.45-.85-2.1-2.3-2.3 1.45-.2 2.1-.85 2.3-2.3Z" /></svg>
+        <span>{{ isPaper ? t('paper.selTranslateBtn') : t('ai.explain') }}</span>
+      </button>
+      <button type="button" class="sel-act" @click="copySelection">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6.25" y="6.25" width="9.5" height="9.5" rx="1.75" /><path d="M13.75 6.25v-1.5a1.5 1.5 0 0 0-1.5-1.5h-7.5a1.5 1.5 0 0 0-1.5 1.5v7.5a1.5 1.5 0 0 0 1.5 1.5h1.5" /></svg>
+        <span>{{ t('paper.copy') }}</span>
+      </button>
+      <span class="sel-sep sel-sep-end" />
+      <button type="button" class="sel-close" :aria-label="t('common.close')" :title="t('common.close')" @click="selection = null">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5.75 5.75 8.5 8.5M14.25 5.75l-8.5 8.5" /></svg>
+      </button>
     </div>
 
     <!-- 划词翻译浮卡 (流式) -->
@@ -3612,42 +3645,154 @@ onBeforeUnmount(() => {
   z-index: 70;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 10px;
-  border-radius: 10px;
+  gap: 3px;
+  max-width: calc(100vw - 24px);
+  min-height: 46px;
+  padding: 6px;
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  box-shadow:
+    0 18px 48px rgba(31, 42, 68, 0.15),
+    0 3px 10px rgba(31, 42, 68, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  transform: translateX(-50%);
+  animation: sel-bar-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  scrollbar-width: none;
+}
+.sel-bar::-webkit-scrollbar {
+  display: none;
+}
+@keyframes sel-bar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 5px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+.sel-colors {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
 }
 .sel-color {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px var(--border);
+  width: 31px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   padding: 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  transition: background 150ms ease, transform 150ms ease;
 }
 .sel-color:hover {
-  transform: scale(1.15);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  transform: translateY(-1px);
+}
+.sel-color:active {
+  transform: translateY(0) scale(0.95);
+}
+.sel-color-dot {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-3) 34%, transparent);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.sel-color:hover .sel-color-dot {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-3) 28%, transparent);
 }
 .sel-sep {
   width: 1px;
-  height: 16px;
-  background: var(--border);
+  height: 20px;
+  margin: 0 3px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--border) 82%, transparent);
 }
 .sel-act {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 0 9px;
   border: none;
-  background: none;
-  font-size: 12.5px;
+  border-radius: 9px;
+  background: transparent;
   color: var(--text-2);
-  padding: 3px 6px;
-  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+.sel-act svg,
+.sel-close svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .sel-act:hover {
-  background: var(--bg);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+.sel-act:active,
+.sel-close:active {
+  transform: scale(0.96);
+}
+.sel-act-ai {
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
   color: var(--brand);
 }
+.sel-act-ai:hover {
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  color: var(--brand-hover);
+}
 .sel-close {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-3);
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+.sel-close:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+.sel-color:focus-visible,
+.sel-act:focus-visible,
+.sel-close:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 72%, white);
+  outline-offset: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sel-bar {
+    animation: none;
+  }
 }
 
 /* ---- 划词翻译浮卡 ---- */
