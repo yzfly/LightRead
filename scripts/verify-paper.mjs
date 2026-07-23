@@ -108,6 +108,38 @@ await step('打开论文: 连续滚动渲染多页', async () => {
   // 视口附近页应已渲染 canvas
   await pg.waitForFunction(() => document.querySelectorAll('.p-holder canvas').length >= 2, null, { timeout: 8000 })
 })
+
+await step('PDF Ctrl/Cmd+F 搜索、跳转与高亮', async () => {
+  const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await pg.keyboard.press(`${primaryKey}+f`)
+  await pg.waitForSelector('.pdf-search')
+  if (!(await pg.locator('.pdf-search-input').evaluate(el => el === document.activeElement))) {
+    throw new Error('搜索框未自动聚焦')
+  }
+  await pg.fill('.pdf-search-input', 'Page')
+  await pg.waitForFunction(
+    () => document.querySelector('.pdf-search-status')?.textContent?.trim() === '1 / 4',
+    null,
+    { timeout: 8000 },
+  )
+  await pg.waitForSelector('.p-search-rect.active', { timeout: 5000 })
+  await pg.press('.pdf-search-input', 'Enter')
+  await pg.waitForFunction(
+    () => document.querySelector('.pdf-search-status')?.textContent?.trim() === '2 / 4',
+    null,
+    { timeout: 5000 },
+  )
+  await pg.press('.pdf-search-input', 'Shift+Enter')
+  await pg.waitForFunction(
+    () => document.querySelector('.pdf-search-status')?.textContent?.trim() === '1 / 4',
+    null,
+    { timeout: 5000 },
+  )
+  await pg.press('.pdf-search-input', 'Escape')
+  await pg.waitForSelector('.pdf-search', { state: 'detached', timeout: 3000 })
+  if (await pg.locator('.p-search-rect').count()) throw new Error('关闭搜索后仍显示命中高亮')
+})
+
 await pg.screenshot({ path: join(TMP, 'shots', '01-scroll.png') })
 
 await step('滚动更新页码', async () => {

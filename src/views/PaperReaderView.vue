@@ -123,8 +123,12 @@ const spread = computed(() => bookPaged.value && settings.pdf.spread)
 const GAP = 16
 const PAD = 16
 const KEEP = 4
-const DPR = () => Math.min(window.devicePixelRatio || 1, 2)
-const MAX_DIM = 4096
+/** PDF 坐标是 72 pt/in，CSS 的基准分辨率是 96 px/in。 */
+const CSS_PX_PER_PT = 96 / 72
+/** 必须使用完整设备像素比；截到 2 会让高 DPI 屏把位图再次放大。 */
+const DPR = () => Math.max(window.devicePixelRatio || 1, 1)
+/** 仅作为浏览器画布安全阈值；可覆盖桌面端 200% + 3x DPR 的常见页面。 */
+const MAX_DIM = 8192
 
 /** 页面基准尺寸 (scale=1, 以第 1 页为准; 论文各页尺寸一致) */
 const baseDims = ref({ w: 612, h: 792 })
@@ -137,6 +141,11 @@ function restoreZoom(): number | 'fit' {
   const raw = localStorage.getItem(ZOOM_KEY)
   const n = raw ? parseFloat(raw) : NaN
   return Number.isFinite(n) && n > 0 ? n : 'fit'
+}
+
+/** UI 百分比转为 PDF 点到 CSS 像素的比例，与 SumatraPDF 的 DPI 换算一致。 */
+function fixedZoomScale(value: number): number {
+  return value * CSS_PX_PER_PT
 }
 
 const holderW = computed(() => baseDims.value.w * curScale.value)
@@ -174,7 +183,7 @@ const atLastPage = computed(() => pdfLayout.value === 'reflow'
 
 /** 翻页模式默认适高；双页时同时受可用宽度约束，避免页面被裁掉。 */
 function pagedScale(): number {
-  if (zoom.value !== 'fit') return zoom.value
+  if (zoom.value !== 'fit') return fixedZoomScale(zoom.value)
   const box = pagedBox.value
   const availW = Math.max((box?.clientWidth ?? 800) - 32, 240)
   const availH = Math.max((box?.clientHeight ?? 700) - 24, 240)
@@ -186,7 +195,7 @@ function pagedScale(): number {
 }
 
 /**
- * 整页位图 canvas：MuPDF 与 SumatraPDF 使用同一渲染内核，正文边缘更锐利。
+ * 整页位图 canvas：MuPDF 负责页面栅格化，按 CSS 缩放与完整 DPR 输出设备像素。
  * PDFium 仍负责所有交互几何；MuPDF 失败时无感回退 PDFium。
  */
 async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLCanvasElement> {
@@ -300,7 +309,7 @@ async function switchMode(next: 'paged' | 'scroll') {
   if (next === 'paged') {
     await pagedGoto(currentPage.value)
   } else {
-    curScale.value = zoom.value === 'fit' ? fitScale() : zoom.value
+    curScale.value = zoom.value === 'fit' ? fitScale() : fixedZoomScale(zoom.value)
     attachScrollListener()
     await nextTick()
     scrollGoto(currentPage.value)
@@ -433,7 +442,7 @@ async function applyZoom(next: number | 'fit') {
 }
 
 function zoomStep(dir: 1 | -1) {
-  const cur = zoom.value === 'fit' ? curScale.value : zoom.value
+  const cur = zoom.value === 'fit' ? curScale.value / CSS_PX_PER_PT : zoom.value
   void applyZoom(Math.max(0.4, Math.min(4, +(cur + dir * 0.2).toFixed(2))))
 }
 
@@ -451,6 +460,7 @@ const isMacPlatform = typeof navigator !== 'undefined'
 const primaryShortcutLabel = isMacPlatform ? '⌘' : 'Ctrl'
 const shortcutsOpen = ref(false)
 const shortcutRows = computed(() => [
+  { shortcuts: [[primaryShortcutLabel, 'F']], label: t('reader.searchInBook') },
   { shortcuts: [[primaryShortcutLabel, '＋']], label: t('reader.shortcutZoomIn') },
   { shortcuts: [[primaryShortcutLabel, '−']], label: t('reader.shortcutZoomOut') },
   { shortcuts: [[primaryShortcutLabel, '0']], label: t('reader.shortcutResetZoom') },
@@ -512,7 +522,7 @@ async function toggleFullscreen() {
 function relayout(force = false) {
   const el = scroller.value
   if (!el) return
-  const next = zoom.value === 'fit' ? fitScale() : zoom.value
+  const next = zoom.value === 'fit' ? fitScale() : fixedZoomScale(zoom.value)
   if (!force && Math.abs(next - curScale.value) < 0.001) return
   const anchorPage = currentPage.value
   const frac = holderH.value ? (el.scrollTop - pageTop(anchorPage)) / (holderH.value + GAP) : 0
@@ -683,6 +693,241 @@ const hlStyle = (r: HlRect, color: string) => ({
   width: `${r.w * curScale.value}px`,
   height: `${r.h * curScale.value}px`,
   background: HIGHLIGHT_COLORS[color] ?? color,
+})
+
+/* ---- PDF 全文搜索: PDFium 字符模型 → 命中区间 → 精确几何高亮 ---- */
+
+interface PdfSearchHit {
+  page: number
+  a: number
+  b: number
+  rects: HlRect[]
+}
+
+const PDF_SEARCH_LIMIT = 2000
+const pdfSearchInput = ref<HTMLInputElement>()
+const pdfSearchOpen = ref(false)
+const pdfSearchQuery = ref('')
+const pdfSearchResults = ref<PdfSearchHit[]>([])
+const pdfSearchActive = ref(-1)
+const pdfSearchRunning = ref(false)
+const pdfSearchProgress = ref(0)
+const pdfSearchDoneQuery = ref('')
+let pdfSearchSession = 0
+let pdfSearchTimer: ReturnType<typeof setTimeout> | undefined
+
+const pdfSearchStatus = computed(() => {
+  if (pdfSearchRunning.value) return `${Math.round(pdfSearchProgress.value * 100)}%`
+  if (!pdfSearchDoneQuery.value) return ''
+  if (!pdfSearchResults.value.length) return '0 / 0'
+  return `${pdfSearchActive.value + 1} / ${pdfSearchResults.value.length}${pdfSearchResults.value.length >= PDF_SEARCH_LIMIT ? '+' : ''}`
+})
+
+const pdfSearchRectsByPage = computed(() => {
+  const byPage = new Map<number, Array<{ key: string; rect: HlRect; active: boolean }>>()
+  if (!pdfSearchOpen.value) return byPage
+  pdfSearchResults.value.forEach((hit, hitIndex) => {
+    const list = byPage.get(hit.page) ?? []
+    hit.rects.forEach((rect, rectIndex) => {
+      list.push({ key: `${hitIndex}:${rectIndex}`, rect, active: hitIndex === pdfSearchActive.value })
+    })
+    byPage.set(hit.page, list)
+  })
+  return byPage
+})
+
+function appendSearchUnits(
+  units: string[],
+  indexes: number[] | null,
+  value: string,
+  sourceIndex: number,
+) {
+  const normalized = value.normalize('NFKC').toLocaleLowerCase()
+  for (const ch of normalized) {
+    if (/\s/u.test(ch)) {
+      if (units.length && units.at(-1) !== ' ') {
+        units.push(' ')
+        indexes?.push(sourceIndex)
+      }
+    } else {
+      units.push(ch)
+      indexes?.push(sourceIndex)
+    }
+  }
+}
+
+function querySearchUnits(value: string): string[] {
+  const units: string[] = []
+  appendSearchUnits(units, null, value.trim(), 0)
+  if (units.at(-1) === ' ') units.pop()
+  return units
+}
+
+function modelSearchUnits(model: ReturnType<PdfiumDoc['text']>) {
+  const units: string[] = []
+  const indexes: number[] = []
+  for (let i = 0; i < model.count; i++) {
+    const code = model.codes[i]
+    if (!code || code === 13) continue
+    appendSearchUnits(units, indexes, String.fromCodePoint(code), i)
+  }
+  return { units, indexes }
+}
+
+function pageSearchHits(page: number, needle: string[]): PdfSearchHit[] {
+  if (!pdm || !needle.length) return []
+  const model = pdm.text(page - 1)
+  const { units, indexes } = modelSearchUnits(model)
+  const hits: PdfSearchHit[] = []
+  const lastStart = units.length - needle.length
+  for (let start = 0; start <= lastStart; start++) {
+    let matched = true
+    for (let j = 0; j < needle.length; j++) {
+      if (units[start + j] !== needle[j]) {
+        matched = false
+        break
+      }
+    }
+    if (!matched) continue
+    const a = indexes[start]
+    const b = indexes[start + needle.length - 1] + 1
+    const rects = rangeRects(model, a, b)
+    if (rects.length) hits.push({ page, a, b, rects })
+    start += Math.max(0, needle.length - 1)
+  }
+  return hits
+}
+
+async function activatePdfSearchHit(index: number) {
+  const count = pdfSearchResults.value.length
+  if (!count) {
+    pdfSearchActive.value = -1
+    return
+  }
+  const normalizedIndex = ((index % count) + count) % count
+  pdfSearchActive.value = normalizedIndex
+  const hit = pdfSearchResults.value[normalizedIndex]
+  const firstRect = hit.rects[0]
+  if (!firstRect) return
+
+  selection.value = null
+  if (pdfLayout.value === 'reflow') await switchPdfLayout('original')
+
+  if (bookPaged.value) {
+    await pagedGoto(hit.page)
+    await nextTick()
+    const box = pagedBox.value
+    const holder = holderOf(hit.page)
+    if (box && holder) {
+      const boxRect = box.getBoundingClientRect()
+      const holderRect = holder.getBoundingClientRect()
+      box.scrollTo({
+        left: Math.max(0, box.scrollLeft + holderRect.left - boxRect.left + (firstRect.x + firstRect.w / 2) * curScale.value - box.clientWidth / 2),
+        top: Math.max(0, box.scrollTop + holderRect.top - boxRect.top + firstRect.y * curScale.value - box.clientHeight * 0.3),
+      })
+    }
+  } else {
+    currentPage.value = hit.page
+    scrollGoto(
+      hit.page,
+      false,
+      Math.max(0, firstRect.y * curScale.value - (scroller.value?.clientHeight ?? 0) * 0.3),
+    )
+    updateViewport()
+  }
+}
+
+async function runPdfSearch() {
+  clearTimeout(pdfSearchTimer)
+  const query = pdfSearchQuery.value.trim()
+  const needle = querySearchUnits(query)
+  const session = ++pdfSearchSession
+  pdfSearchResults.value = []
+  pdfSearchActive.value = -1
+  pdfSearchProgress.value = 0
+  pdfSearchDoneQuery.value = ''
+  if (!pdm || !needle.length) {
+    pdfSearchRunning.value = false
+    return
+  }
+
+  pdfSearchRunning.value = true
+  const hits: PdfSearchHit[] = []
+  try {
+    for (let page = 1; page <= pageCount.value && hits.length < PDF_SEARCH_LIMIT; page++) {
+      if (session !== pdfSearchSession) return
+      try {
+        const remaining = PDF_SEARCH_LIMIT - hits.length
+        hits.push(...pageSearchHits(page, needle).slice(0, remaining))
+      } catch (e) {
+        console.warn(`PDF search skipped page ${page}`, e)
+      }
+      pdfSearchProgress.value = page / Math.max(1, pageCount.value)
+      if (page % 8 === 0) await new Promise<void>(resolve => setTimeout(resolve, 0))
+    }
+    if (session !== pdfSearchSession) return
+    pdfSearchResults.value = hits
+    pdfSearchDoneQuery.value = query
+    if (hits.length) {
+      const index = hits.findIndex(hit => hit.page >= currentPage.value)
+      await activatePdfSearchHit(index >= 0 ? index : 0)
+    }
+  } finally {
+    if (session === pdfSearchSession) pdfSearchRunning.value = false
+  }
+}
+
+function schedulePdfSearch() {
+  clearTimeout(pdfSearchTimer)
+  pdfSearchSession++
+  if (!pdfSearchQuery.value.trim()) {
+    pdfSearchResults.value = []
+    pdfSearchActive.value = -1
+    pdfSearchDoneQuery.value = ''
+    pdfSearchRunning.value = false
+    return
+  }
+  pdfSearchTimer = setTimeout(() => void runPdfSearch(), 180)
+}
+
+async function onPdfSearchKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    closePdfSearch()
+    return
+  }
+  if (e.key !== 'Enter') return
+  e.preventDefault()
+  const query = pdfSearchQuery.value.trim()
+  if (pdfSearchDoneQuery.value !== query) {
+    await runPdfSearch()
+  } else {
+    await activatePdfSearchHit(pdfSearchActive.value + (e.shiftKey ? -1 : 1))
+  }
+}
+
+function openPdfSearch() {
+  pdfSearchOpen.value = true
+  tocOpen.value = false
+  annoOpen.value = false
+  nextTick(() => {
+    pdfSearchInput.value?.focus()
+    pdfSearchInput.value?.select()
+  })
+}
+
+function closePdfSearch() {
+  clearTimeout(pdfSearchTimer)
+  pdfSearchSession++
+  pdfSearchOpen.value = false
+  pdfSearchRunning.value = false
+}
+
+const pdfSearchRectStyle = (r: HlRect) => ({
+  left: `${r.x * curScale.value}px`,
+  top: `${r.y * curScale.value}px`,
+  width: `${r.w * curScale.value}px`,
+  height: `${r.h * curScale.value}px`,
 })
 
 /* ---- PDFium 几何选择: 引擎字符坐标 → 自算命中/选区/绘制 (原生手感) ---- */
@@ -2079,6 +2324,11 @@ function stopTTS() {
 
 function handleKeydown(e: KeyboardEvent) {
   const primaryPressed = isMacPlatform ? e.metaKey : e.ctrlKey
+  if (primaryPressed && !e.altKey && e.key.toLowerCase() === 'f') {
+    e.preventDefault()
+    openPdfSearch()
+    return
+  }
   const zoomInKey = e.key === '+' || e.key === '=' || e.code === 'Equal' || e.code === 'NumpadAdd'
   const zoomOutKey = e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract'
   const resetZoomKey = e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0'
@@ -2090,6 +2340,11 @@ function handleKeydown(e: KeyboardEvent) {
     return
   }
 
+  if (pdfSearchOpen.value && e.key === 'Escape') {
+    e.preventDefault()
+    closePdfSearch()
+    return
+  }
   const target = e.target instanceof HTMLElement ? e.target : null
   if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return
   if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -2163,7 +2418,7 @@ onMounted(async () => {
       await nextTick()
       await renderPaged()
     } else {
-      curScale.value = zoom.value === 'fit' ? fitScale() : zoom.value
+      curScale.value = zoom.value === 'fit' ? fitScale() : fixedZoomScale(zoom.value)
       attachScrollListener()
       await nextTick()
       if (currentPage.value > 1) scrollGoto(currentPage.value)
@@ -2204,6 +2459,8 @@ onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(settleTimer)
   clearTimeout(resizeTimer)
+  clearTimeout(pdfSearchTimer)
+  pdfSearchSession++
   window.removeEventListener('pointermove', onDragMove)
   pdm?.close()
   pdm = null
@@ -2236,6 +2493,14 @@ onBeforeUnmount(() => {
         @click="annoOpen = !annoOpen; tocOpen = false"
       >
         <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M15.6 3.6a2 2 0 0 1 2.8 0l2 2a2 2 0 0 1 0 2.8l-9.2 9.2a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9l9-9.4zM14 7.4 7 14.6l-.5 2 2-.5 7-7.2L14 7.4zm2.4-2.4-1 1L17 7.6l1-1-1.6-1.6z"/></svg>
+      </button>
+      <button
+        class="icon-btn"
+        :class="{ 'icon-active': pdfSearchOpen }"
+        :title="`${t('reader.searchInBook')} (${primaryShortcutLabel} F)`"
+        @click="pdfSearchOpen ? closePdfSearch() : openPdfSearch()"
+      >
+        <svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l3.75 3.75a1 1 0 0 0 1.4-1.42l-3.74-3.74A7.5 7.5 0 0 0 10.5 3zM5 10.5a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0z"/></svg>
       </button>
       <div class="paper-title"><strong>{{ meta?.title }}</strong></div>
       <div class="paper-actions">
@@ -2448,6 +2713,33 @@ onBeforeUnmount(() => {
 
       <!-- 左: 原文 PDF 连续滚动 (划词 / 高亮 / 链接跳转) + 底部悬浮工具条 -->
       <div class="pane-left-wrap">
+        <section v-if="pdfSearchOpen" class="pdf-search card" role="search">
+          <svg class="pdf-search-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l3.75 3.75a1 1 0 0 0 1.4-1.42l-3.74-3.74A7.5 7.5 0 0 0 10.5 3zM5 10.5a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0z"/></svg>
+          <input
+            ref="pdfSearchInput"
+            v-model="pdfSearchQuery"
+            class="pdf-search-input"
+            type="search"
+            :placeholder="t('reader.searchPdfPlaceholder')"
+            @input="schedulePdfSearch"
+            @keydown="onPdfSearchKeydown"
+          />
+          <span class="pdf-search-status">{{ pdfSearchStatus }}</span>
+          <button
+            type="button"
+            :title="t('reader.previousResult')"
+            :disabled="!pdfSearchResults.length"
+            @click="activatePdfSearchHit(pdfSearchActive - 1)"
+          >↑</button>
+          <button
+            type="button"
+            :title="t('reader.nextResult')"
+            :disabled="!pdfSearchResults.length"
+            @click="activatePdfSearchHit(pdfSearchActive + 1)"
+          >↓</button>
+          <button type="button" :title="t('reader.closeSearch')" @click="closePdfSearch">×</button>
+        </section>
+
         <!-- 流式阅读：复用 PDF 文本层与阅读偏好，按原页保留跳转锚点。 -->
         <div
           v-if="pdfLayout === 'reflow'"
@@ -2502,6 +2794,15 @@ onBeforeUnmount(() => {
             >
               <span class="p-num">{{ n }}</span>
               <div class="p-canvas" />
+              <div class="p-search">
+                <div
+                  v-for="match in pdfSearchRectsByPage.get(n) ?? []"
+                  :key="match.key"
+                  class="p-search-rect"
+                  :class="{ active: match.active }"
+                  :style="pdfSearchRectStyle(match.rect)"
+                />
+              </div>
               <div class="p-hl">
                 <div v-for="h in pageHls.get(n) ?? []" :key="h.key" class="p-hl-rect" :style="hlStyle(h.r, h.a.color)" />
               </div>
@@ -2540,6 +2841,15 @@ onBeforeUnmount(() => {
           >
             <span class="p-num">{{ n }}</span>
             <div class="p-canvas" />
+            <div class="p-search">
+              <div
+                v-for="match in pdfSearchRectsByPage.get(n) ?? []"
+                :key="match.key"
+                class="p-search-rect"
+                :class="{ active: match.active }"
+                :style="pdfSearchRectStyle(match.rect)"
+              />
+            </div>
             <div class="p-hl">
               <div v-for="h in pageHls.get(n) ?? []" :key="h.key" class="p-hl-rect" :style="hlStyle(h.r, h.a.color)" />
             </div>
@@ -2581,7 +2891,7 @@ onBeforeUnmount(() => {
             <span class="dock-sep" />
             <button class="icon-btn" :title="`${t('reader.zoomOut')} (${primaryShortcutLabel} −)`" @click="zoomStep(-1)">−</button>
             <button class="dock-zoom" @click="zoomMenu = !zoomMenu">
-              {{ zoom === 'fit' ? (bookPaged && settings.pdf.fit === 'fitH' ? t('reader.fitHeight') : t('reader.fitWidth')) : `${Math.round(curScale * 100)}%` }}
+              {{ zoom === 'fit' ? (bookPaged && settings.pdf.fit === 'fitH' ? t('reader.fitHeight') : t('reader.fitWidth')) : `${Math.round((zoom as number) * 100)}%` }}
               <span class="dock-caret">▾</span>
             </button>
             <button class="icon-btn" :title="`${t('reader.zoomIn')} (${primaryShortcutLabel} +)`" @click="zoomStep(1)">＋</button>
@@ -3508,6 +3818,23 @@ onBeforeUnmount(() => {
 .p-canvas :deep(canvas) {
   border-radius: 2px;
 }
+/* PDF 搜索命中层 */
+.p-search {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.p-search-rect {
+  position: absolute;
+  border-radius: 1px;
+  background: rgba(255, 214, 0, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(190, 145, 0, 0.26);
+  mix-blend-mode: multiply;
+}
+.p-search-rect.active {
+  background: rgba(255, 137, 31, 0.62);
+  box-shadow: inset 0 0 0 1px rgba(185, 72, 0, 0.58);
+}
 /* 高亮层: 荧光笔效果, 不拦截事件 (点击命中由 holder 统一处理) */
 .p-hl {
   position: absolute;
@@ -3551,6 +3878,70 @@ onBeforeUnmount(() => {
 .p-links :deep(.p-link:hover) {
   background: rgba(64, 128, 255, 0.16);
   outline: 1px solid rgba(64, 128, 255, 0.45);
+}
+
+/* ---- PDF 页内搜索 ---- */
+.pdf-search {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: min(430px, calc(100% - 24px));
+  min-height: 42px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 11px;
+  box-shadow: 0 10px 28px rgba(29, 33, 41, 0.16);
+}
+.pdf-search-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.pdf-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 4px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 13px/1.4 system-ui, sans-serif;
+}
+.pdf-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+.pdf-search-status {
+  min-width: 48px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.pdf-search button {
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1;
+}
+.pdf-search button:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--brand);
+}
+.pdf-search button:disabled {
+  opacity: 0.3;
 }
 
 /* ---- 侧抽屉 (目录 / 标注) ---- */

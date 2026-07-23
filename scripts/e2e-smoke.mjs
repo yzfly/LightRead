@@ -49,6 +49,25 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, dev
 const errors = []
 page.on('pageerror', e => errors.push('PAGE_ERROR: ' + (e.stack || e.message)))
 page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()) })
+await page.addInitScript(() => {
+  // 固定一个缓存中的新版，避免 UI 回归测试依赖 GitHub 网络。
+  localStorage.setItem('lightread-update-check', JSON.stringify({
+    at: Date.now(),
+    info: {
+      version: '99.0.0',
+      hasUpdate: true,
+      notes: 'E2E update fixture',
+      publishedAt: '2099-01-01',
+      pageUrl: 'about:blank#lightread-release',
+      assets: [
+        { name: 'LightRead_99.0.0_aarch64.dmg', url: 'about:blank#lightread-aarch64.dmg', size: 1024 },
+        { name: 'LightRead_99.0.0_x64.dmg', url: 'about:blank#lightread-x64.dmg', size: 1024 },
+        { name: 'LightRead_99.0.0_setup.exe', url: 'about:blank#lightread-setup.exe', size: 1024 },
+        { name: 'LightRead_99.0.0.AppImage', url: 'about:blank#lightread.AppImage', size: 1024 },
+      ],
+    },
+  }))
+})
 
 const step = async (name, fn) => {
   try {
@@ -71,6 +90,25 @@ const revealBars = async () => {
 await step('打开应用', async () => {
   await page.goto('http://localhost:4173/', { waitUntil: 'networkidle' })
   await page.waitForSelector('text=书架还是空的', { timeout: 8000 })
+})
+
+await step('侧栏更新按钮收起、悬停展开并下载', async () => {
+  const button = page.locator('.sidebar-update')
+  await button.waitFor({ state: 'visible', timeout: 5000 })
+  const collapsed = await button.boundingBox()
+  if (!collapsed || collapsed.width > 42) throw new Error(`收起宽度异常: ${collapsed?.width}`)
+
+  await button.hover()
+  await page.waitForFunction(() => {
+    const el = document.querySelector('.sidebar-update')
+    return el && el.getBoundingClientRect().width >= 108 && el.textContent?.includes('更新')
+  })
+
+  const popupPromise = page.waitForEvent('popup')
+  await button.click()
+  const popup = await popupPromise
+  await popup.close()
+  await page.waitForSelector('.toast.success:has-text("已在浏览器中开始下载")')
 })
 await page.screenshot({ path: join(TMP, 'shots', '01-empty-library.png') })
 
@@ -174,6 +212,52 @@ await step('PDF 画布按设备像素显示且文字无彩色雾边', async () =
   }
   if (quality.renderer !== 'mupdf') throw new Error(`清晰渲染引擎未启用: ${quality.renderer || 'unknown'}`)
   if (quality.colored) throw new Error(`文字存在 ${quality.colored} 个 LCD 彩色雾边像素`)
+})
+
+await step('PDF 200% 使用 96 DPI 百分比语义且不放大位图', async () => {
+  await page.locator('.dock-zoom').click()
+  await page.locator('.zoom-item', { hasText: '200%' }).click()
+  await page.waitForFunction(() => document.querySelector('.dock-zoom')?.textContent?.includes('200%'))
+  await page.waitForTimeout(500)
+  const quality = await page.locator('.spread-host canvas').evaluate(canvas => {
+    const rect = canvas.getBoundingClientRect()
+    return {
+      cssWidth: rect.width,
+      bitmapToCss: canvas.width / rect.width,
+      dpr: window.devicePixelRatio,
+    }
+  })
+  const expectedCssWidth = 612 * 2 * (96 / 72)
+  if (Math.abs(quality.cssWidth - expectedCssWidth) > 0.1) {
+    throw new Error(`200% 缩放未按 96 DPI 换算: ${quality.cssWidth.toFixed(2)} / ${expectedCssWidth.toFixed(2)}`)
+  }
+  if (quality.bitmapToCss + 0.01 < quality.dpr) {
+    throw new Error(`200% 位图被浏览器放大: ${quality.bitmapToCss.toFixed(4)} / DPR ${quality.dpr}`)
+  }
+  await page.locator('.dock-zoom').click()
+  await page.locator('.zoom-item', { hasText: '适高' }).click()
+})
+
+await step('翻页 PDF 支持 Ctrl/Cmd+F 搜索与结果导航', async () => {
+  const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.keyboard.press(`${primaryKey}+f`)
+  await page.waitForSelector('.pdf-search-input')
+  await page.fill('.pdf-search-input', 'Small body text')
+  await page.waitForFunction(
+    () => document.querySelector('.pdf-search-status')?.textContent?.trim() === '1 / 4',
+    null,
+    { timeout: 8000 },
+  )
+  await page.waitForSelector('.spread-host .p-search-rect.active', { timeout: 5000 })
+  await page.press('.pdf-search-input', 'Enter')
+  await page.waitForFunction(
+    () => document.querySelector('.pdf-search-status')?.textContent?.trim() === '2 / 4'
+      && document.querySelector('.page-input')?.value === '2',
+    null,
+    { timeout: 5000 },
+  )
+  await page.press('.pdf-search-input', 'Escape')
+  await page.waitForSelector('.pdf-search', { state: 'detached', timeout: 3000 })
 })
 
 await step('PDF 渲染引擎可切换为 PDFium', async () => {

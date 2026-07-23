@@ -1,18 +1,100 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ToastHost from './components/ToastHost.vue'
 import { useSettings } from './stores/settings'
 import { t } from './i18n'
 import { isTauri } from './storage'
 import { startExternalOpen } from './services/externalOpen'
+import { toast } from './services/toast'
+import {
+  canInAppInstall,
+  checkUpdate,
+  downloadInstaller,
+  openDownload,
+  openInstaller,
+  pickDownloads,
+  type UpdateInfo,
+} from './services/updater'
 
 useSettings().persistOnChange()
 const route = useRoute()
 const router = useRouter()
 let stopExternalOpen: (() => void) | undefined
 
+const updateInfo = ref<UpdateInfo | null>(null)
+const updateBusy = ref(false)
+const updateProgress = ref<number | null>(null)
+const downloadedInstaller = ref('')
+const sidebarDownload = computed(() => {
+  const downloads = updateInfo.value ? pickDownloads(updateInfo.value.assets) : []
+  return downloads.find(item => item.recommended) ?? downloads[0] ?? null
+})
+const showSidebarUpdate = computed(() => Boolean(updateInfo.value?.hasUpdate))
+const sidebarUpdateLabel = computed(() => {
+  if (updateBusy.value) {
+    return updateProgress.value == null
+      ? t('update.downloadingShort')
+      : `${Math.round(updateProgress.value * 100)}%`
+  }
+  return downloadedInstaller.value ? t('update.openShort') : t('update.action')
+})
+const sidebarUpdateTitle = computed(() => t('update.sidebarTitle', {
+  version: updateInfo.value?.version ?? '',
+}))
+
+async function refreshSidebarUpdate() {
+  try {
+    updateInfo.value = await checkUpdate(false)
+  } catch {
+    // 启动时静默检查：网络不可用不打扰阅读。
+  }
+}
+
+async function handleSidebarUpdate() {
+  if (updateBusy.value || !updateInfo.value) return
+
+  if (downloadedInstaller.value) {
+    try {
+      await openInstaller(downloadedInstaller.value)
+    } catch (e: any) {
+      toast(t('update.openFailed', { msg: e?.message ?? e }), 'error', 6000)
+    }
+    return
+  }
+
+  const download = sidebarDownload.value
+  if (!download || !canInAppInstall()) {
+    try {
+      await openDownload(download?.url ?? updateInfo.value.pageUrl)
+      toast(t('update.browserDownloadStarted'), 'success')
+    } catch {
+      toast(t('update.cannotOpenLink'), 'error')
+    }
+    return
+  }
+
+  updateBusy.value = true
+  updateProgress.value = null
+  try {
+    const encodedName = download.url.split('?')[0].split('/').pop() ?? 'LightRead-installer'
+    const fileName = decodeURIComponent(encodedName)
+    const path = await downloadInstaller(download.url, fileName, progress => {
+      updateProgress.value = progress.fraction
+    })
+    downloadedInstaller.value = path
+    toast(t('update.downloadDoneOpening'), 'success')
+    await openInstaller(path)
+  } catch (e: any) {
+    toast(t('update.downloadFailed', { msg: e?.message ?? e }), 'error', 6000)
+  } finally {
+    updateBusy.value = false
+    updateProgress.value = null
+  }
+}
+
 onMounted(async () => {
+  void refreshSidebarUpdate()
   if (isTauri()) stopExternalOpen = await startExternalOpen(router)
 })
 onBeforeUnmount(() => stopExternalOpen?.())
@@ -49,12 +131,29 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M10.83
         </router-link>
       </nav>
       <div class="sidebar-bottom">
-        <router-link :to="settingsNav.path" class="nav-item">
+        <router-link :to="settingsNav.path" class="nav-item sidebar-settings">
           <svg viewBox="0 0 24 24" width="18" height="18">
             <path :d="settingsNav.icon" fill="currentColor" />
           </svg>
           {{ t(settingsNav.labelKey) }}
         </router-link>
+        <button
+          v-if="showSidebarUpdate"
+          class="sidebar-update"
+          :class="{ downloading: updateBusy }"
+          type="button"
+          :title="sidebarUpdateTitle"
+          :aria-label="sidebarUpdateTitle"
+          :aria-busy="updateBusy"
+          @click="handleSidebarUpdate"
+        >
+          <span class="sidebar-update-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="21" height="21">
+              <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
+            </svg>
+          </span>
+          <span class="sidebar-update-label" aria-hidden="true">{{ sidebarUpdateLabel }}</span>
+        </button>
       </div>
     </aside>
     <main class="main">
@@ -72,6 +171,8 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M10.83
 .sidebar {
   width: 200px;
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
   background: var(--card);
   border-right: 1px solid var(--border);
   display: flex;
@@ -114,9 +215,71 @@ nav {
   font-weight: 500;
 }
 .sidebar-bottom {
+  position: relative;
+  height: 40px;
+  flex: none;
+}
+.sidebar-settings {
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  padding-right: 56px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sidebar-update {
+  position: absolute;
+  top: 0;
+  left: calc(100% - 40px);
+  width: 40px;
+  height: 40px;
+  padding: 0;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--brand) 30%, transparent);
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+  transition: width 180ms cubic-bezier(.2, .75, .25, 1), box-shadow 180ms ease;
+}
+.sidebar-update:hover,
+.sidebar-update:focus-visible {
+  width: 112px;
+  box-shadow: 0 7px 20px color-mix(in srgb, var(--brand) 38%, transparent);
+}
+.sidebar-update:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 24%, transparent);
+  outline-offset: 2px;
+}
+.sidebar-update-icon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  display: grid;
+  place-items: center;
+}
+.sidebar-update-icon svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sidebar-update-label {
+  min-width: 58px;
+  padding: 0 14px 0 6px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 40px;
+}
+.sidebar-update.downloading {
+  cursor: progress;
 }
 .main {
   flex: 1;
@@ -151,6 +314,22 @@ nav {
     flex-direction: row;
     flex: 1;
     justify-content: space-around;
+    height: auto;
+  }
+  .sidebar-settings {
+    width: auto;
+    height: auto;
+    padding-right: 12px;
+    overflow: visible;
+  }
+  .sidebar-update {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-update {
+    transition: none;
   }
 }
 </style>
