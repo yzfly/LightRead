@@ -126,10 +126,23 @@ export class PdfiumDoc {
 
   /** 渲染整页位图, scale = 输出像素 / PDF 点 */
   render(pageIdx: number, scale: number): ImageData {
-    const m = this.m
     const pg = this.pages[pageIdx]
     const w = Math.max(1, Math.round(pg.w * scale))
     const h = Math.max(1, Math.round(pg.h * scale))
+    return this.renderToSize(pageIdx, w, h)
+  }
+
+  /**
+   * 直接渲染到目标设备像素尺寸。
+   *
+   * PDF 阅读器会先把页面尺寸对齐到 CSS 像素，再乘设备像素比得到这里的
+   * width/height。直接指定两个整数维度可避免浏览器对已经栅格化的文字做
+   * 第二次缩放，这与原生阅读器的像素对齐方式一致。
+   */
+  renderToSize(pageIdx: number, width: number, height: number): ImageData {
+    const m = this.m
+    const w = Math.max(1, Math.round(width))
+    const h = Math.max(1, Math.round(height))
     const page = m.FPDF_LoadPage(this.doc, pageIdx)
     const bmp = m.FPDFBitmap_CreateEx(w, h, 4 /* BGRA */, 0, 0)
     m.FPDFBitmap_FillRect(bmp, 0, 0, w, h, 0xffffffff)

@@ -234,8 +234,38 @@ await step('PDF 200% 使用 96 DPI 百分比语义且不放大位图', async () 
   if (quality.bitmapToCss + 0.01 < quality.dpr) {
     throw new Error(`200% 位图被浏览器放大: ${quality.bitmapToCss.toFixed(4)} / DPR ${quality.dpr}`)
   }
+})
+
+await step('PDF 缩小档位保持整数 CSS 与设备像素一一对应', async () => {
   await page.locator('.dock-zoom').click()
-  await page.locator('.zoom-item', { hasText: '适高' }).click()
+  await page.locator('.zoom-item', { hasText: '66.67%' }).click()
+  await page.waitForFunction(() => document.querySelector('.dock-zoom')?.textContent?.includes('66.67%'))
+  await page.waitForTimeout(500)
+  const quality = await page.locator('.spread-host canvas').evaluate(canvas => {
+    const rect = canvas.getBoundingClientRect()
+    return {
+      cssWidth: rect.width,
+      cssHeight: rect.height,
+      bitmapToCssX: canvas.width / rect.width,
+      bitmapToCssY: canvas.height / rect.height,
+      physicalLeft: rect.left * window.devicePixelRatio,
+      physicalTop: rect.top * window.devicePixelRatio,
+      dpr: window.devicePixelRatio,
+    }
+  })
+  if (!Number.isInteger(quality.cssWidth) || !Number.isInteger(quality.cssHeight)) {
+    throw new Error(`缩小页面仍使用小数 CSS 尺寸: ${quality.cssWidth}×${quality.cssHeight}`)
+  }
+  if (Math.abs(quality.bitmapToCssX - quality.dpr) > 1e-6
+    || Math.abs(quality.bitmapToCssY - quality.dpr) > 1e-6) {
+    throw new Error(`缩小位图发生二次插值: ${quality.bitmapToCssX}/${quality.bitmapToCssY}, DPR ${quality.dpr}`)
+  }
+  if (Math.abs(quality.physicalLeft - Math.round(quality.physicalLeft)) > 1e-6
+    || Math.abs(quality.physicalTop - Math.round(quality.physicalTop)) > 1e-6) {
+    throw new Error(`页面边缘未对齐物理像素: ${quality.physicalLeft}, ${quality.physicalTop}`)
+  }
+  await page.locator('.dock-zoom').click()
+  await page.locator('.zoom-item', { hasText: '适合页面' }).click()
 })
 
 await step('翻页 PDF 支持 Ctrl/Cmd+F 搜索与结果导航', async () => {
@@ -320,6 +350,20 @@ await step('PDF 双页与翻页', async () => {
   await page.locator('.paper-actions').screenshot({ path: join(TMP, 'shots', '06c-pdf-toolbar.png') })
   await page.keyboard.press('ArrowRight')
   await page.waitForFunction(() => document.querySelector('.page-input')?.value === '3', null, { timeout: 5000 })
+})
+
+await step('PDF Sumatra 单页、对页与书籍视图快捷键', async () => {
+  const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.keyboard.press(`${primaryKey}+8`)
+  await page.waitForFunction(() => {
+    const pages = [...document.querySelectorAll('.spread-host .p-holder')].map(el => el.getAttribute('data-page'))
+    return pages.join(',') === '2,3'
+  }, null, { timeout: 5000 })
+  await page.keyboard.press(`${primaryKey}+6`)
+  await page.waitForFunction(() => document.querySelectorAll('.spread-host canvas').length === 1, null, { timeout: 5000 })
+  await page.keyboard.press(`${primaryKey}+7`)
+  await page.waitForFunction(() => document.querySelectorAll('.spread-host canvas').length === 2, null, { timeout: 5000 })
+  await page.keyboard.press(`${primaryKey}+6`)
 })
 
 await step('PDF 自动阅读控制条自动与手动收起', async () => {

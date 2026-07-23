@@ -185,7 +185,7 @@ await step('键盘缩放、复位与快捷键面板', async () => {
   if (w2 >= w1) throw new Error(`快捷键缩小未生效 ${w1} -> ${w2}`)
   await pg.keyboard.press(`${primaryKey}+0`)
   await pg.waitForTimeout(400)
-  if (!(await pg.locator('.dock-zoom').innerText()).includes('适宽')) throw new Error('快捷键复位未恢复适宽')
+  if (!(await pg.locator('.dock-zoom').innerText()).includes('适合页面')) throw new Error('Ctrl/Cmd+0 未切换到适合页面')
   await pg.keyboard.press('Shift+/')
   await pg.waitForSelector('.shortcut-menu', { timeout: 3000 })
   if (await pg.locator('.shortcut-row').count() < 8) throw new Error('快捷键面板内容不完整')

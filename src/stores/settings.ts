@@ -23,12 +23,12 @@ export interface PdfPrefs {
   mode: 'paged' | 'scroll'
   /** 翻页模式缩放: fitH 适高整页 (默认) / fitW 适宽 */
   fit: 'fitH' | 'fitW'
-  /** 翻页模式下双页并列 */
-  spread: boolean
+  /** Sumatra 风格页布局：单页 / 对页 / 书籍封面错位双页 */
+  spreadMode: 'single' | 'facing' | 'book'
 }
 
 /** 结构版本: 修正历史默认值时递增 */
-const SETTINGS_VERSION = 5
+const SETTINGS_VERSION = 6
 
 /** v3 时代曾并入用户设置的内置书库 (v4 起社区清单独立远程拉取, 此表仅供迁移清理) */
 const BUILTIN_BOOK_REPOS = [
@@ -107,7 +107,7 @@ const defaults: SettingsState = {
     layout: 'original',
     mode: 'paged',
     fit: 'fitH',
-    spread: false,
+    spreadMode: 'single',
   },
   autoReadSeconds: 15,
   ttsEngine: 'edge',
@@ -150,6 +150,10 @@ function load(): SettingsState {
       merged.githubBookRepos = (saved.githubBookRepos ?? []).filter(
         (r: string) => !BUILTIN_BOOK_REPOS.includes(r),
       )
+    }
+    // v6: 双页布尔值扩展为 Sumatra 风格的单页 / 对页 / 书籍视图。
+    if ((saved.version ?? 1) < 6) {
+      merged.pdf.spreadMode = saved.pdf?.spread ? 'facing' : 'single'
     }
     merged.version = SETTINGS_VERSION
     return merged
