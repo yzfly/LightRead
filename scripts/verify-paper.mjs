@@ -109,6 +109,29 @@ await step('打开论文: 连续滚动渲染多页', async () => {
   await pg.waitForFunction(() => document.querySelectorAll('.p-holder canvas').length >= 2, null, { timeout: 8000 })
 })
 
+await step('缩略图侧栏: 懒渲染、当前页高亮与点击跳转', async () => {
+  await pg.click('button[title="缩略图"]')
+  await pg.waitForSelector('.side-drawer', { state: 'visible', timeout: 3000 })
+  const tabs = await pg.locator('.drawer-tabs [role="tab"]').allTextContents()
+  for (const expected of ['目录', '缩略图', '划线想法']) {
+    if (!tabs.some(text => text.trim() === expected)) throw new Error(`缺少侧栏标签: ${expected}`)
+  }
+  await pg.waitForSelector('.thumbnail-item[data-thumbnail-page="1"] canvas', { timeout: 8000 })
+  if (!(await pg.locator('.thumbnail-item[data-thumbnail-page="1"]').evaluate(el => el.classList.contains('active')))) {
+    throw new Error('当前页缩略图未高亮')
+  }
+  await pg.screenshot({ path: join(TMP, 'shots', '00-thumbnails.png') })
+  await pg.click('.thumbnail-item[data-thumbnail-page="4"]')
+  await pg.waitForFunction(() => document.querySelector('.page-input')?.value === '4', null, { timeout: 5000 })
+  if (!(await pg.locator('.thumbnail-item[data-thumbnail-page="4"]').evaluate(el => el.classList.contains('active')))) {
+    throw new Error('缩略图跳转后高亮未同步')
+  }
+  await pg.click('.thumbnail-item[data-thumbnail-page="1"]')
+  await pg.waitForFunction(() => document.querySelector('.page-input')?.value === '1', null, { timeout: 5000 })
+  await pg.click('button[title="缩略图"]')
+  await pg.waitForSelector('.side-drawer', { state: 'hidden', timeout: 3000 })
+})
+
 await step('PDF Ctrl/Cmd+F 搜索、跳转与高亮', async () => {
   const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
   await pg.keyboard.press(`${primaryKey}+f`)

@@ -229,6 +229,8 @@ export default {
   'reader.changeDocument': 'Change document',
   'reader.documentMeta': '{total} pages · Current {current} · PDF',
   'reader.toc': 'Contents',
+  'reader.thumbnails': 'Thumbnails',
+  'reader.thumbnailPage': 'Page {page}',
   'reader.annotationsBookmarks': 'Highlights & Bookmarks',
   'reader.addBookmark': 'Add bookmark',
   'reader.removeBookmark': 'Remove bookmark',

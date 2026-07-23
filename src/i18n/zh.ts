@@ -229,6 +229,8 @@ export default {
   'reader.changeDocument': '换文档',
   'reader.documentMeta': '{total} 页 · 当前 {current} · PDF',
   'reader.toc': '目录',
+  'reader.thumbnails': '缩略图',
+  'reader.thumbnailPage': '第 {page} 页',
   'reader.annotationsBookmarks': '标注与书签',
   'reader.addBookmark': '添加书签',
   'reader.removeBookmark': '移除书签',

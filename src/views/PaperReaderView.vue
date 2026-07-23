@@ -78,6 +78,7 @@ const pageInput = ref('1')
 const scroller = ref<HTMLElement>()
 const pagedBox = ref<HTMLElement>()
 const rightPane = ref<HTMLElement>()
+const thumbnailScroller = ref<HTMLElement>()
 
 /** PDFium 交互引擎：几何选择、链接、目录、文本与段落提取。 */
 let pdm: PdfiumDoc | null = null
@@ -724,7 +725,184 @@ async function openExternal(url: string) {
 /* ================= 目录 (PDF 内嵌大纲) ================= */
 
 const tocOpen = ref(false)
+const thumbnailOpen = ref(false)
+const annoOpen = ref(false)
 const tocItems = ref<TocItem[]>([])
+const drawerOpen = computed(() => tocOpen.value || thumbnailOpen.value || annoOpen.value)
+
+type DrawerTab = 'toc' | 'thumbnails' | 'annotations'
+
+function closeDrawer() {
+  tocOpen.value = false
+  thumbnailOpen.value = false
+  annoOpen.value = false
+}
+
+function setDrawerTab(tab: DrawerTab) {
+  tocOpen.value = tab === 'toc'
+  thumbnailOpen.value = tab === 'thumbnails'
+  annoOpen.value = tab === 'annotations'
+}
+
+function toggleDrawerTab(tab: DrawerTab) {
+  const isOpen = tab === 'toc' ? tocOpen.value : tab === 'thumbnails' ? thumbnailOpen.value : annoOpen.value
+  if (isOpen) closeDrawer()
+  else setDrawerTab(tab)
+}
+
+/* ================= 页面缩略图 ================= */
+
+const THUMB_MAX_WIDTH = 210
+const THUMB_MAX_HEIGHT = 260
+const THUMB_CACHE_LIMIT = 56
+const thumbnailRendered = new Set<number>()
+const thumbnailQueued = new Set<number>()
+const thumbnailLastUsed = new Map<number, number>()
+const thumbnailQueue: number[] = []
+let thumbnailObserver: IntersectionObserver | null = null
+let thumbnailWorkerActive = false
+
+function thumbnailSizeOf(pageNum: number) {
+  const dims = dimensionsOf(pageNum)
+  const scale = Math.min(THUMB_MAX_WIDTH / dims.w, THUMB_MAX_HEIGHT / dims.h)
+  return {
+    w: Math.max(1, Math.round(dims.w * scale)),
+    h: Math.max(1, Math.round(dims.h * scale)),
+  }
+}
+
+function thumbnailFrameStyle(pageNum: number) {
+  const size = thumbnailSizeOf(pageNum)
+  return { width: `${size.w}px`, height: `${size.h}px` }
+}
+
+function thumbnailHolderOf(pageNum: number) {
+  return thumbnailScroller.value?.querySelector<HTMLElement>(`[data-thumbnail-page="${pageNum}"]`) ?? null
+}
+
+function trimThumbnailCache() {
+  if (thumbnailRendered.size <= THUMB_CACHE_LIMIT) return
+  const protectedStart = Math.max(1, currentPage.value - 8)
+  const protectedEnd = Math.min(pageCount.value, currentPage.value + 8)
+  const candidates = [...thumbnailRendered]
+    .filter(page => page < protectedStart || page > protectedEnd)
+    .sort((a, b) => (thumbnailLastUsed.get(a) ?? 0) - (thumbnailLastUsed.get(b) ?? 0))
+
+  while (thumbnailRendered.size > THUMB_CACHE_LIMIT && candidates.length) {
+    const page = candidates.shift()!
+    const holder = thumbnailHolderOf(page)
+    holder?.querySelector('.thumbnail-canvas')?.replaceChildren()
+    holder?.classList.remove('thumbnail-ready')
+    thumbnailRendered.delete(page)
+    thumbnailLastUsed.delete(page)
+    if (holder && thumbnailOpen.value) thumbnailObserver?.observe(holder)
+  }
+}
+
+async function drainThumbnailQueue() {
+  if (thumbnailWorkerActive) return
+  thumbnailWorkerActive = true
+  try {
+    while (thumbnailQueue.length && pdm) {
+      const pageNum = thumbnailQueue.shift()!
+      thumbnailQueued.delete(pageNum)
+      if (thumbnailRendered.has(pageNum)) continue
+      // 每页之间让出一帧，快速滚动缩略图时不会阻塞正文与工具栏交互。
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      if (!thumbnailOpen.value || !pdm) continue
+      const holder = thumbnailHolderOf(pageNum)
+      const slot = holder?.querySelector<HTMLElement>('.thumbnail-canvas')
+      if (!holder || !slot) continue
+      try {
+        const size = thumbnailSizeOf(pageNum)
+        // Retina 下保留清晰度，同时限制后台缩略图的长期内存占用。
+        const outputScale = Math.min(DPR(), 1.5)
+        const image = pdm.renderToSize(
+          pageNum - 1,
+          Math.max(1, Math.round(size.w * outputScale)),
+          Math.max(1, Math.round(size.h * outputScale)),
+        )
+        const canvas = document.createElement('canvas')
+        canvas.width = image.width
+        canvas.height = image.height
+        canvas.style.width = `${size.w}px`
+        canvas.style.height = `${size.h}px`
+        canvas.setAttribute('aria-hidden', 'true')
+        canvas.getContext('2d', { alpha: false })!.putImageData(image, 0, 0)
+        slot.replaceChildren(canvas)
+        holder.classList.add('thumbnail-ready')
+        thumbnailRendered.add(pageNum)
+        thumbnailLastUsed.set(pageNum, performance.now())
+        thumbnailObserver?.unobserve(holder)
+        trimThumbnailCache()
+      } catch (e) {
+        holder.classList.add('thumbnail-failed')
+        console.warn(`thumbnail render failed for page ${pageNum}:`, e)
+      }
+    }
+  } finally {
+    thumbnailWorkerActive = false
+  }
+}
+
+function queueThumbnail(pageNum: number, priority = false) {
+  if (
+    !pdm
+    || pageNum < 1
+    || pageNum > pageCount.value
+    || thumbnailRendered.has(pageNum)
+    || thumbnailQueued.has(pageNum)
+  ) return
+  thumbnailQueued.add(pageNum)
+  if (priority) thumbnailQueue.unshift(pageNum)
+  else thumbnailQueue.push(pageNum)
+  void drainThumbnailQueue()
+}
+
+function setupThumbnailObserver() {
+  thumbnailObserver?.disconnect()
+  const root = thumbnailScroller.value
+  if (!root || !thumbnailOpen.value) return
+  thumbnailObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue
+      const pageNum = Number((entry.target as HTMLElement).dataset.thumbnailPage)
+      if (Number.isFinite(pageNum)) queueThumbnail(pageNum)
+    }
+  }, { root, rootMargin: '420px 0px', threshold: 0.01 })
+  root.querySelectorAll<HTMLElement>('[data-thumbnail-page]').forEach(holder => {
+    const pageNum = Number(holder.dataset.thumbnailPage)
+    if (!thumbnailRendered.has(pageNum)) thumbnailObserver?.observe(holder)
+  })
+}
+
+function scrollActiveThumbnailIntoView() {
+  if (!thumbnailOpen.value) return
+  setupThumbnailObserver()
+  const holder = thumbnailHolderOf(currentPage.value)
+  holder?.scrollIntoView({ block: 'nearest' })
+  queueThumbnail(currentPage.value, true)
+}
+
+function thumbnailNavigate(pageNum: number) {
+  thumbnailLastUsed.set(pageNum, performance.now())
+  pushBack()
+  gotoPage(pageNum)
+}
+
+watch(thumbnailOpen, open => {
+  if (open) {
+    void nextTick(scrollActiveThumbnailIntoView)
+  } else {
+    thumbnailObserver?.disconnect()
+    thumbnailQueue.length = 0
+    thumbnailQueued.clear()
+  }
+})
+
+watch(currentPage, () => {
+  if (thumbnailOpen.value) void nextTick(scrollActiveThumbnailIntoView)
+})
 
 /** href 格式: "页码|页内纵向偏移(pt, 左上原点)" */
 function buildOutline() {
@@ -747,7 +925,7 @@ function tocNavigate(href: string) {
   pushBack()
   const yOffset = y ? Math.max(0, parseFloat(y) * displaySizeOf(parseInt(p, 10)).sy - 60) : 0
   gotoPage(parseInt(p, 10), false, yOffset)
-  tocOpen.value = false
+  closeDrawer()
 }
 
 /* ================= 划词: 高亮 / 想法 / 复制 / AI 翻译 ================= */
@@ -764,7 +942,6 @@ interface SelInfo {
 
 const selection = ref<SelInfo | null>(null)
 const annotations = ref<AnnotationRec[]>([])
-const annoOpen = ref(false)
 const activeAnnotation = ref<AnnotationRec | null>(null)
 const noteDraft = ref('')
 const popPos = ref({ x: 0, y: 0 })
@@ -1042,8 +1219,7 @@ async function onPdfSearchKeydown(e: KeyboardEvent) {
 
 function openPdfSearch() {
   pdfSearchOpen.value = true
-  tocOpen.value = false
-  annoOpen.value = false
+  closeDrawer()
   nextTick(() => {
     pdfSearchInput.value?.focus()
     pdfSearchInput.value?.select()
@@ -1308,7 +1484,7 @@ async function removeAnnotation(a: AnnotationRec) {
 function gotoAnnotation(a: AnnotationRec) {
   const loc = decodeLoc(a.cfi)
   if (!loc) return
-  annoOpen.value = false
+  closeDrawer()
   pushBack()
   gotoPage(loc.page, false, Math.max(0, (loc.rects[0]?.y ?? 0) * displaySizeOf(loc.page).sy - 100))
 }
@@ -2632,8 +2808,7 @@ function handleKeydown(e: KeyboardEvent) {
     dragSel = null
     activeAnnotation.value = null
     closeSelTr()
-    tocOpen.value = false
-    annoOpen.value = false
+    closeDrawer()
     zoomMenu.value = false
     typographyOpen.value = false
     shortcutsOpen.value = false
@@ -2652,8 +2827,7 @@ function handleKeydown(e: KeyboardEvent) {
     void toggleFullscreen()
   } else if (e.key === 'F12') {
     e.preventDefault()
-    tocOpen.value = !tocOpen.value
-    annoOpen.value = false
+    toggleDrawerTab('toc')
   } else if (zoomInKey || zoomOutKey) {
     e.preventDefault()
     changeReaderZoom(zoomInKey ? 1 : -1)
@@ -2793,6 +2967,12 @@ onBeforeUnmount(() => {
   clearTimeout(resizeTimer)
   clearTimeout(pdfSearchTimer)
   pdfSearchSession++
+  thumbnailObserver?.disconnect()
+  thumbnailObserver = null
+  thumbnailQueue.length = 0
+  thumbnailQueued.clear()
+  thumbnailRendered.clear()
+  thumbnailLastUsed.clear()
   window.removeEventListener('pointermove', onDragMove)
   window.removeEventListener('pointermove', onPanMove)
   panDrag?.viewport.classList.remove('is-panning')
@@ -2854,16 +3034,27 @@ onBeforeUnmount(() => {
             :class="{ 'icon-active': tocOpen }"
             :title="t('reader.toc')"
             :aria-pressed="tocOpen"
-            @click="tocOpen = !tocOpen; annoOpen = false"
+            @click="toggleDrawerTab('toc')"
           >
             <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1zm0 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1zm1 5a1 1 0 1 0 0 2h9a1 1 0 1 0 0-2H5z"/></svg>
+          </button>
+          <button
+            class="icon-btn"
+            :class="{ 'icon-active': thumbnailOpen }"
+            :title="t('reader.thumbnails')"
+            :aria-pressed="thumbnailOpen"
+            @click="toggleDrawerTab('thumbnails')"
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M4.75 3.5h5.5c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25h-5.5c-.69 0-1.25-.56-1.25-1.25v-6.5c0-.69.56-1.25 1.25-1.25zm0 10h5.5c.69 0 1.25.56 1.25 1.25v4.5c0 .69-.56 1.25-1.25 1.25h-5.5c-.69 0-1.25-.56-1.25-1.25v-4.5c0-.69.56-1.25 1.25-1.25zm9-10h5.5c.69 0 1.25.56 1.25 1.25v4.5c0 .69-.56 1.25-1.25 1.25h-5.5c-.69 0-1.25-.56-1.25-1.25v-4.5c0-.69.56-1.25 1.25-1.25zm0 8h5.5c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25h-5.5c-.69 0-1.25-.56-1.25-1.25v-6.5c0-.69.56-1.25 1.25-1.25z"/>
+            </svg>
           </button>
           <button
             class="icon-btn"
             :class="{ 'icon-active': annoOpen }"
             :title="t('reader.highlightsTab')"
             :aria-pressed="annoOpen"
-            @click="annoOpen = !annoOpen; tocOpen = false"
+            @click="toggleDrawerTab('annotations')"
           >
             <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.6 3.6a2 2 0 0 1 2.8 0l2 2a2 2 0 0 1 0 2.8l-9.2 9.2a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9l9-9.4zM14 7.4 7 14.6l-.5 2 2-.5 7-7.2L14 7.4zm2.4-2.4-1 1L17 7.6l1-1-1.6-1.6z"/></svg>
           </button>
@@ -3082,8 +3273,8 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-else class="paper-split">
-      <!-- 目录 / 标注使用稳定侧栏，切换内容时正文宽度不再反复跳动。 -->
-      <aside v-if="tocOpen || annoOpen" class="side-drawer">
+      <!-- 目录 / 缩略图 / 标注复用稳定侧栏，切换内容时正文宽度不反复跳动。 -->
+      <aside v-show="drawerOpen" class="side-drawer">
         <div class="drawer-head">
           <div class="drawer-tabs" role="tablist">
             <button
@@ -3091,23 +3282,54 @@ onBeforeUnmount(() => {
               role="tab"
               :class="{ active: tocOpen }"
               :aria-selected="tocOpen"
-              @click="tocOpen = true; annoOpen = false"
+              @click="setDrawerTab('toc')"
             >{{ t('reader.toc') }}</button>
+            <button
+              type="button"
+              role="tab"
+              :class="{ active: thumbnailOpen }"
+              :aria-selected="thumbnailOpen"
+              @click="setDrawerTab('thumbnails')"
+            >{{ t('reader.thumbnails') }}</button>
             <button
               type="button"
               role="tab"
               :class="{ active: annoOpen }"
               :aria-selected="annoOpen"
-              @click="annoOpen = true; tocOpen = false"
+              @click="setDrawerTab('annotations')"
             >{{ t('reader.highlightsTab') }}</button>
           </div>
-          <button class="icon-btn" :title="t('common.close')" @click="tocOpen = false; annoOpen = false">✕</button>
+          <button class="icon-btn" :title="t('common.close')" @click="closeDrawer">✕</button>
         </div>
-        <div v-if="tocOpen" class="drawer-body">
+        <div v-show="tocOpen" class="drawer-body">
           <TocList v-if="tocItems.length" :items="tocItems" @navigate="tocNavigate" />
           <p v-else class="drawer-empty">{{ t('paper.noOutline') }}</p>
         </div>
-        <div v-else class="drawer-body">
+        <div
+          v-show="thumbnailOpen"
+          ref="thumbnailScroller"
+          class="drawer-body thumbnail-drawer"
+          role="tabpanel"
+        >
+          <button
+            v-for="pageNum in pageCount"
+            :key="pageNum"
+            type="button"
+            class="thumbnail-item"
+            :class="{ active: currentPage === pageNum }"
+            :data-thumbnail-page="pageNum"
+            :aria-current="currentPage === pageNum ? 'page' : undefined"
+            :aria-label="t('reader.thumbnailPage', { page: pageNum })"
+            @click="thumbnailNavigate(pageNum)"
+          >
+            <span class="thumbnail-sheet" :style="thumbnailFrameStyle(pageNum)">
+              <span class="thumbnail-skeleton" aria-hidden="true" />
+              <span class="thumbnail-canvas" />
+            </span>
+            <span class="thumbnail-number">{{ pageNum }}</span>
+          </button>
+        </div>
+        <div v-show="annoOpen" class="drawer-body">
           <p class="drawer-count">{{ t('reader.highlightsTab') }} · {{ highlights.length }}</p>
           <div v-for="a in highlights" :key="a.id" class="anno-item" @click="gotoAnnotation(a)">
             <span class="anno-dot" :style="{ background: HIGHLIGHT_COLORS[a.color] ?? a.color }" />
@@ -4441,7 +4663,7 @@ onBeforeUnmount(() => {
   color: var(--brand);
 }
 
-/* ---- 稳定侧栏 (目录 / 标注) ---- */
+/* ---- 稳定侧栏 (目录 / 缩略图 / 标注) ---- */
 .side-drawer {
   position: relative;
   z-index: 20;
@@ -4468,7 +4690,7 @@ onBeforeUnmount(() => {
   align-self: stretch;
   display: flex;
   align-items: stretch;
-  gap: 18px;
+  gap: 14px;
 }
 .drawer-tabs button {
   position: relative;
@@ -4513,6 +4735,98 @@ onBeforeUnmount(() => {
   text-align: center;
   padding: 24px 10px;
   line-height: 1.7;
+}
+.thumbnail-drawer {
+  padding: 14px 12px 28px;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+.thumbnail-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+.thumbnail-item + .thumbnail-item {
+  margin-top: 4px;
+}
+.thumbnail-item:hover {
+  background: color-mix(in srgb, var(--brand) 6%, var(--bg));
+  color: var(--text-2);
+}
+.thumbnail-item.active {
+  border-color: color-mix(in srgb, var(--brand) 24%, transparent);
+  background: color-mix(in srgb, var(--brand) 10%, var(--card));
+  color: var(--brand);
+}
+.thumbnail-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 62%, white);
+  outline-offset: -2px;
+}
+.thumbnail-sheet {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, #9aa6b5);
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(34, 45, 61, 0.12);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.thumbnail-item.active .thumbnail-sheet {
+  border-color: color-mix(in srgb, var(--brand) 82%, white);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 16%, transparent), 0 3px 10px rgba(34, 45, 61, 0.14);
+}
+.thumbnail-skeleton,
+.thumbnail-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.thumbnail-skeleton {
+  background:
+    linear-gradient(90deg, transparent 25%, rgba(255, 255, 255, 0.72) 50%, transparent 75%),
+    #eef1f5;
+  background-size: 220% 100%, 100% 100%;
+  animation: thumbnail-shimmer 1.35s ease-in-out infinite;
+}
+.thumbnail-ready .thumbnail-skeleton {
+  display: none;
+}
+.thumbnail-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.thumbnail-failed .thumbnail-skeleton {
+  animation: none;
+  background: repeating-linear-gradient(135deg, #f3f4f6, #f3f4f6 8px, #e9edf1 8px, #e9edf1 16px);
+}
+.thumbnail-number {
+  min-width: 28px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: center;
+}
+.thumbnail-item.active .thumbnail-number {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  font-weight: 600;
+}
+@keyframes thumbnail-shimmer {
+  from { background-position: 130% 0, 0 0; }
+  to { background-position: -130% 0, 0 0; }
 }
 .anno-item {
   display: flex;
