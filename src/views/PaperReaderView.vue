@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getStorage, type BookMeta, type AnnotationRec } from '../storage'
+import { getStorage, isTauri, type BookMeta, type AnnotationRec } from '../storage'
 import {
   extractParagraphsFromItems,
   extractParagraphsLooseFromItems,
@@ -49,6 +49,7 @@ import { useLibrary } from '../stores/library'
 import { useSettings } from '../stores/settings'
 import { useReadingTimer } from '../composables/useReadingTimer'
 import { toast } from '../services/toast'
+import { printPdf, revealStoredBook, savePdfAs } from '../services/pdfFileActions'
 import {
   speakText,
   prefetchSpeech,
@@ -84,6 +85,9 @@ const thumbnailScroller = ref<HTMLElement>()
 let pdm: PdfiumDoc | null = null
 /** MuPDF 只负责可见位图；交互能力继续由 PDFium 提供。 */
 let renderBytes: Uint8Array | null = null
+/** 原始文件供打印、另存为与属性信息复用，不受渲染引擎消费影响。 */
+let sourcePdfBlob: Blob | null = null
+const sourcePdfVersion = ref('')
 let mupdfDocPromise: Promise<any> | null = null
 let mupdfRenderFailed = false
 
@@ -113,12 +117,13 @@ const aiReady = computed(() => aiConfigured())
 const isPaper = computed(() => meta.value?.kind === 'paper')
 const backTarget = computed(() => (isPaper.value ? '/papers' : '/library'))
 const backLabel = computed(() => (isPaper.value ? t('paper.backToPapers') : t('reader.backToLibrary')))
-/** 论文固定连续滚动；藏书 PDF 服从阅读设置，默认翻页。 */
-const mode = computed<'paged' | 'scroll'>(() => (isPaper.value ? 'scroll' : settings.pdf.mode))
+/** 所有 PDF 共用阅读模式；v7 起默认连续滚动。 */
+const mode = computed<'paged' | 'scroll'>(() => settings.pdf.mode)
 const pdfLayout = computed(() => settings.pdf.layout)
 const bookPaged = computed(() => pdfLayout.value === 'original' && mode.value === 'paged')
 const spreadMode = computed(() => settings.pdf.spreadMode)
-const spread = computed(() => bookPaged.value && spreadMode.value !== 'single')
+const scrollSpread = computed(() =>
+  pdfLayout.value === 'original' && mode.value === 'scroll' && spreadMode.value !== 'single')
 
 /* ================= 连续滚动渲染 (虚拟化: 只渲染视口附近页) ================= */
 
@@ -142,7 +147,7 @@ type PdfZoom = number | 'fit-page' | 'fit-width'
 const LEGACY_ZOOM_KEY = 'lightread-paper-zoom'
 const ZOOM_KEY = `lightread-pdf-zoom:${bookId}`
 const restoredZoom = restoreZoom()
-const zoom = ref<PdfZoom>(restoredZoom ?? 'fit-page')
+const zoom = ref<PdfZoom>(restoredZoom ?? (settings.pdf.mode === 'scroll' ? 'fit-width' : 'fit-page'))
 
 function restoreZoom(): PdfZoom | null {
   const raw = localStorage.getItem(ZOOM_KEY) ?? localStorage.getItem(LEGACY_ZOOM_KEY)
@@ -178,14 +183,40 @@ const holderStyleFor = (pageNum: number) => {
   return { width: `${size.w}px`, height: `${size.h}px` }
 }
 
-const scrollPageLayout = computed(() => {
+/** 连续阅读也支持单页、对页与封面错位书籍视图。 */
+const scrollPageGroups = computed<number[][]>(() => {
+  const total = pageCount.value
+  if (!total) return []
+  if (!scrollSpread.value) return Array.from({ length: total }, (_, index) => [index + 1])
+  const groups: number[][] = []
+  let page = 1
+  if (spreadMode.value === 'book') {
+    groups.push([1])
+    page = 2
+  }
+  while (page <= total) {
+    groups.push(page + 1 <= total ? [page, page + 1] : [page])
+    page += 2
+  }
+  return groups
+})
+
+const scrollGroupLayout = computed(() => {
   let top = PAD
-  return pageDims.value.map((_, index) => {
-    const size = displaySizeOf(index + 1)
-    const entry = { top, height: size.h }
-    top += size.h + GAP
+  return scrollPageGroups.value.map(pages => {
+    const height = Math.max(...pages.map(page => displaySizeOf(page).h))
+    const entry = { pages, top, height }
+    top += height + GAP
     return entry
   })
+})
+
+const scrollPageLayout = computed(() => {
+  const pages = Array.from({ length: pageCount.value }, () => ({ top: PAD, height: 0 }))
+  for (const group of scrollGroupLayout.value) {
+    for (const page of group.pages) pages[page - 1] = { top: group.top, height: group.height }
+  }
+  return pages
 })
 
 const renderedScale = new Map<number, string>()
@@ -202,13 +233,21 @@ function holderOf(num: number) {
 
 function fitScale(kind: 'fit-page' | 'fit-width'): number {
   const box = scroller.value
-  // 与 Sumatra 一样让同一文档所有页面使用相同倍率：最大页面也必须能放下。
+  // 与 Sumatra 一样让同一文档所有页面使用相同倍率；双页布局同时约束整组宽度。
   const width = Math.max((box?.clientWidth ?? 800) - 48, 240)
   const height = Math.max((box?.clientHeight ?? 700) - 32, 240)
-  let scale = Number.POSITIVE_INFINITY
-  for (const dims of pageDims.value.length ? pageDims.value : [baseDims.value]) {
-    scale = Math.min(scale, width / dims.w)
-    if (kind === 'fit-page') scale = Math.min(scale, height / dims.h)
+  const dims = pageDims.value.length ? pageDims.value : [baseDims.value]
+  let scale = Math.min(...dims.map(page => kind === 'fit-page'
+    ? Math.min(width / page.w, height / page.h)
+    : width / page.w))
+  if (scrollSpread.value) {
+    for (const group of scrollPageGroups.value) {
+      const groupWidth = group.reduce((sum, page) => sum + dimensionsOf(page).w, 0)
+      scale = Math.min(scale, Math.max(1, width - GAP * (group.length - 1)) / Math.max(1, groupWidth))
+      if (kind === 'fit-page') {
+        scale = Math.min(scale, ...group.map(page => height / Math.max(1, dimensionsOf(page).h)))
+      }
+    }
   }
   return Number.isFinite(scale) ? scale : 1
 }
@@ -216,7 +255,7 @@ function fitScale(kind: 'fit-page' | 'fit-width'): number {
 /** 当前页所在的页组；双页按 1-2、3-4 … 配对。 */
 function spreadOf(page: number): number[] {
   const clamped = Math.min(Math.max(1, page || 1), Math.max(1, pageCount.value))
-  if (!spread.value) return [clamped]
+  if (!bookPaged.value || spreadMode.value === 'single') return [clamped]
   if (spreadMode.value === 'book' && clamped === 1) return [1]
   const start = spreadMode.value === 'book'
     ? (clamped % 2 === 0 ? clamped : clamped - 1)
@@ -230,7 +269,11 @@ const atFirstPage = computed(() => pdfLayout.value === 'reflow'
   : currentPage.value <= 1)
 const atLastPage = computed(() => pdfLayout.value === 'reflow'
   ? currentPage.value >= (reflowPages.value.at(-1)?.page ?? pageCount.value)
-  : pagedPages.value.at(-1) === pageCount.value)
+  : bookPaged.value
+    ? pagedPages.value.at(-1) === pageCount.value
+    : scrollSpread.value
+      ? currentPage.value >= (scrollPageGroups.value.at(-1)?.[0] ?? pageCount.value)
+      : currentPage.value >= pageCount.value)
 
 /** 翻页模式默认适高；双页时同时受可用宽度约束，避免页面被裁掉。 */
 function pagedScale(): number {
@@ -371,9 +414,12 @@ async function pagedGoto(page: number) {
 }
 
 async function switchMode(next: 'paged' | 'scroll') {
-  if (isPaper.value || settings.pdf.mode === next) return
+  if (settings.pdf.mode === next) return
   stopAutoRead()
   settings.pdf.mode = next
+  if (next === 'paged' && restoredZoom == null && zoom.value === 'fit-width') {
+    zoom.value = settings.pdf.fit === 'fitH' ? 'fit-page' : 'fit-width'
+  }
   renderedScale.clear()
   await nextTick()
   if (next === 'paged') {
@@ -390,20 +436,15 @@ async function switchMode(next: 'paged' | 'scroll') {
 
 async function setSpreadMode(next: 'single' | 'facing' | 'book') {
   settings.pdf.spreadMode = next
-  currentPage.value = spreadOf(currentPage.value)[0]
   renderedScale.clear()
   await nextTick()
-  await renderPaged()
+  if (bookPaged.value) {
+    currentPage.value = spreadOf(currentPage.value)[0]
+    await renderPaged()
+  } else {
+    relayout(true)
+  }
 }
-
-function toggleSpread() {
-  const next = spreadMode.value === 'single' ? 'facing' : 'single'
-  void setSpreadMode(next)
-}
-
-const spreadModeLabel = computed(() => spreadMode.value === 'single'
-  ? t('reader.singlePage')
-  : spreadMode.value === 'facing' ? t('reader.facingPages') : t('reader.bookView'))
 
 async function setPagedFit(fit: 'fitH' | 'fitW') {
   settings.pdf.fit = fit
@@ -456,24 +497,29 @@ function evictFarPages(center: number) {
 
 function pageAtCenter(): number {
   const el = scroller.value
-  const layout = scrollPageLayout.value
+  const layout = scrollGroupLayout.value
   if (!el || !layout.length) return 1
   const center = el.scrollTop + el.clientHeight / 2
   let lo = 0
   let hi = layout.length - 1
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2)
-    const page = layout[mid]
-    if (center > page.top + page.height + GAP / 2) lo = mid + 1
+    const group = layout[mid]
+    if (center > group.top + group.height + GAP / 2) lo = mid + 1
     else hi = mid
   }
-  return lo + 1
+  return layout[lo]?.pages[0] ?? 1
 }
 
 function updateViewport() {
   const cur = pageAtCenter()
   if (cur !== currentPage.value) currentPage.value = cur
-  for (let i = cur - 1; i <= cur + 2; i++) renderScrollPage(i)
+  const activeGroup = scrollGroupLayout.value.findIndex(group => group.pages.includes(cur))
+  const nearby = scrollGroupLayout.value.slice(
+    Math.max(0, activeGroup - 1),
+    Math.min(scrollGroupLayout.value.length, activeGroup + 3),
+  )
+  for (const group of nearby) for (const page of group.pages) renderScrollPage(page)
   evictFarPages(cur)
 }
 
@@ -559,6 +605,8 @@ const primaryShortcutLabel = isMacPlatform ? '⌘' : 'Ctrl'
 const shortcutsOpen = ref(false)
 const shortcutRows = computed(() => [
   { shortcuts: [[primaryShortcutLabel, 'F']], label: t('reader.searchInBook') },
+  { shortcuts: [[primaryShortcutLabel, 'P']], label: t('reader.print') },
+  { shortcuts: [[primaryShortcutLabel, '⇧', 'S']], label: t('reader.saveAs') },
   { shortcuts: [[primaryShortcutLabel, '＋']], label: t('reader.shortcutZoomIn') },
   { shortcuts: [[primaryShortcutLabel, '−']], label: t('reader.shortcutZoomOut') },
   { shortcuts: [[primaryShortcutLabel, '0'], [primaryShortcutLabel, '1'], [primaryShortcutLabel, '2']], label: t('reader.shortcutZoomModes') },
@@ -594,29 +642,171 @@ function toggleShortcutGuide() {
   typographyOpen.value = false
 }
 
-/* ---- 全屏 ---- */
+/* ---- 文件操作 / 属性 / 全屏 / 幻灯片 ---- */
 const paperRoot = ref<HTMLElement>()
+const moreMenu = ref(false)
+const propertiesOpen = ref(false)
+const isFullscreen = ref(false)
+const presentationMode = ref(false)
+let fullscreenWindowUnlisten: (() => void) | undefined
+let presentationRestore: {
+  mode: 'paged' | 'scroll'
+  spreadMode: 'single' | 'facing' | 'book'
+  zoom: PdfZoom
+  wasFullscreen: boolean
+} | null = null
 
-async function toggleFullscreen() {
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return t('reader.unknown')
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`
+}
+
+function formatPdfDate(value: string): string {
+  if (!value) return ''
+  const match = value.match(/D:?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?/)
+  if (!match) return value
+  const [, year, month = '01', day = '01', hour = '00', minute = '00'] = match
+  return `${year}-${month}-${day} ${hour}:${minute}`
+}
+
+const propertyRows = computed(() => {
+  const first = dimensionsOf(1)
+  const mmW = first.w / 72 * 25.4
+  const mmH = first.h / 72 * 25.4
+  const value = (tag: string) => pdm?.meta(tag) || ''
+  return [
+    { label: t('reader.fileName'), value: meta.value?.fileName || t('reader.unknown') },
+    { label: t('reader.fileSize'), value: formatBytes(sourcePdfBlob?.size ?? 0) },
+    { label: t('reader.pdfVersion'), value: sourcePdfVersion.value || t('reader.unknown') },
+    { label: t('reader.pageCount'), value: String(pageCount.value) },
+    { label: t('reader.pageSize'), value: `${mmW.toFixed(1)} × ${mmH.toFixed(1)} mm · ${Math.round(first.w)} × ${Math.round(first.h)} pt` },
+    { label: t('reader.documentTitle'), value: value('Title') || meta.value?.title || t('reader.unknown') },
+    { label: t('reader.documentAuthor'), value: value('Author') || meta.value?.author || t('reader.unknown') },
+    { label: t('reader.subject'), value: value('Subject') },
+    { label: t('reader.keywords'), value: value('Keywords') },
+    { label: t('reader.creator'), value: value('Creator') },
+    { label: t('reader.producer'), value: value('Producer') },
+    { label: t('reader.createdAt'), value: formatPdfDate(value('CreationDate')) },
+    { label: t('reader.modifiedAt'), value: formatPdfDate(value('ModDate')) },
+  ].filter(row => row.value)
+})
+
+async function printDocument() {
+  moreMenu.value = false
+  if (!sourcePdfBlob) return
+  try {
+    await printPdf(sourcePdfBlob)
+    toast(t('reader.printOpened'), 'success')
+  } catch {
+    toast(t('reader.printFailed'), 'error')
+  }
+}
+
+async function saveDocumentAs() {
+  moreMenu.value = false
+  if (!sourcePdfBlob) return
+  try {
+    const saved = await savePdfAs(sourcePdfBlob, meta.value?.fileName || meta.value?.title || 'document.pdf')
+    if (saved) toast(t('reader.savedAs'), 'success')
+  } catch (error: any) {
+    toast(t('reader.saveFailed', { msg: error?.message ?? error }), 'error', 5000)
+  }
+}
+
+async function openDocumentFolder() {
+  moreMenu.value = false
+  if (!meta.value) return
+  if (!isTauri()) {
+    toast(t('reader.openFolderWebHint'), 'error', 5000)
+    return
+  }
+  try {
+    await revealStoredBook(meta.value)
+  } catch {
+    toast(t('reader.openFolderFailed'), 'error', 5000)
+  }
+}
+
+function openProperties() {
+  moreMenu.value = false
+  propertiesOpen.value = true
+}
+
+async function setFullscreen(enabled: boolean) {
   const el = paperRoot.value as any
   try {
-    if (document.fullscreenElement) {
+    if (enabled) {
+      if (document.fullscreenElement) return
+      if (el?.requestFullscreen) await el.requestFullscreen()
+      else if (el?.webkitRequestFullscreen) await el.webkitRequestFullscreen()
+      else throw new Error('no element fullscreen')
+    } else if (document.fullscreenElement) {
       await document.exitFullscreen()
-    } else if (el?.requestFullscreen) {
-      await el.requestFullscreen()
-    } else if (el?.webkitRequestFullscreen) {
-      el.webkitRequestFullscreen()
     } else {
-      throw new Error('no element fullscreen')
+      throw new Error('no document fullscreen')
     }
+    isFullscreen.value = enabled
   } catch {
-    // WKWebView 元素全屏不可用时退回窗口全屏
+    // WKWebView 元素全屏不可用时退回无边框窗口全屏。
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      const w = getCurrentWindow()
-      await w.setFullscreen(!(await w.isFullscreen()))
+      await getCurrentWindow().setFullscreen(enabled)
+      isFullscreen.value = enabled
     } catch { /* Web 端且元素全屏失败: 忽略 */ }
   }
+}
+
+async function toggleFullscreen() {
+  if (presentationMode.value) {
+    await exitPresentation()
+    return
+  }
+  await setFullscreen(!isFullscreen.value)
+}
+
+async function enterPresentation() {
+  moreMenu.value = false
+  if (presentationMode.value) return
+  presentationRestore = {
+    mode: mode.value,
+    spreadMode: spreadMode.value,
+    zoom: zoom.value,
+    wasFullscreen: isFullscreen.value,
+  }
+  presentationMode.value = true
+  if (pdfLayout.value === 'reflow') await switchPdfLayout('original')
+  if (mode.value !== 'paged') await switchMode('paged')
+  if (spreadMode.value !== 'single') await setSpreadMode('single')
+  await applyZoom('fit-page')
+  if (!isFullscreen.value) await setFullscreen(true)
+}
+
+async function exitPresentation(exitFullscreen = true) {
+  if (!presentationMode.value) return
+  const restore = presentationRestore
+  presentationMode.value = false
+  presentationRestore = null
+  if (exitFullscreen && !restore?.wasFullscreen && isFullscreen.value) {
+    await setFullscreen(false)
+  }
+  if (!restore) return
+  if (mode.value !== restore.mode) await switchMode(restore.mode)
+  if (spreadMode.value !== restore.spreadMode) await setSpreadMode(restore.spreadMode)
+  await applyZoom(restore.zoom)
+}
+
+function onFullscreenChange() {
+  const active = Boolean(document.fullscreenElement)
+  const wasFullscreen = isFullscreen.value
+  isFullscreen.value = active
+  if (wasFullscreen && !active && presentationMode.value) void exitPresentation(false)
 }
 
 /** 重算缩放并保持当前页锚点 (页内比例) */
@@ -653,13 +843,21 @@ function onPageSettled() {
 
 function jumpTo() {
   const n = parseInt(pageInput.value, 10)
-  if (Number.isFinite(n)) gotoPage(n)
+  if (Number.isFinite(n)) {
+    gotoPage(Math.min(Math.max(n, 1), pageCount.value))
+  } else {
+    pageInput.value = String(currentPage.value)
+  }
 }
 
 function prevPage() {
   if (pdfLayout.value === 'reflow') reflowStep(-1)
   else if (bookPaged.value) void pagedGoto(pagedPages.value[0] - 1)
-  else scrollGoto(currentPage.value - 1, true)
+  else if (scrollSpread.value) {
+    const index = scrollPageGroups.value.findIndex(group => group.includes(currentPage.value))
+    const target = scrollPageGroups.value[Math.max(0, index - 1)]?.[0]
+    if (target) scrollGoto(target, true)
+  } else scrollGoto(currentPage.value - 1, true)
 }
 function nextPage() {
   if (pdfLayout.value === 'reflow') {
@@ -667,6 +865,10 @@ function nextPage() {
   } else if (bookPaged.value) {
     const next = (pagedPages.value.at(-1) ?? currentPage.value) + 1
     if (next <= pageCount.value) void pagedGoto(next)
+  } else if (scrollSpread.value) {
+    const index = scrollPageGroups.value.findIndex(group => group.includes(currentPage.value))
+    const target = scrollPageGroups.value[Math.min(scrollPageGroups.value.length - 1, index + 1)]?.[0]
+    if (target) scrollGoto(target, true)
   } else {
     scrollGoto(currentPage.value + 1, true)
   }
@@ -1255,6 +1457,15 @@ let panDrag: {
   left: number
   top: number
 } | null = null
+let wheelPageDelta = 0
+let wheelPageReset: ReturnType<typeof setTimeout> | undefined
+let wheelPageLockedUntil = 0
+let touchGesture: {
+  x: number
+  y: number
+  lastDistance: number
+  pinching: boolean
+} | null = null
 
 const liveRects = computed(() => {
   if (!liveSel.value || !pdm) return null
@@ -1345,7 +1556,87 @@ function onPdfWheel(e: WheelEvent) {
   } else if (e.altKey) {
     e.preventDefault()
     viewport.scrollTop += e.deltaY * 4
+  } else if (bookPaged.value && zoom.value === 'fit-page' && Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+    // 整页/书籍视图中把触控板与滚轮的纵向意图转换为一次翻页，避免轻触连跳。
+    e.preventDefault()
+    clearTimeout(wheelPageReset)
+    wheelPageDelta += e.deltaY
+    wheelPageReset = setTimeout(() => { wheelPageDelta = 0 }, 180)
+    if (performance.now() >= wheelPageLockedUntil && Math.abs(wheelPageDelta) >= 72) {
+      wheelPageLockedUntil = performance.now() + 420
+      if (wheelPageDelta > 0) nextPage()
+      else prevPage()
+      wheelPageDelta = 0
+    }
   }
+}
+
+function touchDistance(touches: TouchList): number {
+  if (touches.length < 2) return 0
+  return Math.hypot(
+    touches[0].clientX - touches[1].clientX,
+    touches[0].clientY - touches[1].clientY,
+  )
+}
+
+function onPdfTouchStart(e: TouchEvent) {
+  if (e.touches.length >= 2) {
+    touchGesture = {
+      x: 0,
+      y: 0,
+      lastDistance: touchDistance(e.touches),
+      pinching: true,
+    }
+    return
+  }
+  const touch = e.touches[0]
+  if (!touch) return
+  touchGesture = {
+    x: touch.clientX,
+    y: touch.clientY,
+    lastDistance: 0,
+    pinching: false,
+  }
+}
+
+function onPdfTouchMove(e: TouchEvent) {
+  if (!touchGesture || e.touches.length < 2) return
+  e.preventDefault()
+  const distance = touchDistance(e.touches)
+  if (!touchGesture.lastDistance) {
+    touchGesture.lastDistance = distance
+    return
+  }
+  const ratio = distance / touchGesture.lastDistance
+  if (ratio >= 1.12) {
+    zoomStep(1)
+    touchGesture.lastDistance = distance
+  } else if (ratio <= 0.89) {
+    zoomStep(-1)
+    touchGesture.lastDistance = distance
+  }
+}
+
+function onPdfTouchEnd(e: TouchEvent) {
+  const gesture = touchGesture
+  if (!gesture) return
+  if (e.touches.length) {
+    if (gesture.pinching && e.touches.length === 1) touchGesture = null
+    return
+  }
+  touchGesture = null
+  if (!bookPaged.value || gesture.pinching) return
+  const touch = e.changedTouches[0]
+  if (!touch) return
+  const dx = touch.clientX - gesture.x
+  const dy = touch.clientY - gesture.y
+  if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.2) return
+  liveSel.value = null
+  selection.value = null
+  dragSel = null
+  suppressClick = true
+  if (dx < 0) nextPage()
+  else prevPage()
 }
 
 function onDragMove(e: PointerEvent) {
@@ -1520,6 +1811,13 @@ function onHolderClick(e: MouseEvent, page: number) {
     noteDraft.value = hit.a.note ?? ''
     popPos.value = clampPop(e.clientX - 160, e.clientY + 12)
     activeAnnotation.value = hit.a
+    return
+  }
+  if (bookPaged.value) {
+    const ratio = (e.clientX - hb.left) / Math.max(1, hb.width)
+    const edge = presentationMode.value ? 0.5 : 0.14
+    if (ratio <= edge) prevPage()
+    else if (ratio >= 1 - edge) nextPage()
   }
 }
 
@@ -2731,6 +3029,22 @@ function cycleFitMode() {
 
 function handleKeydown(e: KeyboardEvent) {
   const primaryPressed = e.metaKey || e.ctrlKey
+  if (e.key === 'Escape' && (presentationMode.value || isFullscreen.value)) {
+    e.preventDefault()
+    if (presentationMode.value) void exitPresentation()
+    else void setFullscreen(false)
+    return
+  }
+  if (primaryPressed && !e.altKey && e.key.toLowerCase() === 'p') {
+    e.preventDefault()
+    void printDocument()
+    return
+  }
+  if (primaryPressed && e.shiftKey && !e.altKey && e.key.toLowerCase() === 's') {
+    e.preventDefault()
+    void saveDocumentAs()
+    return
+  }
   if (primaryPressed && !e.altKey && e.key.toLowerCase() === 'f') {
     e.preventDefault()
     openPdfSearch()
@@ -2825,6 +3139,9 @@ function handleKeydown(e: KeyboardEvent) {
   } else if (e.key.toLowerCase() === 'f' || e.key === 'F11') {
     e.preventDefault()
     void toggleFullscreen()
+  } else if (e.key === 'F5') {
+    e.preventDefault()
+    void enterPresentation()
   } else if (e.key === 'F12') {
     e.preventDefault()
     toggleDrawerTab('toc')
@@ -2885,6 +3202,21 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
+  document.addEventListener('fullscreenchange', onFullscreenChange)
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
+  if (isTauri()) {
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      const currentWindow = getCurrentWindow()
+      isFullscreen.value = await currentWindow.isFullscreen()
+      fullscreenWindowUnlisten = await currentWindow.onResized(async () => {
+        const active = await currentWindow.isFullscreen()
+        const wasFullscreen = isFullscreen.value
+        isFullscreen.value = active
+        if (wasFullscreen && !active && presentationMode.value) void exitPresentation(false)
+      })
+    } catch { /* 浏览器环境或窗口权限不支持时忽略 */ }
+  }
   try {
     const storage = await getStorage()
     meta.value = await storage.getBook(bookId)
@@ -2896,13 +3228,19 @@ onMounted(async () => {
       annotations.value = list.filter(a => decodeLoc(a.cfi))
     })
     const blob = await storage.getBookFile(bookId)
+    sourcePdfBlob = blob.slice(0, blob.size, 'application/pdf')
     const fileData = await blob.arrayBuffer()
+    sourcePdfVersion.value = new TextDecoder('latin1')
+      .decode(fileData.slice(0, 16))
+      .match(/%PDF-(\d\.\d)/)?.[1] ?? ''
+    // 流式阅读已下线；读取旧设置时也必须回到原版 PDF。
+    settings.pdf.layout = 'original'
     pdm = await PdfiumDoc.open(fileData)
     renderBytes = settings.pdf.renderer === 'mupdf' ? new Uint8Array(fileData.slice(0)) : null
     pageCount.value = pdm.pages.length
     pageDims.value = pdm.pages.map(page => ({ w: page.w, h: page.h }))
     baseDims.value = pageDims.value[0] ?? { w: 612, h: 792 }
-    // Sumatra 的默认阅读行为：普通藏书适合页面，连续论文适合宽度。
+    // 连续阅读默认适宽；论文沿用同一阅读模型。
     if (restoredZoom == null && isPaper.value) zoom.value = 'fit-width'
     const saved = parseInt(meta.value.location ?? '1', 10)
     currentPage.value = Number.isFinite(saved)
@@ -2953,6 +3291,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   reflowSession++
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
+  fullscreenWindowUnlisten?.()
+  fullscreenWindowUnlisten = undefined
   translateSession++
   selTrSession++
   cancelAi()
@@ -2965,6 +3307,7 @@ onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(settleTimer)
   clearTimeout(resizeTimer)
+  clearTimeout(wheelPageReset)
   clearTimeout(pdfSearchTimer)
   pdfSearchSession++
   thumbnailObserver?.disconnect()
@@ -2982,13 +3325,18 @@ onBeforeUnmount(() => {
   mupdfDocPromise?.then(doc => doc?.destroy?.()).catch(() => {})
   mupdfDocPromise = null
   renderBytes = null
+  sourcePdfBlob = null
   bdUnlisten?.()
   if (bd.value.phase === 'running') babeldocCancel().catch(() => {})
 })
 </script>
 
 <template>
-  <div ref="paperRoot" class="paper">
+  <div
+    ref="paperRoot"
+    class="paper"
+    :class="{ 'is-fullscreen': isFullscreen, 'is-presentation': presentationMode }"
+  >
     <header class="paper-header">
       <div class="paper-bar">
         <div class="paper-document">
@@ -3021,6 +3369,15 @@ onBeforeUnmount(() => {
               {{ t('paper.bdButton') }}
             </button>
           </template>
+          <button
+            v-else
+            class="btn btn-sm context-action ai-entry"
+            :class="{ 'btn-active': rightTab === 'ai' }"
+            :disabled="!pageCount"
+            @click="openRight('ai')"
+          >
+            ✦ {{ t('reader.aiRead') }}
+          </button>
           <button class="btn btn-sm change-document" @click="router.push(backTarget)">
             {{ t('reader.changeDocument') }}
           </button>
@@ -3092,65 +3449,66 @@ onBeforeUnmount(() => {
         <span class="toolbar-sep" />
 
         <div class="toolbar-group toolbar-layout">
-        <div class="reader-segment" role="group" :aria-label="t('reader.pdfLayout')">
-          <button
-            type="button"
-            :class="{ active: pdfLayout === 'original' }"
-            :aria-pressed="pdfLayout === 'original'"
-            @click="switchPdfLayout('original')"
-          >{{ t('reader.originalPdf') }}</button>
-          <button
-            type="button"
-            :class="{ active: pdfLayout === 'reflow' }"
-            :aria-pressed="pdfLayout === 'reflow'"
-            @click="switchPdfLayout('reflow')"
-          >{{ t('reader.reflowPdf') }}</button>
-        </div>
-        <!-- 藏书 PDF: 读书功能集 (与 epub 一致) -->
-        <template v-if="!isPaper">
-          <template v-if="pdfLayout === 'original'">
-            <div class="reader-segment" role="group" :aria-label="t('reader.mode')">
-              <button
-                type="button"
-                :class="{ active: mode === 'paged' }"
-                :aria-pressed="mode === 'paged'"
-                @click="switchMode('paged')"
-              >{{ t('reader.paginated') }}</button>
-              <button
-                type="button"
-                :class="{ active: mode === 'scroll' }"
-                :aria-pressed="mode === 'scroll'"
-                @click="switchMode('scroll')"
-              >{{ t('reader.scrolled') }}</button>
-            </div>
-            <template v-if="bookPaged">
-              <div class="reader-segment" role="group" :aria-label="t('reader.fitHeight') + ' / ' + t('reader.fitWidth')">
-                <button
-                  type="button"
-                  :class="{ active: zoom === 'fit-page' }"
-                  :aria-pressed="zoom === 'fit-page'"
-                  @click="setPagedFit('fitH')"
-                >{{ t('reader.fitHeight') }}</button>
-                <button
-                  type="button"
-                  :class="{ active: zoom === 'fit-width' }"
-                  :aria-pressed="zoom === 'fit-width'"
-                  @click="setPagedFit('fitW')"
-                >{{ t('reader.fitWidth') }}</button>
-              </div>
-              <button
-                type="button"
-                class="reader-tool"
-                :class="{ active: spread }"
-                :aria-pressed="spread"
-                :title="spreadModeLabel"
-                @click="toggleSpread"
-              >
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 4.25h5.25v11.5H3.5zM11.25 4.25h5.25v11.5h-5.25z" /></svg>
-                <span>{{ t('reader.twoPage') }}</span>
-              </button>
-            </template>
-          </template>
+          <div class="reader-segment" role="group" :aria-label="t('reader.mode')">
+            <button
+              type="button"
+              :class="{ active: mode === 'scroll' }"
+              :aria-pressed="mode === 'scroll'"
+              @click="switchMode('scroll')"
+            >{{ t('reader.scrolled') }}</button>
+            <button
+              type="button"
+              :class="{ active: mode === 'paged' }"
+              :aria-pressed="mode === 'paged'"
+              @click="switchMode('paged')"
+            >{{ t('reader.paginated') }}</button>
+          </div>
+          <div class="reader-segment fit-segment" role="group" :aria-label="t('reader.fitHeight') + ' / ' + t('reader.fitWidth')">
+            <button
+              type="button"
+              :class="{ active: zoom === 'fit-page' }"
+              :aria-pressed="zoom === 'fit-page'"
+              @click="setPagedFit('fitH')"
+            >{{ t('reader.fitHeight') }}</button>
+            <button
+              type="button"
+              :class="{ active: zoom === 'fit-width' }"
+              :aria-pressed="zoom === 'fit-width'"
+              @click="setPagedFit('fitW')"
+            >{{ t('reader.fitWidth') }}</button>
+          </div>
+          <div class="reader-segment page-view-segment" role="group" :aria-label="t('reader.pageView')">
+            <button
+              type="button"
+              :class="{ active: spreadMode === 'single' }"
+              :aria-label="t('reader.singlePage')"
+              :title="t('reader.singlePage')"
+              :aria-pressed="spreadMode === 'single'"
+              @click="setSpreadMode('single')"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5.25 3.5h9.5v13h-9.5z" /></svg>
+            </button>
+            <button
+              type="button"
+              :class="{ active: spreadMode === 'facing' }"
+              :aria-label="t('reader.facingPages')"
+              :title="t('reader.facingPages')"
+              :aria-pressed="spreadMode === 'facing'"
+              @click="setSpreadMode('facing')"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.75 4h6v12h-6zM11.25 4h6v12h-6z" /></svg>
+            </button>
+            <button
+              type="button"
+              :class="{ active: spreadMode === 'book' }"
+              :aria-label="t('reader.bookView')"
+              :title="t('reader.bookView')"
+              :aria-pressed="spreadMode === 'book'"
+              @click="setSpreadMode('book')"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 4.5c2.8-.5 5.1.1 7.5 1.8v10c-2.4-1.7-4.7-2.3-7.5-1.8zM17.5 4.5c-2.8-.5-5.1.1-7.5 1.8v10c2.4-1.7 4.7-2.3 7.5-1.8z" /></svg>
+            </button>
+          </div>
           <button
             type="button"
             class="reader-tool"
@@ -3172,7 +3530,6 @@ onBeforeUnmount(() => {
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 8h3l3-3v10l-3-3H4zM13 7.2a4 4 0 0 1 0 5.6M14.9 5.4a6.5 6.5 0 0 1 0 9.2" /></svg>
             <span>{{ ttsState !== 'stopped' ? t('tts.readingNow') : t('tts.title') }}</span>
           </button>
-        </template>
         </div>
 
         <span class="toolbar-spacer" />
@@ -3186,9 +3543,33 @@ onBeforeUnmount(() => {
           >
             <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l3.75 3.75a1 1 0 0 0 1.4-1.42l-3.74-3.74A7.5 7.5 0 0 0 10.5 3zM5 10.5a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0z"/></svg>
           </button>
-          <button class="icon-btn" :title="`${t('paper.fullscreen')} (F)`" @click="toggleFullscreen">
+          <button class="icon-btn" :title="`${t('reader.print')} (${primaryShortcutLabel} P)`" @click="printDocument">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/></svg>
+          </button>
+          <button class="icon-btn" :title="`${t('reader.slideshow')} (F5)`" @click="enterPresentation">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 4h16v12H4zM9 20h6M12 16v4m-2.5-9V8l4 3-4 3z"/></svg>
+          </button>
+          <button class="icon-btn" :title="`${t('reader.fullscreen')} (F)`" @click="toggleFullscreen">
             <svg viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>
           </button>
+          <div class="reader-more-wrap">
+            <button
+              class="icon-btn"
+              :class="{ 'icon-active': moreMenu }"
+              :title="t('reader.moreActions')"
+              :aria-expanded="moreMenu"
+              @click="moreMenu = !moreMenu"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm6 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm6 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+            </button>
+            <div v-if="moreMenu" class="reader-more-backdrop" @click="moreMenu = false" />
+            <div v-if="moreMenu" class="reader-more-menu card" role="menu">
+              <button role="menuitem" @click="saveDocumentAs">{{ t('reader.saveAs') }}</button>
+              <button role="menuitem" @click="openDocumentFolder">{{ t('reader.openFolder') }}</button>
+              <button role="menuitem" @click="openProperties">{{ t('reader.properties') }}</button>
+              <button role="menuitem" @click="toggleDrawerTab('annotations'); moreMenu = false">{{ t('reader.comments') }}</button>
+            </div>
+          </div>
           <button
             class="icon-btn shortcut-trigger"
             :class="{ 'icon-active': shortcutsOpen }"
@@ -3200,6 +3581,44 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </header>
+
+    <button
+      v-if="isFullscreen"
+      class="fullscreen-exit"
+      :title="presentationMode ? t('reader.exitSlideshow') : t('reader.exitFullscreen')"
+      :aria-label="presentationMode ? t('reader.exitSlideshow') : t('reader.exitFullscreen')"
+      @click="presentationMode ? exitPresentation() : setFullscreen(false)"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>
+      <span>{{ presentationMode ? t('reader.exitSlideshow') : t('reader.exitFullscreen') }}</span>
+    </button>
+
+    <div v-if="presentationMode" class="presentation-controls" aria-live="polite">
+      <button :disabled="atFirstPage" :aria-label="t('reader.prevPage')" @click="prevPage">‹</button>
+      <span>{{ currentPage }} / {{ pageCount }}</span>
+      <button :disabled="atLastPage" :aria-label="t('reader.nextPage')" @click="nextPage">›</button>
+    </div>
+
+    <div v-if="propertiesOpen" class="document-dialog-mask" @click.self="propertiesOpen = false">
+      <section class="document-dialog card" role="dialog" aria-modal="true" :aria-label="t('reader.propertiesTitle')">
+        <header>
+          <div>
+            <small>PDF</small>
+            <h2>{{ t('reader.propertiesTitle') }}</h2>
+          </div>
+          <button class="icon-btn" :aria-label="t('common.close')" @click="propertiesOpen = false">×</button>
+        </header>
+        <dl>
+          <template v-for="row in propertyRows" :key="row.label">
+            <dt>{{ row.label }}</dt>
+            <dd>{{ row.value }}</dd>
+          </template>
+        </dl>
+        <footer>
+          <button class="btn btn-sm" @click="propertiesOpen = false">{{ t('common.done') }}</button>
+        </footer>
+      </section>
+    </div>
 
     <!-- BabelDOC 整本重排版翻译面板 -->
     <div v-if="bd.open" class="bd-mask" @click.self="bd.phase !== 'running' && (bd.open = false)">
@@ -3432,6 +3851,9 @@ onBeforeUnmount(() => {
           @pointerdown="onScrollerPointerDown"
           @dblclick="onScrollerDblClick"
           @wheel="onPdfWheel"
+          @touchstart="onPdfTouchStart"
+          @touchmove="onPdfTouchMove"
+          @touchend="onPdfTouchEnd"
           @contextmenu.prevent
         >
           <div class="spread-host">
@@ -3477,40 +3899,45 @@ onBeforeUnmount(() => {
           @pointerdown="onScrollerPointerDown"
           @dblclick="onScrollerDblClick"
           @wheel="onPdfWheel"
+          @touchstart="onPdfTouchStart"
+          @touchmove="onPdfTouchMove"
+          @touchend="onPdfTouchEnd"
           @contextmenu.prevent
         >
-          <div
-            v-for="n in pageCount"
-            :key="n"
-            class="p-holder"
-            :data-page="n"
-            :style="holderStyleFor(n)"
-            @click="onHolderClick($event, n)"
-          >
-            <span class="p-num">{{ n }}</span>
-            <div class="p-canvas" />
-            <div class="p-search">
-              <div
-                v-for="match in pdfSearchRectsByPage.get(n) ?? []"
-                :key="match.key"
-                class="p-search-rect"
-                :class="{ active: match.active }"
-                :style="pdfSearchRectStyle(n, match.rect)"
-              />
+          <div v-for="group in scrollPageGroups" :key="group.join('-')" class="scroll-spread-host">
+            <div
+              v-for="n in group"
+              :key="n"
+              class="p-holder"
+              :data-page="n"
+              :style="holderStyleFor(n)"
+              @click="onHolderClick($event, n)"
+            >
+              <span class="p-num">{{ n }}</span>
+              <div class="p-canvas" />
+              <div class="p-search">
+                <div
+                  v-for="match in pdfSearchRectsByPage.get(n) ?? []"
+                  :key="match.key"
+                  class="p-search-rect"
+                  :class="{ active: match.active }"
+                  :style="pdfSearchRectStyle(n, match.rect)"
+                />
+              </div>
+              <div class="p-hl">
+                <div v-for="h in pageHls.get(n) ?? []" :key="h.key" class="p-hl-rect" :style="hlStyle(n, h.r, h.a.color)" />
+              </div>
+              <!-- PDFium 几何选区 -->
+              <div v-if="liveRects && liveRects.page === n" class="p-sel">
+                <div
+                  v-for="(r, i) in liveRects.rects"
+                  :key="i"
+                  class="p-sel-rect"
+                  :style="liveRectStyle(n, r)"
+                />
+              </div>
+              <div class="p-links" />
             </div>
-            <div class="p-hl">
-              <div v-for="h in pageHls.get(n) ?? []" :key="h.key" class="p-hl-rect" :style="hlStyle(n, h.r, h.a.color)" />
-            </div>
-            <!-- PDFium 几何选区 -->
-            <div v-if="liveRects && liveRects.page === n" class="p-sel">
-              <div
-                v-for="(r, i) in liveRects.rects"
-                :key="i"
-                class="p-sel-rect"
-                :style="liveRectStyle(n, r)"
-              />
-            </div>
-            <div class="p-links" />
           </div>
         </div>
 
@@ -3907,6 +4334,178 @@ onBeforeUnmount(() => {
   flex-direction: column;
   background: var(--bg);
 }
+.paper:fullscreen,
+.paper.is-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+}
+.paper.is-fullscreen .paper-header,
+.paper.is-fullscreen .side-drawer,
+.paper.is-fullscreen .splitter,
+.paper.is-fullscreen .pane-right {
+  display: none;
+}
+.paper.is-fullscreen .paper-split {
+  background: #17191d;
+}
+.paper.is-fullscreen .pane-left,
+.paper.is-fullscreen .paged-box {
+  padding: 20px;
+  background: #17191d;
+}
+.fullscreen-exit {
+  position: fixed;
+  top: max(18px, env(safe-area-inset-top));
+  right: max(18px, env(safe-area-inset-right));
+  z-index: 92;
+  min-width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 11px;
+  background: rgba(18, 20, 24, 0.72);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 560;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(14px) saturate(130%);
+  opacity: 0.78;
+  transition: opacity 160ms ease, background-color 160ms ease, transform 120ms ease;
+}
+.fullscreen-exit:hover,
+.fullscreen-exit:focus-visible {
+  opacity: 1;
+  background: rgba(18, 20, 24, 0.9);
+}
+.fullscreen-exit:active {
+  transform: scale(0.97);
+}
+.fullscreen-exit svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.presentation-controls {
+  position: fixed;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 91;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 11px;
+  background: rgba(18, 20, 24, 0.68);
+  color: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px);
+  transform: translateX(-50%);
+  opacity: 0.45;
+  transition: opacity 160ms ease;
+}
+.presentation-controls:hover,
+.presentation-controls:focus-within {
+  opacity: 1;
+}
+.presentation-controls button {
+  width: 34px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-size: 24px;
+  line-height: 1;
+}
+.presentation-controls button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+.presentation-controls button:disabled {
+  opacity: 0.28;
+}
+.presentation-controls span {
+  min-width: 68px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.document-dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 24, 32, 0.34);
+  backdrop-filter: blur(4px);
+}
+.document-dialog {
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100dvh - 48px));
+  overflow: auto;
+  border-radius: 16px;
+  box-shadow: 0 22px 70px rgba(29, 33, 41, 0.22);
+}
+.document-dialog > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 14px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.document-dialog h2 {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.document-dialog small {
+  color: var(--brand);
+  font: 650 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+}
+.document-dialog dl {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.34fr) 1fr;
+  margin: 0;
+  padding: 8px 20px;
+}
+.document-dialog dt,
+.document-dialog dd {
+  min-width: 0;
+  margin: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.document-dialog dt {
+  color: var(--text-3);
+}
+.document-dialog dd {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.document-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 18px;
+}
 .paper-header {
   position: relative;
   z-index: 50;
@@ -4130,6 +4729,55 @@ onBeforeUnmount(() => {
   outline: 2px solid rgba(22, 100, 255, 0.55);
   outline-offset: 2px;
 }
+.page-view-segment button {
+  min-width: 36px;
+  width: 36px;
+  padding: 0;
+}
+.page-view-segment svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.reader-more-wrap {
+  position: relative;
+}
+.reader-more-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 72;
+}
+.reader-more-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 73;
+  width: 196px;
+  padding: 6px;
+  border-radius: 11px;
+  box-shadow: 0 14px 38px rgba(29, 33, 41, 0.16);
+}
+.reader-more-menu button {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: left;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.reader-more-menu button:hover,
+.reader-more-menu button:focus-visible {
+  background: var(--bg);
+  color: var(--brand);
+}
 .paper-pagenum {
   font-size: 12.5px;
   color: var(--text-3);
@@ -4204,6 +4852,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 28px 20px;
   background: #eef1f5;
+  touch-action: pan-x pan-y;
 }
 .reflow-scroll {
   flex: 1;
@@ -4303,6 +4952,7 @@ onBeforeUnmount(() => {
   display: flex;
   padding: 28px 20px;
   background: #eef1f5;
+  touch-action: pan-x pan-y;
 }
 .paged-box.is-panning,
 .pane-left.is-panning {
@@ -4319,6 +4969,21 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 16px;
   margin: auto;
+}
+.scroll-spread-host {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 16px;
+  min-width: min-content;
+  margin: 0 auto 16px;
+}
+.scroll-spread-host:last-child {
+  margin-bottom: 0;
+}
+.scroll-spread-host .p-holder {
+  flex: 0 0 auto;
+  margin: 0;
 }
 .spread-host .p-holder {
   margin: 0;
@@ -5784,6 +6449,18 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 620px) {
+  .fullscreen-exit {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
+  }
+  .fullscreen-exit span {
+    display: none;
+  }
+  .document-dialog dl {
+    grid-template-columns: 96px 1fr;
+    padding-inline: 16px;
+  }
   .paper-title span {
     display: none;
   }

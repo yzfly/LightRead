@@ -17,18 +17,18 @@ export interface ReaderPrefs {
 export interface PdfPrefs {
   /** 可见页面位图渲染引擎；文字几何与交互仍由 PDFium 提供 */
   renderer: 'mupdf' | 'pdfium'
-  /** original: 保留版式；reflow: 按文本层重排为单栏阅读 */
+  /** original: 保留版式；reflow 仅用于兼容旧设置，产品入口已移除 */
   layout: 'original' | 'reflow'
-  /** paged: 整页翻页 (阅读); scroll: 连续滚动 (细读大图) */
+  /** paged: 整页翻页；scroll: 连续滚动（默认） */
   mode: 'paged' | 'scroll'
-  /** 翻页模式缩放: fitH 适高整页 (默认) / fitW 适宽 */
+  /** 快捷适配: fitH 适高整页 / fitW 适宽（默认） */
   fit: 'fitH' | 'fitW'
   /** Sumatra 风格页布局：单页 / 对页 / 书籍封面错位双页 */
   spreadMode: 'single' | 'facing' | 'book'
 }
 
 /** 结构版本: 修正历史默认值时递增 */
-const SETTINGS_VERSION = 6
+const SETTINGS_VERSION = 7
 
 /** v3 时代曾并入用户设置的内置书库 (v4 起社区清单独立远程拉取, 此表仅供迁移清理) */
 const BUILTIN_BOOK_REPOS = [
@@ -105,8 +105,8 @@ const defaults: SettingsState = {
   pdf: {
     renderer: 'mupdf',
     layout: 'original',
-    mode: 'paged',
-    fit: 'fitH',
+    mode: 'scroll',
+    fit: 'fitW',
     spreadMode: 'single',
   },
   autoReadSeconds: 15,
@@ -154,6 +154,13 @@ function load(): SettingsState {
     // v6: 双页布尔值扩展为 Sumatra 风格的单页 / 对页 / 书籍视图。
     if ((saved.version ?? 1) < 6) {
       merged.pdf.spreadMode = saved.pdf?.spread ? 'facing' : 'single'
+    }
+    // v7: PDF 产品模型回归原版阅读，连续滚动成为默认主模式。
+    // 早期版本曾通过迁移强制所有用户使用翻页，因此在此统一纠正一次。
+    if ((saved.version ?? 1) < 7) {
+      merged.pdf.layout = 'original'
+      merged.pdf.mode = 'scroll'
+      merged.pdf.fit = 'fitW'
     }
     merged.version = SETTINGS_VERSION
     return merged

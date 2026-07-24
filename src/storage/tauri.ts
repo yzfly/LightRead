@@ -4,7 +4,7 @@
  *  - 元数据用 SQLite 索引 (tauri-plugin-sql)
  */
 import type {
-  AnnotationRec, BookMeta, CatalogSourceRec, LibraryStorage, NewBookMeta,
+  AnnotationRec, BooklistRec, BookMeta, CatalogSourceRec, LibraryStorage, NewBookMeta,
 } from './types'
 import { BUILTIN_SOURCES, getLibraryRoot, newId } from './types'
 
@@ -127,6 +127,22 @@ export class TauriStorage implements LibraryStorage {
         builtin INTEGER NOT NULL DEFAULT 0,
         added_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS booklists (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS booklist_items (
+        booklist_id TEXT NOT NULL,
+        book_id TEXT NOT NULL,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (booklist_id, book_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_booklist_items_booklist
+        ON booklist_items(booklist_id);
+      CREATE INDEX IF NOT EXISTS idx_booklist_items_book
+        ON booklist_items(book_id);
     `)
 
     for (const dir of ['books', 'covers']) {
@@ -231,6 +247,7 @@ export class TauriStorage implements LibraryStorage {
   async deleteBook(id: string) {
     const meta = await this.getBook(id)
     await this.db.execute('DELETE FROM annotations WHERE book_id = $1', [id])
+    await this.db.execute('DELETE FROM booklist_items WHERE book_id = $1', [id])
     await this.db.execute('DELETE FROM books WHERE id = $1', [id])
     if (meta) {
       const [bookPath, bookOpts] = this.loc(this.bookPath(id, meta.fileName))
@@ -269,6 +286,75 @@ export class TauriStorage implements LibraryStorage {
     } catch {
       return undefined
     }
+  }
+
+  async listBooklists() {
+    const rows = await this.db.select<Array<{
+      id: string
+      name: string
+      created_at: number
+      updated_at: number
+    }>>('SELECT * FROM booklists ORDER BY created_at DESC')
+    return rows.map((row): BooklistRec => ({
+      id: row.id,
+      name: row.name,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }))
+  }
+
+  async createBooklist(name: string) {
+    const id = newId()
+    const now = Date.now()
+    await this.db.execute(
+      'INSERT INTO booklists (id, name, created_at, updated_at) VALUES ($1, $2, $3, $4)',
+      [id, name, now, now])
+    return id
+  }
+
+  async renameBooklist(id: string, name: string) {
+    await this.db.execute(
+      'UPDATE booklists SET name = $1, updated_at = $2 WHERE id = $3',
+      [name, Date.now(), id])
+  }
+
+  async deleteBooklist(id: string) {
+    await this.db.execute('DELETE FROM booklist_items WHERE booklist_id = $1', [id])
+    await this.db.execute('DELETE FROM booklists WHERE id = $1', [id])
+  }
+
+  async listBooklistBookIds(booklistId: string) {
+    const rows = await this.db.select<Array<{ book_id: string }>>(
+      'SELECT book_id FROM booklist_items WHERE booklist_id = $1 ORDER BY added_at',
+      [booklistId])
+    return rows.map(row => row.book_id)
+  }
+
+  async addBooksToBooklist(booklistId: string, bookIds: string[]) {
+    const uniqueIds = [...new Set(bookIds)]
+    if (!uniqueIds.length) return
+    const now = Date.now()
+    for (const [index, bookId] of uniqueIds.entries()) {
+      await this.db.execute(
+        `INSERT OR IGNORE INTO booklist_items (booklist_id, book_id, added_at)
+         VALUES ($1, $2, $3)`,
+        [booklistId, bookId, now + index])
+    }
+    await this.db.execute(
+      'UPDATE booklists SET updated_at = $1 WHERE id = $2', [now, booklistId])
+  }
+
+  async removeBooksFromBooklist(booklistId: string, bookIds: string[]) {
+    const uniqueIds = [...new Set(bookIds)]
+    if (!uniqueIds.length) return
+    for (const bookId of uniqueIds) {
+      await this.db.execute(
+        'DELETE FROM booklist_items WHERE booklist_id = $1 AND book_id = $2',
+        [booklistId, bookId])
+    }
+    await this.db.execute(
+      'UPDATE booklists SET updated_at = $1 WHERE id = $2',
+      [Date.now(), booklistId])
   }
 
   async listAnnotations(bookId: string) {

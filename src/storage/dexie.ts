@@ -1,7 +1,7 @@
 /** Web 端存储实现: IndexedDB (Dexie), 书籍与封面以 Blob 存库 */
 import Dexie, { type Table } from 'dexie'
 import type {
-  AnnotationRec, BookMeta, CatalogSourceRec, LibraryStorage, NewBookMeta,
+  AnnotationRec, BooklistRec, BookMeta, CatalogSourceRec, LibraryStorage, NewBookMeta,
 } from './types'
 import { BUILTIN_SOURCES, newId } from './types'
 
@@ -9,6 +9,12 @@ interface BookRow extends BookMeta {
   /** Safari 的 IndexedDB 存 Blob 会报错, 统一存 ArrayBuffer */
   file: ArrayBuffer
   cover?: ArrayBuffer
+}
+
+interface BooklistItemRow {
+  booklistId: string
+  bookId: string
+  addedAt: number
 }
 
 /** 兼容旧数据 (Chromium 时期可能存的是 Blob) */
@@ -19,6 +25,8 @@ class LightReadDB extends Dexie {
   books!: Table<BookRow, string>
   annotations!: Table<AnnotationRec, string>
   sources!: Table<CatalogSourceRec, string>
+  booklists!: Table<BooklistRec, string>
+  booklistItems!: Table<BooklistItemRow, [string, string]>
 
   constructor() {
     super('lightread')
@@ -26,6 +34,13 @@ class LightReadDB extends Dexie {
       books: 'id, title, author, format, addedAt, lastReadAt',
       annotations: 'id, bookId, createdAt',
       sources: 'id, url, addedAt',
+    })
+    this.version(2).stores({
+      books: 'id, title, author, format, addedAt, lastReadAt',
+      annotations: 'id, bookId, createdAt',
+      sources: 'id, url, addedAt',
+      booklists: 'id, name, createdAt, updatedAt',
+      booklistItems: '[booklistId+bookId], booklistId, bookId, addedAt',
     })
   }
 }
@@ -79,9 +94,15 @@ export class DexieStorage implements LibraryStorage {
   }
 
   async deleteBook(id: string) {
-    await this.db.transaction('rw', this.db.books, this.db.annotations, async () => {
+    await this.db.transaction(
+      'rw',
+      this.db.books,
+      this.db.annotations,
+      this.db.booklistItems,
+      async () => {
       await this.db.books.delete(id)
       await this.db.annotations.where('bookId').equals(id).delete()
+      await this.db.booklistItems.where('bookId').equals(id).delete()
     })
     const url = this.coverUrls.get(id)
     if (url) {
@@ -104,6 +125,55 @@ export class DexieStorage implements LibraryStorage {
     const url = URL.createObjectURL(toBlob(row.cover, 'image/jpeg'))
     this.coverUrls.set(id, url)
     return url
+  }
+
+  async listBooklists() {
+    return this.db.booklists.orderBy('createdAt').reverse().toArray()
+  }
+
+  async createBooklist(name: string) {
+    const id = newId()
+    const now = Date.now()
+    await this.db.booklists.add({ id, name, createdAt: now, updatedAt: now })
+    return id
+  }
+
+  async renameBooklist(id: string, name: string) {
+    await this.db.booklists.update(id, { name, updatedAt: Date.now() })
+  }
+
+  async deleteBooklist(id: string) {
+    await this.db.transaction('rw', this.db.booklists, this.db.booklistItems, async () => {
+      await this.db.booklistItems.where('booklistId').equals(id).delete()
+      await this.db.booklists.delete(id)
+    })
+  }
+
+  async listBooklistBookIds(booklistId: string) {
+    const rows = await this.db.booklistItems
+      .where('booklistId').equals(booklistId)
+      .sortBy('addedAt')
+    return rows.map(row => row.bookId)
+  }
+
+  async addBooksToBooklist(booklistId: string, bookIds: string[]) {
+    const uniqueIds = [...new Set(bookIds)]
+    if (!uniqueIds.length) return
+    const now = Date.now()
+    await this.db.transaction('rw', this.db.booklists, this.db.booklistItems, async () => {
+      await this.db.booklistItems.bulkPut(
+        uniqueIds.map((bookId, index) => ({ booklistId, bookId, addedAt: now + index })))
+      await this.db.booklists.update(booklistId, { updatedAt: now })
+    })
+  }
+
+  async removeBooksFromBooklist(booklistId: string, bookIds: string[]) {
+    const uniqueIds = [...new Set(bookIds)]
+    if (!uniqueIds.length) return
+    await this.db.transaction('rw', this.db.booklists, this.db.booklistItems, async () => {
+      await this.db.booklistItems.bulkDelete(uniqueIds.map(bookId => [booklistId, bookId]))
+      await this.db.booklists.update(booklistId, { updatedAt: Date.now() })
+    })
   }
 
   async listAnnotations(bookId: string) {

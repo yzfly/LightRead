@@ -11,6 +11,7 @@ const props = defineProps<{
   /** 管理模式: 点击变为选择 */
   selectable?: boolean
   selected?: boolean
+  showBooklists?: boolean
 }>()
 
 defineEmits<{
@@ -18,6 +19,7 @@ defineEmits<{
   remove: []
   toggleSelect: []
   togglePin: []
+  addToBooklist: []
 }>()
 
 const progressText = computed(() => {
@@ -67,6 +69,14 @@ const fallbackHue = computed(() => {
         @click.stop="$emit('togglePin')"
       >
         <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M14.6 2.6a2 2 0 0 1 2.83 0l4 4a2 2 0 0 1 0 2.82l-3.18 3.18.35 2.47a2 2 0 0 1-.56 1.7l-1.1 1.1a1 1 0 0 1-1.42 0L11.6 13.9l-5.9 5.9a1 1 0 0 1-1.4-1.42l5.88-5.89-3.95-3.95a1 1 0 0 1 0-1.41l1.1-1.1a2 2 0 0 1 1.7-.57l2.47.35 3.1-3.2z"/></svg>
+      </button>
+      <button
+        v-if="!selectable && showBooklists"
+        class="booklist-action"
+        :title="t('library.addToBooklist')"
+        @click.stop="$emit('addToBooklist')"
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M5 4a2 2 0 0 1 2-2h9a3 3 0 0 1 3 3v6a1 1 0 1 1-2 0V5a1 1 0 0 0-1-1H7v14.38l4.55-2.28a1 1 0 0 1 .9 0l1.1.55a1 1 0 1 1-.9 1.79L12 18.12 6.45 20.9A1 1 0 0 1 5 20V4zm14 10a1 1 0 0 1 1 1v2h2a1 1 0 1 1 0 2h-2v2a1 1 0 1 1-2 0v-2h-2a1 1 0 1 1 0-2h2v-2a1 1 0 0 1 1-1z"/></svg>
       </button>
       <button v-if="!selectable" class="remove" :title="t('book.removeFromLibrary')" @click.stop="$emit('remove')">
         <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1v12a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1zm1 6a1 1 0 0 1 2 0v8a1 1 0 1 1-2 0V9zm4 0a1 1 0 0 1 2 0v8a1 1 0 1 1-2 0V9z"/></svg>
@@ -185,6 +195,26 @@ const fallbackHue = computed(() => {
 }
 .cover:hover .pin {
   display: flex;
+}
+.booklist-action {
+  position: absolute;
+  right: 6px;
+  top: 66px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(29, 33, 41, 0.55);
+  color: #fff;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.cover:hover .booklist-action {
+  display: flex;
+}
+.booklist-action:hover {
+  background: var(--brand);
 }
 /* 已置顶: 常显徽标 */
 .pin.pinned {

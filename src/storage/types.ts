@@ -59,6 +59,14 @@ export interface CatalogSourceRec {
   password?: string
 }
 
+/** 用户创建的书单。书籍归属关系单独存储，删除书单不会删除书籍。 */
+export interface BooklistRec {
+  id: string
+  name: string
+  createdAt: number
+  updatedAt: number
+}
+
 export interface LibraryStorage {
   /** 后端名称, 设置页展示 */
   readonly kind: 'indexeddb' | 'filesystem'
@@ -72,6 +80,14 @@ export interface LibraryStorage {
   getBookFile(id: string): Promise<Blob>
   /** 返回可直接用于 <img src> 的 URL (Object URL), 由调用方缓存, 无封面返回 undefined */
   getCoverUrl(id: string): Promise<string | undefined>
+
+  listBooklists(): Promise<BooklistRec[]>
+  createBooklist(name: string): Promise<string>
+  renameBooklist(id: string, name: string): Promise<void>
+  deleteBooklist(id: string): Promise<void>
+  listBooklistBookIds(booklistId: string): Promise<string[]>
+  addBooksToBooklist(booklistId: string, bookIds: string[]): Promise<void>
+  removeBooksFromBooklist(booklistId: string, bookIds: string[]): Promise<void>
 
   listAnnotations(bookId: string): Promise<AnnotationRec[]>
   addAnnotation(a: Omit<AnnotationRec, 'id'>): Promise<string>

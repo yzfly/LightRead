@@ -24,6 +24,7 @@ watch(paperMode, () => {
   manageMode.value = false
   selectedIds.value = new Set()
   tagFilter.value = ''
+  activeBooklistId.value = ''
   keyword.value = ''
 })
 
@@ -41,6 +42,16 @@ const tagFilter = ref('')
 const showTagModal = ref(false)
 const tagDraft = ref('')
 
+// 书单
+const activeBooklistId = ref('')
+const showBooklistCreate = ref(false)
+const showBooklistManage = ref(false)
+const showBooklistPicker = ref(false)
+const booklistDraft = ref('')
+const pickerBookIds = ref<string[]>([])
+const pickerDraft = ref('')
+const booklistRenames = ref<Record<string, string>>({})
+
 onMounted(() => library.refresh())
 
 const totalReadingTime = computed(() => {
@@ -57,8 +68,15 @@ const allTags = computed(() => {
 const kindBooks = computed(() =>
   library.books.filter(b => (b.kind ?? 'book') === pageKind.value))
 
+const activeBooklist = computed(() =>
+  library.booklists.find(item => item.id === activeBooklistId.value))
+
 const filtered = computed(() => {
   let list = kindBooks.value
+  if (!paperMode.value && activeBooklistId.value) {
+    const ids = new Set(library.booklistBookIds[activeBooklistId.value] ?? [])
+    list = list.filter(book => ids.has(book.id))
+  }
   if (tagFilter.value) list = list.filter(b => b.tags.includes(tagFilter.value))
   const kw = keyword.value.trim().toLowerCase()
   if (kw) {
@@ -239,6 +257,113 @@ async function batchPin(pin: boolean) {
   toast(pin ? t('library.pinned') : t('library.unpinned'), 'success')
 }
 
+// ---- 书单 ----
+function booklistCount(id: string) {
+  const ids = new Set(library.booklistBookIds[id] ?? [])
+  return library.books.filter(
+    book => (book.kind ?? 'book') === 'book' && ids.has(book.id)).length
+}
+
+function isBooklistNameTaken(name: string, ignoreId = '') {
+  const normalized = name.trim().toLocaleLowerCase()
+  return library.booklists.some(
+    item => item.id !== ignoreId && item.name.trim().toLocaleLowerCase() === normalized)
+}
+
+function openCreateBooklist() {
+  booklistDraft.value = ''
+  showBooklistCreate.value = true
+}
+
+async function createBooklist() {
+  const name = booklistDraft.value.trim()
+  if (!name) return
+  if (isBooklistNameTaken(name)) {
+    toast(t('library.booklistNameExists'), 'error')
+    return
+  }
+  const id = await library.createBooklist(name)
+  activeBooklistId.value = id
+  showBooklistCreate.value = false
+  booklistDraft.value = ''
+  toast(t('library.booklistCreated', { name }), 'success')
+}
+
+function openBooklistManage() {
+  booklistRenames.value = Object.fromEntries(
+    library.booklists.map(item => [item.id, item.name]))
+  showBooklistManage.value = true
+}
+
+async function renameBooklist(id: string) {
+  const name = booklistRenames.value[id]?.trim()
+  const current = library.booklists.find(item => item.id === id)
+  if (!name || !current || name === current.name) return
+  if (isBooklistNameTaken(name, id)) {
+    toast(t('library.booklistNameExists'), 'error')
+    return
+  }
+  await library.renameBooklist(id, name)
+  booklistRenames.value[id] = name
+  toast(t('library.booklistRenamed'), 'success')
+}
+
+async function deleteBooklist(id: string) {
+  const item = library.booklists.find(booklist => booklist.id === id)
+  if (!item || !confirm(t('library.deleteBooklistConfirm', { name: item.name }))) return
+  await library.deleteBooklist(id)
+  if (activeBooklistId.value === id) activeBooklistId.value = ''
+  delete booklistRenames.value[id]
+  toast(t('library.booklistDeleted'), 'success')
+}
+
+function openBooklistPicker(ids: string[]) {
+  if (!ids.length) return
+  pickerBookIds.value = [...new Set(ids)]
+  pickerDraft.value = ''
+  showBooklistPicker.value = true
+}
+
+async function addPickerBooks(booklistId: string) {
+  const item = library.booklists.find(booklist => booklist.id === booklistId)
+  if (!item) return
+  await library.addBooksToBooklist(booklistId, pickerBookIds.value)
+  toast(t('library.addedToBooklist', {
+    count: pickerBookIds.value.length,
+    name: item.name,
+  }), 'success')
+  showBooklistPicker.value = false
+}
+
+async function createBooklistAndAdd() {
+  const name = pickerDraft.value.trim()
+  if (!name) return
+  if (isBooklistNameTaken(name)) {
+    toast(t('library.booklistNameExists'), 'error')
+    return
+  }
+  const id = await library.createBooklist(name)
+  await library.addBooksToBooklist(id, pickerBookIds.value)
+  toast(t('library.addedToBooklist', {
+    count: pickerBookIds.value.length,
+    name,
+  }), 'success')
+  showBooklistPicker.value = false
+  pickerDraft.value = ''
+}
+
+async function removeSelectedFromBooklist() {
+  if (!activeBooklist.value || !selectedIds.value.size) return
+  const count = selectedIds.value.size
+  await library.removeBooksFromBooklist(
+    activeBooklist.value.id, [...selectedIds.value])
+  selectedIds.value = new Set()
+  toast(t('library.removedFromBooklist', {
+    count,
+    name: activeBooklist.value.name,
+  }), 'success')
+}
+
 // ---- 分类 (标签) 管理: 重命名 / 删除 ----
 const showTagManage = ref(false)
 const tagRenames = ref<Record<string, string>>({})
@@ -336,6 +461,44 @@ async function batchClearTags() {
       <input ref="fileInput" type="file" multiple :accept="ACCEPT" hidden @change="onPick" />
     </header>
 
+    <!-- 书单: 一级内容分组，可与标签和搜索组合筛选 -->
+    <section v-if="!paperMode" class="booklist-section">
+      <div class="booklist-heading">
+        <span>{{ t('library.booklists') }}</span>
+        <button class="booklist-text-action" @click="openCreateBooklist">
+          <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M11 13H5a1 1 0 1 1 0-2h6V5a1 1 0 1 1 2 0v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6z"/></svg>
+          {{ t('library.newBooklist') }}
+        </button>
+        <button
+          v-if="library.booklists.length"
+          class="booklist-text-action"
+          @click="openBooklistManage"
+        >{{ t('library.manageBooklists') }}</button>
+      </div>
+      <div class="booklist-row">
+        <button
+          class="booklist-chip"
+          :class="{ active: !activeBooklistId }"
+          @click="activeBooklistId = ''"
+        >
+          <span class="booklist-icon">⌂</span>
+          <span>{{ t('library.allBooks') }}</span>
+          <span class="booklist-count">{{ kindBooks.length }}</span>
+        </button>
+        <button
+          v-for="item in library.booklists"
+          :key="item.id"
+          class="booklist-chip"
+          :class="{ active: activeBooklistId === item.id }"
+          @click="activeBooklistId = item.id"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M5 4a2 2 0 0 1 2-2h9a3 3 0 0 1 3 3v15a1 1 0 0 1-1.45.9L12 18.12 6.45 20.9A1 1 0 0 1 5 20V4zm2 0v14.38l4.55-2.28a1 1 0 0 1 .9 0L17 18.38V5a1 1 0 0 0-1-1H7z"/></svg>
+          <span>{{ item.name }}</span>
+          <span class="booklist-count">{{ booklistCount(item.id) }}</span>
+        </button>
+      </div>
+    </section>
+
     <!-- 标签筛选 -->
     <div v-if="allTags.length" class="tag-row">
       <button class="tag-chip" :class="{ active: !tagFilter }" @click="tagFilter = ''">{{ t('library.filterAll') }}</button>
@@ -370,6 +533,18 @@ async function batchClearTags() {
       </p>
     </div>
 
+    <div
+      v-else-if="activeBooklist && !filtered.length && !keyword.trim() && !tagFilter"
+      class="empty booklist-empty"
+    >
+      <div class="empty-icon">🔖</div>
+      <p>{{ t('library.emptyBooklist') }}</p>
+      <p class="hint">{{ t('library.emptyBooklistHint') }}</p>
+      <button class="btn btn-primary" @click="activeBooklistId = ''; manageMode = true">
+        {{ t('library.chooseBooks') }}
+      </button>
+    </div>
+
     <div v-else class="grid">
       <BookCard
         v-for="book in filtered"
@@ -378,10 +553,12 @@ async function batchClearTags() {
         :cover-url="library.coverUrls[book.id]"
         :selectable="manageMode"
         :selected="selectedIds.has(book.id)"
+        :show-booklists="!paperMode"
         @open="openBook(book)"
         @remove="removeBook(book)"
         @toggle-select="toggleSelect(book.id)"
         @toggle-pin="togglePin(book)"
+        @add-to-booklist="openBooklistPicker([book.id])"
       />
     </div>
 
@@ -394,11 +571,130 @@ async function batchClearTags() {
       <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchMoveKind">
         {{ paperMode ? t('library.moveToBooks') : t('library.moveToPapers') }}
       </button>
+      <button
+        v-if="!paperMode"
+        class="btn btn-sm"
+        :disabled="!selectedIds.size"
+        @click="openBooklistPicker([...selectedIds])"
+      >{{ t('library.addToBooklist') }}</button>
+      <button
+        v-if="activeBooklist"
+        class="btn btn-sm"
+        :disabled="!selectedIds.size"
+        @click="removeSelectedFromBooklist"
+      >{{ t('library.removeFromBooklist') }}</button>
       <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPin(true)">{{ t('library.pin') }}</button>
       <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPin(false)">{{ t('library.unpin') }}</button>
       <button class="btn btn-sm" :disabled="!selectedIds.size" @click="showTagModal = true">{{ t('library.setTags') }}</button>
       <button class="btn btn-sm btn-danger" :disabled="!selectedIds.size" @click="batchDelete">{{ t('common.delete') }}</button>
       <button class="btn btn-sm" @click="toggleManage">{{ t('common.done') }}</button>
+    </div>
+
+    <!-- 新建书单 -->
+    <div v-if="showBooklistCreate" class="modal-mask" @click.self="showBooklistCreate = false">
+      <div class="modal booklist-modal">
+        <h3>{{ t('library.newBooklist') }}</h3>
+        <p class="modal-description">{{ t('library.booklistCreateHint') }}</p>
+        <input
+          v-model="booklistDraft"
+          class="input"
+          :placeholder="t('library.booklistNamePlaceholder')"
+          maxlength="40"
+          autofocus
+          @keyup.enter="createBooklist"
+        />
+        <div class="form-actions">
+          <button class="btn btn-sm" @click="showBooklistCreate = false">{{ t('common.cancel') }}</button>
+          <button class="btn btn-sm btn-primary" :disabled="!booklistDraft.trim()" @click="createBooklist">
+            {{ t('library.createBooklist') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 选择书单 -->
+    <div v-if="showBooklistPicker" class="modal-mask" @click.self="showBooklistPicker = false">
+      <div class="modal booklist-modal">
+        <h3>{{ t('library.chooseBooklist') }}</h3>
+        <p class="modal-description">
+          {{ t('library.chooseBooklistHint', { count: pickerBookIds.length }) }}
+        </p>
+        <div v-if="library.booklists.length" class="booklist-picker-list">
+          <button
+            v-for="item in library.booklists"
+            :key="item.id"
+            class="booklist-picker-row"
+            @click="addPickerBooks(item.id)"
+          >
+            <span class="booklist-picker-icon">
+              <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M5 4a2 2 0 0 1 2-2h9a3 3 0 0 1 3 3v15a1 1 0 0 1-1.45.9L12 18.12 6.45 20.9A1 1 0 0 1 5 20V4zm2 0v14.38l4.55-2.28a1 1 0 0 1 .9 0L17 18.38V5a1 1 0 0 0-1-1H7z"/></svg>
+            </span>
+            <span class="booklist-picker-name">{{ item.name }}</span>
+            <span class="booklist-picker-count">{{ t('library.booklistBooks', { count: booklistCount(item.id) }) }}</span>
+            <span class="booklist-picker-add">{{ t('common.add') }}</span>
+          </button>
+        </div>
+        <div class="booklist-create-inline">
+          <div class="inline-label">{{ t('library.createNewBooklist') }}</div>
+          <div class="inline-fields">
+            <input
+              v-model="pickerDraft"
+              class="input"
+              :placeholder="t('library.booklistNamePlaceholder')"
+              maxlength="40"
+              @keyup.enter="createBooklistAndAdd"
+            />
+            <button
+              class="btn btn-sm btn-primary"
+              :disabled="!pickerDraft.trim()"
+              @click="createBooklistAndAdd"
+            >{{ t('library.createAndAdd') }}</button>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-sm" @click="showBooklistPicker = false">{{ t('common.cancel') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 管理书单 -->
+    <div v-if="showBooklistManage" class="modal-mask" @click.self="showBooklistManage = false">
+      <div class="modal booklist-modal">
+        <div class="modal-title-row">
+          <h3>{{ t('library.manageBooklists') }}</h3>
+          <button class="btn btn-sm" @click="showBooklistManage = false; openCreateBooklist()">
+            {{ t('library.newBooklist') }}
+          </button>
+        </div>
+        <p class="modal-description">{{ t('library.manageBooklistsHint') }}</p>
+        <div class="booklist-manage-list">
+          <div v-for="item in library.booklists" :key="item.id" class="booklist-manage-row">
+            <input
+              v-model="booklistRenames[item.id]"
+              class="input"
+              maxlength="40"
+              @keyup.enter="renameBooklist(item.id)"
+            />
+            <span class="booklist-manage-count">
+              {{ t('library.booklistBooks', { count: booklistCount(item.id) }) }}
+            </span>
+            <button
+              class="btn btn-sm"
+              :disabled="!booklistRenames[item.id]?.trim() || booklistRenames[item.id].trim() === item.name"
+              @click="renameBooklist(item.id)"
+            >{{ t('common.save') }}</button>
+            <button class="btn btn-sm btn-danger" @click="deleteBooklist(item.id)">
+              {{ t('common.delete') }}
+            </button>
+          </div>
+          <p v-if="!library.booklists.length" class="tag-manage-empty">
+            {{ t('library.noBooklists') }}
+          </p>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-sm" @click="showBooklistManage = false">{{ t('common.close') }}</button>
+        </div>
+      </div>
     </div>
 
     <!-- 批量标签弹窗 -->
@@ -518,6 +814,94 @@ async function batchClearTags() {
   grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
   gap: 20px 16px;
 }
+.booklist-section {
+  margin: -2px 0 18px;
+  padding: 13px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(110deg, color-mix(in srgb, var(--brand-light) 48%, transparent), transparent 52%),
+    var(--card);
+}
+.booklist-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+.booklist-text-action {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.booklist-heading > span + .booklist-text-action {
+  margin-left: auto;
+}
+.booklist-text-action:hover {
+  color: var(--brand);
+}
+.booklist-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 1px;
+  scrollbar-width: none;
+}
+.booklist-row::-webkit-scrollbar {
+  display: none;
+}
+.booklist-chip {
+  flex: 0 0 auto;
+  min-width: 112px;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.booklist-chip:hover {
+  border-color: color-mix(in srgb, var(--brand) 46%, var(--border));
+  color: var(--text);
+}
+.booklist-chip.active {
+  border-color: color-mix(in srgb, var(--brand) 58%, var(--border));
+  background: var(--brand-light);
+  color: var(--brand);
+}
+.booklist-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+.booklist-count {
+  min-width: 20px;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-3) 11%, transparent);
+  color: currentColor;
+  font-size: 10px;
+  text-align: center;
+}
+.booklist-empty {
+  padding-top: 52px;
+}
 .tag-row {
   display: flex;
   gap: 8px;
@@ -571,6 +955,116 @@ async function batchClearTags() {
   font-size: 12px;
   color: var(--text-3);
   white-space: nowrap;
+}
+.booklist-modal {
+  width: min(560px, calc(100vw - 40px));
+}
+.booklist-modal > .input {
+  width: 100%;
+}
+.modal-description {
+  margin: -7px 0 14px;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.form-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.modal-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+.modal-title-row h3 {
+  margin: 0;
+}
+.booklist-picker-list,
+.booklist-manage-list {
+  max-height: 300px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.booklist-picker-row {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+}
+.booklist-picker-row:hover {
+  border-color: var(--brand);
+  background: var(--brand-light);
+}
+.booklist-picker-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--brand-light);
+  color: var(--brand);
+  display: grid;
+  place-items: center;
+}
+.booklist-picker-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 550;
+}
+.booklist-picker-count,
+.booklist-manage-count {
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.booklist-picker-add {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 550;
+}
+.booklist-create-inline {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+.inline-label {
+  margin-bottom: 7px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.inline-fields {
+  display: flex;
+  gap: 8px;
+}
+.inline-fields .input {
+  min-width: 0;
+  flex: 1;
+}
+.booklist-manage-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.booklist-manage-row .input {
+  min-width: 0;
+  height: 30px;
 }
 .import-group {
   position: relative;
@@ -635,6 +1129,7 @@ async function batchClearTags() {
   margin-top: 20px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 10px 16px;
   box-shadow: var(--shadow-lg);
@@ -656,6 +1151,16 @@ async function batchClearTags() {
   .search {
     width: 100%;
     order: 5;
+  }
+  .booklist-section {
+    padding-inline: 11px;
+  }
+  .booklist-manage-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .booklist-manage-count {
+    grid-column: 1;
+    grid-row: 2;
   }
 }
 .hint {

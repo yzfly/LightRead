@@ -16,7 +16,7 @@ for (let i = 1; i <= 5; i++) {
 }
 writeFileSync(txtPath, chapters.join('\n\n'), 'utf-8')
 
-// 2. 四页最小合法 PDF（覆盖小字号清晰度、适高、双页与双页翻页）
+// 2. 四页最小合法 PDF（覆盖默认滚动、小字号清晰度、适配、双页与书籍视图）
 const pdfPageText = page => `BT
 /F1 24 Tf 100 700 Td (Hello LightRead PDF ${page}) Tj
 /F1 10 Tf 0 -36 Td (The quick brown fox jumps over the lazy dog 0123456789.) Tj
@@ -123,7 +123,50 @@ await step('导入 PDF', async () => {
 })
 await page.screenshot({ path: join(TMP, 'shots', '02-library.png') })
 
+await step('新建书单并加入单本书籍', async () => {
+  await page.getByRole('button', { name: '新建书单', exact: true }).click()
+  await page.getByPlaceholder('例如：2026 阅读计划').fill('产品精读')
+  await page.getByRole('button', { name: '创建书单', exact: true }).click()
+  await page.getByRole('button', { name: /全部藏书/ }).click()
+  const txtCard = page.locator('.book-card:has-text("测试小说")')
+  await txtCard.hover()
+  await txtCard.locator('.booklist-action').click()
+  await page.locator('.booklist-picker-row:has-text("产品精读")').click()
+  await page.locator('.booklist-chip:has-text("产品精读")').click()
+  await page.waitForFunction(() =>
+    document.querySelectorAll('.book-card').length === 1
+    && document.querySelector('.book-card')?.textContent?.includes('测试小说'))
+})
+
+await step('书单支持移除、批量加入与持久化', async () => {
+  await page.getByRole('button', { name: '管理', exact: true }).click()
+  await page.locator('.book-card:has-text("测试小说")').click()
+  await page.getByRole('button', { name: '从书单移除', exact: true }).click()
+  await page.waitForSelector('text=这个书单还是空的')
+
+  await page.getByRole('button', { name: /全部藏书/ }).click()
+  await page.getByRole('button', { name: '全选', exact: true }).click()
+  await page.getByRole('button', { name: '加入书单', exact: true }).click()
+  await page.locator('.booklist-picker-row:has-text("产品精读")').click()
+  await page.locator('.booklist-chip:has-text("产品精读")').click()
+  await page.waitForFunction(() => document.querySelectorAll('.book-card').length === 2)
+
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.locator('.booklist-chip:has-text("产品精读")').click()
+  await page.waitForFunction(() => document.querySelectorAll('.book-card').length === 2)
+
+  await page.getByRole('button', { name: '管理书单', exact: true }).click()
+  await page.locator('.booklist-manage-row input').fill('产品深读')
+  await page.locator('.booklist-manage-row').getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.waitForSelector('.booklist-chip:has-text("产品深读")')
+})
+await page.screenshot({ path: join(TMP, 'shots', '02-booklist.png') })
+
 await step('打开 TXT 阅读器并渲染正文', async () => {
+  if (await page.locator('.book-card .select-mark').count()) {
+    await page.getByRole('button', { name: '完成', exact: true }).last().click()
+  }
   await page.click('.book-card:has-text("测试小说")')
   await page.waitForSelector('foliate-view', { timeout: 15000 })
   // foliate 渲染在 paginator 的 shadow DOM iframe 里, 通过 view API 取内容
@@ -169,25 +212,30 @@ await step('返回书架并打开 PDF', async () => {
   await page.click('button[title="返回藏书"]')
   await page.waitForSelector('.book-card', { timeout: 8000 })
   await page.click('.book-card:has-text("test-doc")')
-  // 藏书 PDF 统一走 PDF 阅读器，默认 MuPDF 渲染 + 翻页 + 适高
+  // 藏书 PDF 统一走 PDF 阅读器，默认 MuPDF 渲染 + 连续滚动 + 适宽
   await page.waitForSelector('.p-holder canvas', { timeout: 15000 })
 })
 await page.screenshot({ path: join(TMP, 'shots', '06-pdf.png') })
 
-await step('PDF 默认适高', async () => {
+await step('PDF 默认连续滚动与适宽', async () => {
   const fit = await page.evaluate(() => {
-    const box = document.querySelector('.paged-box')
-    const canvas = document.querySelector('.spread-host canvas')
-    return { boxH: box?.clientHeight ?? 0, canvasH: parseFloat(canvas?.style.height ?? '0') }
+    const box = document.querySelector('.pane-left')
+    const canvas = document.querySelector('.pane-left canvas')
+    return {
+      hasScrollMode: !!document.querySelector('.reader-segment button.active')?.textContent?.includes('滚动'),
+      boxW: box?.clientWidth ?? 0,
+      canvasW: parseFloat(canvas?.style.width ?? '0'),
+    }
   })
-  if (!(fit.canvasH <= fit.boxH && fit.canvasH > fit.boxH * 0.8)) {
-    throw new Error(`页高未适高: ${Math.round(fit.canvasH)} / ${fit.boxH}`)
+  if (!fit.hasScrollMode) throw new Error('默认模式不是滚动')
+  if (!(fit.canvasW <= fit.boxW && fit.canvasW > fit.boxW * 0.8)) {
+    throw new Error(`页宽未适宽: ${Math.round(fit.canvasW)} / ${fit.boxW}`)
   }
 })
 
 await step('PDF 画布按设备像素显示且文字无彩色雾边', async () => {
   const quality = await page.evaluate(() => {
-    const canvas = document.querySelector('.spread-host canvas')
+    const canvas = document.querySelector('.pane-left canvas')
     if (!(canvas instanceof HTMLCanvasElement)) return null
     const rect = canvas.getBoundingClientRect()
     const pixels = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data
@@ -212,6 +260,20 @@ await step('PDF 画布按设备像素显示且文字无彩色雾边', async () =
   }
   if (quality.renderer !== 'mupdf') throw new Error(`清晰渲染引擎未启用: ${quality.renderer || 'unknown'}`)
   if (quality.colored) throw new Error(`文字存在 ${quality.colored} 个 LCD 彩色雾边像素`)
+})
+
+await step('PDF 可切换翻页并一键适高', async () => {
+  await page.getByRole('button', { name: '翻页', exact: true }).click()
+  await page.getByRole('button', { name: '适高', exact: true }).click()
+  await page.waitForSelector('.paged-box .p-holder canvas', { timeout: 8000 })
+  const fit = await page.evaluate(() => {
+    const box = document.querySelector('.paged-box')
+    const canvas = document.querySelector('.spread-host canvas')
+    return { boxH: box?.clientHeight ?? 0, canvasH: parseFloat(canvas?.style.height ?? '0') }
+  })
+  if (!(fit.canvasH <= fit.boxH && fit.canvasH > fit.boxH * 0.8)) {
+    throw new Error(`页高未适高: ${Math.round(fit.canvasH)} / ${fit.boxH}`)
+  }
 })
 
 await step('PDF 200% 使用 96 DPI 百分比语义且不放大位图', async () => {
@@ -302,23 +364,62 @@ await step('PDF 渲染引擎可切换为 PDFium', async () => {
   if (renderer !== 'pdfium') throw new Error(`PDFium 渲染引擎未启用: ${renderer || 'unknown'}`)
 })
 
-await step('PDF 可切换流式阅读并返回原页', async () => {
-  await page.getByRole('button', { name: '流式', exact: true }).click()
-  await page.waitForSelector('.reflow-page', { timeout: 10000 })
-  const text = await page.locator('.reflow-article').innerText()
-  if (!text.includes('Hello LightRead PDF 1') || !text.includes('Small body text')) {
-    throw new Error('流式正文未按 PDF 文本层生成')
+await step('PDF 已移除流式阅读入口', async () => {
+  if (await page.getByRole('button', { name: '流式', exact: true }).count()) {
+    throw new Error('仍显示流式阅读入口')
   }
-  if (await page.locator('.pane-left-wrap canvas').count()) throw new Error('流式模式仍在显示 PDF 位图')
-
-  await page.locator('.dock-zoom', { hasText: 'Aa' }).click()
-  await page.locator('.reflow-settings input[type="range"]').first().fill('22')
-  const fontSize = await page.locator('.reflow-article').evaluate(el => getComputedStyle(el).fontSize)
-  if (fontSize !== '22px') throw new Error(`流式字号未生效: ${fontSize}`)
-  await page.locator('.zoom-backdrop').click({ position: { x: 4, y: 4 } })
-
-  await page.getByRole('button', { name: '第 1 页 · 查看原版', exact: true }).click()
   await page.waitForSelector('.p-holder canvas', { timeout: 10000 })
+})
+
+await step('PDF 文件属性可查看', async () => {
+  await page.getByRole('button', { name: '更多操作', exact: true }).click()
+  await page.getByRole('menuitem', { name: '文件属性', exact: true }).click()
+  await page.waitForSelector('.document-dialog')
+  const properties = await page.locator('.document-dialog').innerText()
+  for (const value of ['test-doc.pdf', '4', 'PDF 版本', '页面尺寸']) {
+    if (!properties.includes(value)) throw new Error(`文件属性缺少: ${value}`)
+  }
+  await page.locator('.document-dialog footer button').click()
+})
+
+await step('PDF 网页版可另存为原文件', async () => {
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '更多操作', exact: true }).click()
+  await page.getByRole('menuitem', { name: '另存为', exact: true }).click()
+  const download = await downloadPromise
+  if (download.suggestedFilename() !== 'test-doc.pdf') {
+    throw new Error(`另存文件名异常: ${download.suggestedFilename()}`)
+  }
+})
+
+await step('PDF 无边框全屏保留悬浮退出按钮', async () => {
+  await page.getByRole('button', { name: '全屏阅读 (F)', exact: true }).click()
+  await page.waitForFunction(() => !!document.fullscreenElement)
+  const headerDisplay = await page.locator('.paper-header').evaluate(el => getComputedStyle(el).display)
+  if (headerDisplay !== 'none') throw new Error(`全屏仍显示工具栏: ${headerDisplay}`)
+  await page.waitForSelector('.fullscreen-exit')
+  await page.locator('.fullscreen-exit').click()
+  await page.waitForFunction(() => !document.fullscreenElement)
+})
+
+await step('PDF 幻灯片支持逐页与退出', async () => {
+  await page.getByRole('button', { name: '幻灯片放映 (F5)', exact: true }).click()
+  await page.waitForSelector('.paper.is-presentation .presentation-controls')
+  const before = await page.locator('.page-input').inputValue()
+  await page.locator('.presentation-controls button').last().click()
+  await page.waitForFunction(value => document.querySelector('.page-input')?.value !== value, before)
+  await page.locator('.fullscreen-exit').click()
+  await page.waitForSelector('.paper.is-presentation', { state: 'detached' })
+})
+
+await step('PDF 书籍视图支持连续滚动双页', async () => {
+  await page.getByRole('button', { name: '滚动', exact: true }).click()
+  await page.getByRole('button', { name: '书籍视图', exact: true }).click()
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('.scroll-spread-host')]
+      .some(group => group.querySelectorAll('.p-holder').length === 2),
+  null, { timeout: 8000 })
+  await page.getByRole('button', { name: '单页', exact: true }).click()
 })
 
 await step('PDF 自动阅读按模式滚动或翻页', async () => {
@@ -344,7 +445,7 @@ await step('PDF 自动阅读按模式滚动或翻页', async () => {
 })
 
 await step('PDF 双页与翻页', async () => {
-  await page.click('.paper-actions .reader-tool:has-text("双页")')
+  await page.getByRole('button', { name: '对页', exact: true }).click()
   await page.waitForFunction(() => document.querySelectorAll('.spread-host canvas').length === 2, null, { timeout: 8000 })
   await page.screenshot({ path: join(TMP, 'shots', '06b-pdf-two-page.png') })
   await page.locator('.paper-actions').screenshot({ path: join(TMP, 'shots', '06c-pdf-toolbar.png') })
