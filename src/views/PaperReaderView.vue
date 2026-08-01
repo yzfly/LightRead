@@ -1127,7 +1127,7 @@ function tocNavigate(href: string) {
   pushBack()
   const yOffset = y ? Math.max(0, parseFloat(y) * displaySizeOf(parseInt(p, 10)).sy - 60) : 0
   gotoPage(parseInt(p, 10), false, yOffset)
-  closeDrawer()
+  if (!isFullscreen.value) closeDrawer()
 }
 
 /* ================= 划词: 高亮 / 想法 / 复制 / AI 翻译 ================= */
@@ -3583,6 +3583,17 @@ onBeforeUnmount(() => {
     </header>
 
     <button
+      v-if="isFullscreen && !presentationMode && !tocOpen"
+      class="fullscreen-toc-toggle"
+      :title="t('reader.toc')"
+      :aria-label="t('reader.toc')"
+      @click="setDrawerTab('toc')"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h9" /></svg>
+      <span>{{ t('reader.toc') }}</span>
+    </button>
+
+    <button
       v-if="isFullscreen"
       class="fullscreen-exit"
       :title="presentationMode ? t('reader.exitSlideshow') : t('reader.exitFullscreen')"
@@ -3693,7 +3704,11 @@ onBeforeUnmount(() => {
 
     <div v-else class="paper-split">
       <!-- 目录 / 缩略图 / 标注复用稳定侧栏，切换内容时正文宽度不反复跳动。 -->
-      <aside v-show="drawerOpen" class="side-drawer">
+      <aside
+        v-show="drawerOpen"
+        class="side-drawer"
+        :class="{ 'fullscreen-toc-drawer': isFullscreen && tocOpen && !presentationMode }"
+      >
         <div class="drawer-head">
           <div class="drawer-tabs" role="tablist">
             <button
@@ -3704,6 +3719,7 @@ onBeforeUnmount(() => {
               @click="setDrawerTab('toc')"
             >{{ t('reader.toc') }}</button>
             <button
+              v-if="!isFullscreen"
               type="button"
               role="tab"
               :class="{ active: thumbnailOpen }"
@@ -3711,6 +3727,7 @@ onBeforeUnmount(() => {
               @click="setDrawerTab('thumbnails')"
             >{{ t('reader.thumbnails') }}</button>
             <button
+              v-if="!isFullscreen"
               type="button"
               role="tab"
               :class="{ active: annoOpen }"
@@ -4354,10 +4371,10 @@ onBeforeUnmount(() => {
   padding: 20px;
   background: #17191d;
 }
-.fullscreen-exit {
+.fullscreen-exit,
+.fullscreen-toc-toggle {
   position: fixed;
   top: max(18px, env(safe-area-inset-top));
-  right: max(18px, env(safe-area-inset-right));
   z-index: 92;
   min-width: 42px;
   height: 42px;
@@ -4377,15 +4394,25 @@ onBeforeUnmount(() => {
   opacity: 0.78;
   transition: opacity 160ms ease, background-color 160ms ease, transform 120ms ease;
 }
+.fullscreen-exit {
+  right: max(18px, env(safe-area-inset-right));
+}
+.fullscreen-toc-toggle {
+  left: max(18px, env(safe-area-inset-left));
+}
 .fullscreen-exit:hover,
-.fullscreen-exit:focus-visible {
+.fullscreen-exit:focus-visible,
+.fullscreen-toc-toggle:hover,
+.fullscreen-toc-toggle:focus-visible {
   opacity: 1;
   background: rgba(18, 20, 24, 0.9);
 }
-.fullscreen-exit:active {
+.fullscreen-exit:active,
+.fullscreen-toc-toggle:active {
   transform: scale(0.97);
 }
-.fullscreen-exit svg {
+.fullscreen-exit svg,
+.fullscreen-toc-toggle svg {
   width: 18px;
   height: 18px;
   fill: none;
@@ -4393,6 +4420,9 @@ onBeforeUnmount(() => {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.paper.is-fullscreen .side-drawer.fullscreen-toc-drawer {
+  display: flex;
 }
 .presentation-controls {
   position: fixed;
@@ -6449,12 +6479,14 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 620px) {
-  .fullscreen-exit {
+  .fullscreen-exit,
+  .fullscreen-toc-toggle {
     width: 42px;
     min-width: 42px;
     padding: 0;
   }
-  .fullscreen-exit span {
+  .fullscreen-exit span,
+  .fullscreen-toc-toggle span {
     display: none;
   }
   .document-dialog dl {

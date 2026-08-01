@@ -27,7 +27,7 @@ const pdfStream = page => {
   return `<< /Length ${body.length} >> stream\n${body}\nendstream`
 }
 const pdfContent = `%PDF-1.4
-1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+1 0 obj << /Type /Catalog /Pages 2 0 R /Outlines 12 0 R /PageMode /UseOutlines >> endobj
 2 0 obj << /Type /Pages /Kids [3 0 R 6 0 R 8 0 R 10 0 R] /Count 4 >> endobj
 3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
 4 0 obj ${pdfStream(1)} endobj
@@ -38,7 +38,10 @@ const pdfContent = `%PDF-1.4
 9 0 obj ${pdfStream(3)} endobj
 10 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 11 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
 11 0 obj ${pdfStream(4)} endobj
-trailer << /Root 1 0 R /Size 12 >>
+12 0 obj << /Type /Outlines /First 13 0 R /Last 14 0 R /Count 2 >> endobj
+13 0 obj << /Title (Chapter One) /Parent 12 0 R /Next 14 0 R /Dest [3 0 R /XYZ null 792 null] >> endobj
+14 0 obj << /Title (Chapter Three) /Parent 12 0 R /Prev 13 0 R /Dest [8 0 R /XYZ null 792 null] >> endobj
+trailer << /Root 1 0 R /Size 15 >>
 %%EOF`
 const pdfPath = join(TMP, 'test-doc.pdf')
 writeFileSync(pdfPath, pdfContent)
@@ -392,14 +395,25 @@ await step('PDF 网页版可另存为原文件', async () => {
   }
 })
 
-await step('PDF 无边框全屏保留悬浮退出按钮', async () => {
+await step('PDF 全屏支持目录侧栏与跳转', async () => {
+  const pageBefore = await page.locator('.page-input').inputValue()
   await page.getByRole('button', { name: '全屏阅读 (F)', exact: true }).click()
   await page.waitForFunction(() => !!document.fullscreenElement)
   const headerDisplay = await page.locator('.paper-header').evaluate(el => getComputedStyle(el).display)
   if (headerDisplay !== 'none') throw new Error(`全屏仍显示工具栏: ${headerDisplay}`)
+  await page.locator('.fullscreen-toc-toggle').click()
+  await page.waitForSelector('.fullscreen-toc-drawer .toc-item:has-text("Chapter Three")')
+  await page.locator('.fullscreen-toc-drawer .toc-item:has-text("Chapter Three")').click()
+  await page.waitForFunction(() => document.querySelector('.page-input')?.value === '3')
+  if (!await page.locator('.fullscreen-toc-drawer').isVisible()) throw new Error('目录跳转后侧栏被关闭')
+  if (!await page.evaluate(() => !!document.fullscreenElement)) throw new Error('目录跳转后退出了全屏')
+  await page.locator('.fullscreen-toc-drawer .drawer-head .icon-btn').click()
   await page.waitForSelector('.fullscreen-exit')
   await page.locator('.fullscreen-exit').click()
   await page.waitForFunction(() => !document.fullscreenElement)
+  await page.locator('.page-input').fill(pageBefore)
+  await page.locator('.page-input').press('Enter')
+  await page.waitForFunction(value => document.querySelector('.page-input')?.value === value, pageBefore)
 })
 
 await step('PDF 幻灯片支持逐页与退出', async () => {
