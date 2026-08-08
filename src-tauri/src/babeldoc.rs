@@ -14,8 +14,89 @@ use tauri::{AppHandle, Emitter, State};
 
 const RUNNER_PY: &str = include_str!("../resources/babeldoc_runner.py");
 
+enum BabeldocProcess {
+  Idle,
+  Starting,
+  Running(Child),
+  Cancelling,
+  Finishing,
+}
+
+impl Default for BabeldocProcess {
+  fn default() -> Self {
+    Self::Idle
+  }
+}
+
 #[derive(Default)]
-pub struct BabeldocState(pub Mutex<Option<Child>>);
+pub struct BabeldocState(Arc<Mutex<BabeldocProcess>>);
+
+struct TranslationRequest {
+  file_path: String,
+  base_url: String,
+  api_key: String,
+  model: String,
+  pages: Option<String>,
+}
+
+/// 在准备配置与拉起子进程前占住任务槽；早退时保证槽位复位。
+struct TranslationReservation(Arc<Mutex<BabeldocProcess>>);
+
+impl TranslationReservation {
+  fn acquire(state: Arc<Mutex<BabeldocProcess>>) -> Result<Self, String> {
+    {
+      let mut process = state.lock().unwrap();
+      if !matches!(&*process, BabeldocProcess::Idle) {
+        return Err("已有重排版翻译任务正在运行".into());
+      }
+      *process = BabeldocProcess::Starting;
+    }
+    Ok(Self(state))
+  }
+}
+
+impl Drop for TranslationReservation {
+  fn drop(&mut self) {
+    let child = {
+      let mut process = self.0.lock().unwrap_or_else(|e| e.into_inner());
+      match std::mem::take(&mut *process) {
+        BabeldocProcess::Running(child) => Some(child),
+        _ => None,
+      }
+    };
+    if let Some(mut child) = child {
+      let _ = child.kill();
+      let _ = child.wait();
+    }
+  }
+}
+
+struct TempFile(PathBuf);
+
+impl Drop for TempFile {
+  fn drop(&mut self) {
+    let _ = std::fs::remove_file(&self.0);
+  }
+}
+
+struct OutputDirectory {
+  path: PathBuf,
+  keep: bool,
+}
+
+impl OutputDirectory {
+  fn keep(&mut self) {
+    self.keep = true;
+  }
+}
+
+impl Drop for OutputDirectory {
+  fn drop(&mut self) {
+    if !self.keep {
+      let _ = std::fs::remove_dir_all(&self.path);
+    }
+  }
+}
 
 #[derive(Serialize, Clone)]
 pub struct BabeldocInfo {
@@ -190,20 +271,23 @@ fn handle_line(app: &AppHandle, raw: &str, outputs: &mut Vec<String>, error: &mu
   );
 }
 
-#[tauri::command]
-pub fn babeldoc_translate(
+fn run_translation(
   app: AppHandle,
-  state: State<'_, BabeldocState>,
-  file_path: String,
-  base_url: String,
-  api_key: String,
-  model: String,
-  pages: Option<String>,
+  state: Arc<Mutex<BabeldocProcess>>,
+  request: TranslationRequest,
+  _reservation: TranslationReservation,
 ) -> Result<Vec<String>, String> {
+  {
+    let process = state.lock().unwrap();
+    if matches!(&*process, BabeldocProcess::Cancelling) {
+      return Err("已取消".into());
+    }
+  }
+
   let bin = find_binary().ok_or("babeldoc not found")?;
-  let src = PathBuf::from(&file_path);
+  let src = PathBuf::from(&request.file_path);
   if !src.is_file() {
-    return Err(format!("源文件不存在: {file_path}"));
+    return Err(format!("源文件不存在: {}", request.file_path));
   }
 
   let out_dir = std::env::temp_dir().join(format!(
@@ -214,22 +298,23 @@ pub fn babeldoc_translate(
       .unwrap_or(0)
   ));
   std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
-  let pages_arg = pages.as_deref().map(str::trim).filter(|p| !p.is_empty());
+  let mut output_cleanup = OutputDirectory { path: out_dir.clone(), keep: false };
+  let pages_arg = request.pages.as_deref().map(str::trim).filter(|p| !p.is_empty());
 
   let python = resolve_python(&bin);
   let mut cmd;
-  let cfg_path;
+  let cfg_path = out_dir.join(if python.is_some() { "config.json" } else { "config.toml" });
+  let _config_cleanup = TempFile(cfg_path.clone());
   if let Some(py) = &python {
     // runner 模式: 结构化 JSON 进度
     let runner_path = out_dir.join("runner.py");
     std::fs::write(&runner_path, RUNNER_PY).map_err(|e| e.to_string())?;
-    cfg_path = out_dir.join("config.json");
     let cfg = serde_json::json!({
       "input": src.to_string_lossy(),
       "output": out_dir.to_string_lossy(),
-      "model": model,
-      "base_url": base_url,
-      "api_key": api_key,
+      "model": request.model,
+      "base_url": request.base_url,
+      "api_key": request.api_key,
       "pages": pages_arg,
     });
     std::fs::write(&cfg_path, cfg.to_string()).map_err(|e| e.to_string())?;
@@ -237,8 +322,7 @@ pub fn babeldoc_translate(
     cmd.arg(&runner_path).arg(&cfg_path);
   } else {
     // CLI 回退: 进度不精确但功能可用; key 走 TOML 不进参数
-    cfg_path = out_dir.join("config.toml");
-    let escaped_key = api_key.replace('\\', "\\\\").replace('"', "\\\"");
+    let escaped_key = request.api_key.replace('\\', "\\\\").replace('"', "\\\"");
     std::fs::write(&cfg_path, format!("[babeldoc]\nopenai-api-key = \"{escaped_key}\"\n"))
       .map_err(|e| e.to_string())?;
     cmd = Command::new(&bin);
@@ -249,9 +333,9 @@ pub fn babeldoc_translate(
       .arg(&cfg_path)
       .arg("--openai")
       .arg("--openai-model")
-      .arg(&model)
+      .arg(&request.model)
       .arg("--openai-base-url")
-      .arg(&base_url)
+      .arg(&request.base_url)
       .arg("--lang-in")
       .arg("en")
       .arg("--lang-out")
@@ -271,7 +355,16 @@ pub fn babeldoc_translate(
   let mut child = cmd.spawn().map_err(|e| format!("启动翻译引擎失败: {e}"))?;
   let stdout = child.stdout.take();
   let stderr = child.stderr.take();
-  *state.0.lock().unwrap() = Some(child);
+  {
+    let mut process = state.lock().unwrap();
+    if matches!(&*process, BabeldocProcess::Starting) {
+      *process = BabeldocProcess::Running(child);
+    } else {
+      let _ = child.kill();
+      let _ = child.wait();
+      return Err("已取消".into());
+    }
+  }
 
   // 点击后立即反馈, 引擎冷启动期间不"装死"
   let _ = app.emit(
@@ -330,20 +423,30 @@ pub fn babeldoc_translate(
     let _ = t.join();
   }
 
-  let status = {
-    let mut guard = state.0.lock().unwrap();
-    let result = guard.as_mut().map(|c| c.wait());
-    *guard = None;
-    result
+  let child = {
+    let mut process = state.lock().unwrap();
+    match std::mem::take(&mut *process) {
+      BabeldocProcess::Running(child) => {
+        *process = BabeldocProcess::Finishing;
+        Some(child)
+      }
+      BabeldocProcess::Cancelling => {
+        *process = BabeldocProcess::Finishing;
+        None
+      }
+      other => {
+        *process = other;
+        None
+      }
+    }
   };
-  let _ = std::fs::remove_file(&cfg_path);
-
+  let status = child.map(|mut child| child.wait());
   let stderr_tail = || {
     let t = tail.lock().unwrap();
     t.iter().rev().take(6).cloned().collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n")
   };
 
-  match status {
+  let result = match status {
     Some(Ok(s)) if s.success() => {
       if outputs.is_empty() {
         // CLI 回退模式没有 done 事件, 扫描输出目录
@@ -368,13 +471,61 @@ pub fn babeldoc_translate(
     ),
     Some(Err(e)) => Err(e.to_string()),
     None => Err("已取消".into()),
+  };
+  if result.is_ok() {
+    output_cleanup.keep();
   }
+  result
+}
+
+/// 翻译会持续数分钟并包含阻塞式子进程 I/O，必须离开 Tauri 命令事件循环执行。
+#[tauri::command]
+pub async fn babeldoc_translate(
+  app: AppHandle,
+  state: State<'_, BabeldocState>,
+  file_path: String,
+  base_url: String,
+  api_key: String,
+  model: String,
+  pages: Option<String>,
+) -> Result<Vec<String>, String> {
+  let state = Arc::clone(&state.0);
+  let reservation = TranslationReservation::acquire(state.clone())?;
+  let request = TranslationRequest { file_path, base_url, api_key, model, pages };
+  tauri::async_runtime::spawn_blocking(move || {
+    run_translation(app, state, request, reservation)
+  })
+  .await
+  .map_err(|e| format!("翻译后台任务异常: {e}"))?
 }
 
 #[tauri::command]
 pub fn babeldoc_cancel(state: State<'_, BabeldocState>) {
-  if let Some(mut child) = state.0.lock().unwrap().take() {
+  let child = {
+    let mut process = state.0.lock().unwrap();
+    match std::mem::take(&mut *process) {
+      BabeldocProcess::Starting => {
+        *process = BabeldocProcess::Cancelling;
+        None
+      }
+      BabeldocProcess::Running(child) => {
+        *process = BabeldocProcess::Cancelling;
+        Some(child)
+      }
+      BabeldocProcess::Cancelling => {
+        *process = BabeldocProcess::Cancelling;
+        None
+      }
+      BabeldocProcess::Finishing => {
+        *process = BabeldocProcess::Finishing;
+        None
+      }
+      BabeldocProcess::Idle => None,
+    }
+  };
+  if let Some(mut child) = child {
     let _ = child.kill();
+    let _ = child.wait();
   }
 }
 
@@ -388,4 +539,40 @@ pub fn babeldoc_read_output(path: String) -> Result<tauri::ipc::Response, String
   }
   let bytes = std::fs::read(&p).map_err(|e| e.to_string())?;
   Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn reservation_blocks_another_translation_until_drop() {
+    let state = Arc::new(Mutex::new(BabeldocProcess::Idle));
+    let reservation = TranslationReservation::acquire(state.clone()).unwrap();
+
+    assert!(TranslationReservation::acquire(state.clone()).is_err());
+    drop(reservation);
+    assert!(matches!(&*state.lock().unwrap(), BabeldocProcess::Idle));
+  }
+
+  #[test]
+  fn cancelled_queued_translation_releases_slot_on_drop() {
+    let state = Arc::new(Mutex::new(BabeldocProcess::Idle));
+    let reservation = TranslationReservation::acquire(state.clone()).unwrap();
+    *state.lock().unwrap() = BabeldocProcess::Cancelling;
+
+    drop(reservation);
+    assert!(matches!(&*state.lock().unwrap(), BabeldocProcess::Idle));
+  }
+
+  #[test]
+  fn finishing_translation_holds_slot_until_cleanup_completes() {
+    let state = Arc::new(Mutex::new(BabeldocProcess::Idle));
+    let reservation = TranslationReservation::acquire(state.clone()).unwrap();
+    *state.lock().unwrap() = BabeldocProcess::Finishing;
+
+    assert!(TranslationReservation::acquire(state.clone()).is_err());
+    drop(reservation);
+    assert!(matches!(&*state.lock().unwrap(), BabeldocProcess::Idle));
+  }
 }

@@ -33,18 +33,15 @@ import { FONT_FAMILIES, HIGHLIGHT_COLORS, READER_THEMES } from '../services/read
 import { injectFontIntoDoc, resolveFontFamily } from '../services/fonts'
 import {
   INSTALL_CMD,
-  stageLabel,
-  babeldocCancel,
-  babeldocReadOutput,
   babeldocStatus,
   babeldocSupported,
-  babeldocTranslate,
   babeldocUsableProvider,
-  bookFilePath,
-  onBabeldocProgress,
   type BabeldocStatus,
 } from '../services/babeldoc'
-import { importFile } from '../services/importer'
+import {
+  babeldocTaskActive,
+  startBabeldocTask,
+} from '../services/babeldocTask'
 import { useLibrary } from '../stores/library'
 import { useSettings } from '../stores/settings'
 import { useReadingTimer } from '../composables/useReadingTimer'
@@ -2658,103 +2655,37 @@ async function sendChat() {
 }
 
 /* ---- BabelDOC 整本重排版翻译 ---- */
-type BdPhase = 'checking' | 'notfound' | 'ready' | 'running' | 'done' | 'error'
+type BdPhase = 'checking' | 'notfound' | 'ready'
 const bdSupported = babeldocSupported()
 const bd = ref<{
   open: boolean
   phase: BdPhase
   status?: BabeldocStatus
   pages: string
-  percent: number | null
-  line: string
-  stage?: string
-  current?: number
-  total?: number
-  error: string
-  results: Array<{ id: string; label: string }>
-}>({ open: false, phase: 'checking', pages: '', percent: null, line: '', error: '', results: [] })
+}>({ open: false, phase: 'checking', pages: '' })
 const bdProviderOk = computed(() => babeldocUsableProvider())
-let bdUnlisten: (() => void) | undefined
-
-/** 长任务反馈: 已用时长计时 + 引擎启动占位文案 */
-const bdElapsed = ref(0)
-let bdTimer: ReturnType<typeof setInterval> | undefined
-const bdElapsedText = computed(() => {
-  const m = Math.floor(bdElapsed.value / 60)
-  const s = bdElapsed.value % 60
-  return `${m}:${String(s).padStart(2, '0')}`
-})
-const bdLineText = computed(() => {
-  if (bd.value.line === 'engine starting' || !bd.value.line) return t('paper.bdStarting')
-  if (bd.value.stage) {
-    const counts =
-      bd.value.total && bd.value.total > 1 ? ` ${bd.value.current ?? 0}/${bd.value.total}` : ''
-    return stageLabel(bd.value.stage) + counts
-  }
-  return bd.value.line
-})
 
 async function openBabeldoc() {
-  bd.value = { open: true, phase: 'checking', pages: '', percent: null, line: '', error: '', results: [] }
+  if (babeldocTaskActive()) {
+    toast(t('paper.bdAlreadyRunning'))
+    return
+  }
+  bd.value = { open: true, phase: 'checking', pages: '' }
   const st = await babeldocStatus().catch(() => ({ found: false, path: '', version: '' }))
   bd.value.status = st
   bd.value.phase = st.found ? 'ready' : 'notfound'
 }
 
-async function startBabeldoc() {
+function startBabeldoc() {
   if (!meta.value) return
-  bd.value.phase = 'running'
-  bd.value.percent = null
-  bd.value.line = ''
-  bd.value.error = ''
-  bdElapsed.value = 0
-  const startAt = Date.now()
-  clearInterval(bdTimer)
-  bdTimer = setInterval(() => {
-    bdElapsed.value = Math.floor((Date.now() - startAt) / 1000)
-  }, 1000)
-  bdUnlisten = await onBabeldocProgress(p => {
-    if (p.percent != null) bd.value.percent = p.percent
-    bd.value.line = p.line
-    bd.value.stage = p.stage ?? undefined
-    bd.value.current = p.current ?? undefined
-    bd.value.total = p.total ?? undefined
+  const started = startBabeldocTask({
+    bookId,
+    fileName: meta.value.fileName,
+    title: meta.value.title,
+    kind: isPaper.value ? 'paper' : 'book',
+    pages: bd.value.pages,
   })
-  try {
-    const path = await bookFilePath(bookId, meta.value.fileName)
-    const outputs = await babeldocTranslate(path, bd.value.pages)
-    const results: Array<{ id: string; label: string }> = []
-    for (const out of outputs) {
-      const label = out.includes('.dual.') ? t('paper.bdDual') : t('paper.bdMono')
-      const blob = await babeldocReadOutput(out)
-      const title = `${meta.value.title} · ${label}`
-      const file = new File([blob], `${title}.pdf`, { type: 'application/pdf' })
-      // 译本归属跟随原文档 (藏书 PDF 的译本进藏书)
-      const r = await importFile(file, 'BabelDOC', { kind: isPaper.value ? 'paper' : 'book', title })
-      if (r.ok && r.bookId) results.push({ id: r.bookId, label })
-    }
-    await library.refresh()
-    bd.value.results = results
-    bd.value.phase = 'done'
-  } catch (e: any) {
-    bd.value.error = String(e?.message ?? e).slice(0, 300)
-    bd.value.phase = bd.value.error === '已取消' ? 'ready' : 'error'
-  } finally {
-    clearInterval(bdTimer)
-    bdTimer = undefined
-    bdUnlisten?.()
-    bdUnlisten = undefined
-  }
-}
-
-function cancelBabeldoc() {
-  babeldocCancel().catch(() => {})
-}
-
-function openResult(id: string) {
-  // 同路由参数变化不触发重挂载, 直接整页刷新到目标论文
-  window.location.hash = `#/read-paper/${id}`
-  window.location.reload()
+  if (started) bd.value.open = false
 }
 
 function copyInstall() {
@@ -3326,8 +3257,6 @@ onBeforeUnmount(() => {
   mupdfDocPromise = null
   renderBytes = null
   sourcePdfBlob = null
-  bdUnlisten?.()
-  if (bd.value.phase === 'running') babeldocCancel().catch(() => {})
 })
 </script>
 
@@ -3632,7 +3561,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- BabelDOC 整本重排版翻译面板 -->
-    <div v-if="bd.open" class="bd-mask" @click.self="bd.phase !== 'running' && (bd.open = false)">
+    <div v-if="bd.open" class="bd-mask" @click.self="bd.open = false">
       <div class="bd-panel">
         <h3>{{ t('paper.bdTitle') }}</h3>
         <p class="bd-sub">{{ t('paper.bdDesc') }}</p>
@@ -3666,33 +3595,6 @@ onBeforeUnmount(() => {
           </div>
         </template>
 
-        <template v-else-if="bd.phase === 'running'">
-          <div class="bd-bar" :class="{ 'bd-indeterminate': bd.percent == null }">
-            <div class="bd-bar-fill" :style="bd.percent != null ? { width: `${bd.percent}%` } : {}" />
-          </div>
-          <p class="bd-line">{{ bd.percent != null ? `${bd.percent.toFixed(0)}% · ` : '' }}{{ bdLineText }}</p>
-          <p class="bd-hint">{{ t('paper.bdElapsed') }} {{ bdElapsedText }} · {{ t('paper.bdStayHint') }}</p>
-          <div class="bd-actions">
-            <button class="btn btn-sm" @click="cancelBabeldoc">{{ t('paper.bdCancel') }}</button>
-          </div>
-        </template>
-
-        <template v-else-if="bd.phase === 'done'">
-          <p class="bd-ok">{{ t('paper.bdDone') }}</p>
-          <div class="bd-actions">
-            <button v-for="r in bd.results" :key="r.id" class="btn btn-sm btn-primary" @click="openResult(r.id)">
-              {{ t('paper.bdOpen') }}{{ r.label }}
-            </button>
-            <button class="btn btn-sm" @click="bd.open = false">{{ t('paper.bdClose') }}</button>
-          </div>
-        </template>
-
-        <template v-else-if="bd.phase === 'error'">
-          <p class="bd-warn">{{ bd.error }}</p>
-          <div class="bd-actions">
-            <button class="btn btn-sm" @click="bd.phase = 'ready'">{{ t('paper.bdBack') }}</button>
-          </div>
-        </template>
       </div>
     </div>
 
@@ -6380,33 +6282,6 @@ onBeforeUnmount(() => {
   margin-top: 14px;
   flex-wrap: wrap;
 }
-.bd-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--bg);
-  overflow: hidden;
-  margin: 14px 0 10px;
-}
-.bd-bar-fill {
-  height: 100%;
-  background: var(--brand);
-  border-radius: 3px;
-  transition: width 0.4s;
-}
-/* 无百分比时的不确定态: 流动条, 表明任务仍在进行 */
-.bd-indeterminate .bd-bar-fill {
-  width: 32%;
-  animation: bd-slide 1.2s ease-in-out infinite;
-}
-@keyframes bd-slide {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(320%);
-  }
-}
-
 @media (max-width: 1180px) {
   .paper-bar {
     gap: 10px;

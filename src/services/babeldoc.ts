@@ -37,6 +37,7 @@ export function stageLabel(stage: string): string {
 }
 
 export const INSTALL_CMD = 'uv tool install babeldoc'
+export const BABELDOC_STARTING_LINE = 'engine starting'
 
 export const babeldocSupported = () => isTauri()
 

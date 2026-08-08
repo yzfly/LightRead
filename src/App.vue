@@ -2,6 +2,7 @@
 import { useRoute, useRouter } from 'vue-router'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ToastHost from './components/ToastHost.vue'
+import BabeldocTaskStatus from './components/BabeldocTaskStatus.vue'
 import { useSettings } from './stores/settings'
 import { t } from './i18n'
 import { isTauri } from './storage'
@@ -157,8 +158,9 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M10.83
       </div>
     </aside>
     <main class="main">
-      <router-view />
+      <router-view :key="route.fullPath" />
     </main>
+    <BabeldocTaskStatus />
     <ToastHost />
   </div>
 </template>
