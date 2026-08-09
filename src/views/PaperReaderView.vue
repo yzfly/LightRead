@@ -152,7 +152,7 @@ const scrollSpread = computed(() =>
 
 /* ================= 连续滚动渲染 (虚拟化: 只渲染视口附近页) ================= */
 
-const GAP = 16
+const SPREAD_GAP = 16
 const NORMAL_SCROLL_PADDING = 28
 const KEEP = 4
 /** PDF 坐标是 72 pt/in，CSS 的基准分辨率是 96 px/in。 */
@@ -232,7 +232,7 @@ const scrollGroupLayout = computed(() => {
   return scrollPageGroups.value.map(pages => {
     const height = Math.max(...pages.map(page => displaySizeOf(page).h))
     const entry = { pages, top, height }
-    top += height + GAP
+    top += height
     return entry
   })
 })
@@ -269,7 +269,7 @@ function fitScale(kind: 'fit-page' | 'fit-width'): number {
   if (kind === 'fit-width' && scrollSpread.value) {
     for (const group of scrollPageGroups.value) {
       const groupWidth = group.reduce((sum, page) => sum + dimensionsOf(page).w, 0)
-      scale = Math.min(scale, Math.max(1, width - GAP * (group.length - 1)) / Math.max(1, groupWidth))
+      scale = Math.min(scale, Math.max(1, width - SPREAD_GAP * (group.length - 1)) / Math.max(1, groupWidth))
     }
   }
   return Number.isFinite(scale) ? scale : 1
@@ -307,7 +307,7 @@ function pagedScale(): number {
   const pages = pagedPages.value
   const dims = pages.map(dimensionsOf)
   const totalW = dims.reduce((sum, page) => sum + page.w, 0)
-  const widthScale = Math.max(1, availW - GAP * (pages.length - 1)) / Math.max(1, totalW)
+  const widthScale = Math.max(1, availW - SPREAD_GAP * (pages.length - 1)) / Math.max(1, totalW)
   if (zoom.value === 'fit-width') return widthScale
   const heightScale = Math.min(...dims.map(page => availH / Math.max(1, page.h)))
   return heightScale
@@ -535,7 +535,7 @@ function pageAtCenter(): number {
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2)
     const group = layout[mid]
-    if (center > group.top + group.height + GAP / 2) lo = mid + 1
+    if (center > group.top + group.height) lo = mid + 1
     else hi = mid
   }
   return layout[lo]?.pages[0] ?? 1
@@ -903,7 +903,7 @@ async function relayout(force = false) {
   const session = ++relayoutSession
   const anchorPage = currentPage.value
   const anchorHeight = displaySizeOf(anchorPage).h
-  const frac = anchorHeight ? (el.scrollTop - pageTop(anchorPage)) / (anchorHeight + GAP) : 0
+  const frac = anchorHeight ? (el.scrollTop - pageTop(anchorPage)) / anchorHeight : 0
   for (let pass = 0; pass < 3; pass++) {
     const settled = typeof zoom.value === 'number' ? fixedZoomScale(zoom.value) : fitScale(zoom.value)
     if (pass > 0 && Math.abs(settled - curScale.value) < 0.001) break
@@ -912,7 +912,7 @@ async function relayout(force = false) {
     await nextTick()
     if (session !== relayoutSession) return
   }
-  scrollGoto(anchorPage, false, frac * (displaySizeOf(anchorPage).h + GAP))
+  scrollGoto(anchorPage, false, frac * displaySizeOf(anchorPage).h)
   updateViewport()
 }
 
@@ -3082,7 +3082,7 @@ function stepAutoScroll(now: number) {
 
   // “秒/页”在连续模式中换算为每秒滚动一个页面高度的速度。
   const elapsed = Math.min(Math.max(0, now - autoScrollAt), 100)
-  const stepHeight = pdfLayout.value === 'reflow' ? el.clientHeight : holderH.value + GAP
+  const stepHeight = pdfLayout.value === 'reflow' ? el.clientHeight : holderH.value
   const pixelsPerMs = stepHeight / (settings.autoReadSeconds * 1000)
   autoScrollAt = now
   el.scrollTop = Math.min(maxTop, el.scrollTop + elapsed * pixelsPerMs)
@@ -5311,6 +5311,10 @@ onBeforeUnmount(() => {
 .paged-box:is(.is-fit-width, .is-fit-height) .p-canvas :deep(canvas) {
   border-radius: 0;
 }
+.pane-left:is(.is-fit-width, .is-fit-height) .p-holder,
+.paged-box:is(.is-fit-width, .is-fit-height) .p-holder {
+  box-shadow: none;
+}
 .paged-box.is-panning,
 .pane-left.is-panning {
   cursor: grabbing;
@@ -5333,10 +5337,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 16px;
   min-width: min-content;
-  margin: 0 auto 16px;
-}
-.scroll-spread-host:last-child {
-  margin-bottom: 0;
+  margin: 0 auto;
 }
 .scroll-spread-host .p-holder {
   flex: 0 0 auto;
