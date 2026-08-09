@@ -9,6 +9,8 @@ import {
   resolvePdfReaderShortcut,
   shouldClearCopiedSelection,
 } from '../src/services/keyboardShortcuts.ts'
+import en from '../src/i18n/en.ts'
+import zh from '../src/i18n/zh.ts'
 
 const keyEvent = (overrides = {}) => ({
   key: 'c',
@@ -179,6 +181,15 @@ test('preserves native behavior for editable targets before command-specific pro
   assert.deepEqual(result.calls.actions, [])
 })
 
+test('keeps common primary shortcuts native in editable controls', () => {
+  for (const key of ['c', 's', 'o', 'f', 'p']) {
+    const result = dispatchReaderCommand({ key }, { isEditableTarget: () => true })
+    assert.equal(result.handled, false, `${key} should remain native`)
+    assert.equal(result.calls.prevented, 0, `${key} should not be prevented`)
+    assert.deepEqual(result.calls.actions, [], `${key} should not dispatch`)
+  }
+})
+
 test('does not inspect DOM or selection state for unrelated keys', () => {
   const result = dispatchReaderCommand({ key: 'v', ctrlKey: false })
   assert.equal(result.handled, false)
@@ -221,4 +232,12 @@ test('dispatches Open once while suppressing held-key repeats', () => {
   const repeated = dispatchReaderCommand({ key: 'o', repeat: true })
   assert.deepEqual(repeated.calls.actions, [])
   assert.equal(repeated.calls.prevented, 1)
+})
+
+test('localizes every shortcut help row in English and Chinese', () => {
+  const labelKeys = new Set(PDF_READER_SHORTCUTS.map(command => command.helpLabelKey))
+  for (const key of labelKeys) {
+    assert.equal(typeof en[key], 'string', `missing English shortcut label: ${key}`)
+    assert.equal(typeof zh[key], 'string', `missing Chinese shortcut label: ${key}`)
+  }
 })

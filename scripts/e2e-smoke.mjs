@@ -429,6 +429,27 @@ await step('PDF 标准打开快捷键导入同类藏书并重建阅读器', asyn
   if (!backTitle?.includes('藏书')) throw new Error(`新 PDF 未保留藏书归属: ${backTitle || 'missing'}`)
 })
 
+await step('PDF 快捷键面板展示完整操作并适配短视口', async () => {
+  await page.setViewportSize({ width: 900, height: 420 })
+  await page.keyboard.press('Shift+/')
+  await page.waitForSelector('.shortcut-menu')
+  const guideText = await page.locator('.shortcut-menu').innerText()
+  for (const label of ['打开 PDF', '下一个 / 上一个搜索结果', '阅读历史后退 / 前进', '开始幻灯片放映', '打开 / 关闭目录']) {
+    if (!guideText.includes(label)) throw new Error(`快捷键面板缺少: ${label}`)
+  }
+  const scrollState = await page.locator('.shortcut-menu').evaluate(element => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflowY: getComputedStyle(element).overflowY,
+  }))
+  if (scrollState.scrollHeight <= scrollState.clientHeight || scrollState.overflowY !== 'auto') {
+    throw new Error(`短视口面板不可滚动: ${JSON.stringify(scrollState)}`)
+  }
+  await page.keyboard.press('Escape')
+  await page.waitForSelector('.shortcut-menu', { state: 'detached' })
+  await page.setViewportSize({ width: 1280, height: 800 })
+})
+
 await step('PDF 全屏支持目录侧栏与跳转', async () => {
   const pageBefore = await page.locator('.page-input').inputValue()
   await page.getByRole('button', { name: '全屏阅读 (F)', exact: true }).click()

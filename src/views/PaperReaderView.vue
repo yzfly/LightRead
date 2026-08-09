@@ -4223,12 +4223,18 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="shortcutsOpen" class="zoom-backdrop" @click="shortcutsOpen = false" />
-        <section v-if="shortcutsOpen" class="shortcut-menu card" role="dialog" :aria-label="t('reader.keyboardShortcuts')">
+        <section
+          v-if="shortcutsOpen"
+          class="shortcut-menu card"
+          role="dialog"
+          tabindex="0"
+          :aria-label="t('reader.keyboardShortcuts')"
+        >
           <header class="shortcut-head">
             <strong>{{ t('reader.keyboardShortcuts') }}</strong>
             <button class="icon-btn" :aria-label="t('common.close')" @click="shortcutsOpen = false">×</button>
           </header>
-          <div v-for="row in shortcutRows" :key="row.label" class="shortcut-row">
+          <div v-for="row in shortcutRows" :key="row.id" class="shortcut-row">
             <span class="shortcut-keys">
               <template v-for="(combo, comboIndex) in row.shortcuts" :key="combo.join('-')">
                 <span v-if="comboIndex" class="shortcut-or">/</span>
@@ -5321,16 +5327,23 @@ onBeforeUnmount(() => {
   left: 50%;
   z-index: 71;
   width: min(430px, calc(100% - 32px));
+  max-height: calc(100dvh - 20px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px 14px 12px;
   border-radius: 14px;
   transform: translateX(-50%);
 }
 .shortcut-head {
+  position: sticky;
+  top: -10px;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-height: 36px;
   margin-bottom: 4px;
+  background: var(--card);
 }
 .shortcut-row {
   display: grid;
