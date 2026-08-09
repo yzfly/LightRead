@@ -75,6 +75,7 @@ import {
 } from '../services/tts'
 import { EDGE_VOICES, edgeAvailable, playAudio } from '../services/edgeTts'
 import { localTtsAvailable, localTtsDownload, localTtsStatus, localTtsSynthesize } from '../services/localTts'
+import { handleReaderCopyShortcut, shouldClearCopiedSelection } from '../services/keyboardShortcuts'
 import TocList, { type TocItem } from '../components/TocList.vue'
 import { t } from '../i18n'
 
@@ -618,6 +619,7 @@ const isMacPlatform = typeof navigator !== 'undefined'
 const primaryShortcutLabel = isMacPlatform ? '⌘' : 'Ctrl'
 const shortcutsOpen = ref(false)
 const shortcutRows = computed(() => [
+  { shortcuts: [[primaryShortcutLabel, 'C']], label: t('paper.copy') },
   { shortcuts: [[primaryShortcutLabel, 'F']], label: t('reader.searchInBook') },
   { shortcuts: [[primaryShortcutLabel, 'P']], label: t('reader.print') },
   { shortcuts: [[primaryShortcutLabel, '⇧', 'S']], label: t('reader.saveAs') },
@@ -1836,15 +1838,15 @@ function onHolderClick(e: MouseEvent, page: number) {
 }
 
 async function copySelection() {
-  const text = selection.value?.text
-  if (!text) return
+  const copiedSelection = selection.value
+  if (!copiedSelection?.text) return
   try {
-    await navigator.clipboard.writeText(text)
+    await navigator.clipboard.writeText(copiedSelection.text)
     toast(t('paper.copied'), 'success')
   } catch {
     toast(t('common.copyFailed'), 'error')
   }
-  selection.value = null
+  if (shouldClearCopiedSelection(selection.value, copiedSelection)) selection.value = null
 }
 
 /* ---- 划词 AI 翻译 (点击才触发, 流式输出, 可关闭即取消) ---- */
@@ -3210,8 +3212,20 @@ function cycleFitMode() {
   void applyZoom(zoom.value === 'fit-page' ? 'fit-width' : 'fit-page')
 }
 
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(target.closest(
+    'input, textarea, select, [contenteditable="true"], [role="textbox"]',
+  ))
+}
+
 function handleKeydown(e: KeyboardEvent) {
   const primaryPressed = e.metaKey || e.ctrlKey
+  if (handleReaderCopyShortcut(e, isMacPlatform, {
+    hasCustomSelection: Boolean(selection.value?.text),
+    isEditableTarget: () => isEditableShortcutTarget(e.target),
+    hasNativeSelection: () => Boolean(window.getSelection()?.toString()),
+    copySelection: () => { void copySelection() },
+  })) return
   if (e.key === 'Escape' && (presentationMode.value || isFullscreen.value)) {
     e.preventDefault()
     if (presentationMode.value) void exitPresentation()
@@ -3296,8 +3310,7 @@ function handleKeydown(e: KeyboardEvent) {
     closePdfSearch()
     return
   }
-  const target = e.target instanceof HTMLElement ? e.target : null
-  if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return
+  if (isEditableShortcutTarget(e.target)) return
   if (e.metaKey || e.ctrlKey || e.altKey) return
   if (e.key === 'Escape') {
     selection.value = null
