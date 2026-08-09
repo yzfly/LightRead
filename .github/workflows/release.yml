@@ -55,6 +55,12 @@ jobs:
 
       - run: npm ci
 
+      - name: 验证论文 Agent 前端契约
+        run: npm run test:paper-agent
+
+      - name: 验证论文 Agent 原生契约
+        run: cargo test --manifest-path src-tauri/Cargo.toml agent
+
       - name: 构建并上传到 Release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -67,6 +73,22 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+  rust-floor:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: 安装 Linux 依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libasound2-dev cmake
+      - uses: dtolnay/rust-toolchain@1.77.2
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: 检查声明的 Rust 最低版本
+        run: cargo check --manifest-path src-tauri/Cargo.toml
 
   # Android 为实验性构建, 失败不阻塞发布
   android:

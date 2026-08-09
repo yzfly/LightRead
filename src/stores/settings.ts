@@ -28,7 +28,7 @@ export interface PdfPrefs {
 }
 
 /** 结构版本: 修正历史默认值时递增 */
-const SETTINGS_VERSION = 7
+const SETTINGS_VERSION = 8
 
 /** v3 时代曾并入用户设置的内置书库 (v4 起社区清单独立远程拉取, 此表仅供迁移清理) */
 const BUILTIN_BOOK_REPOS = [
@@ -79,6 +79,9 @@ interface SettingsState {
   aiBaseUrl: string
   aiApiKey: string
   aiModel: string
+  /** 论文 Agent: 当前引擎与可选的手动可执行文件路径 */
+  paperAgentEngine: 'codex' | 'claude' | 'pi'
+  paperAgentExecutables: Record<'codex' | 'claude' | 'pi', string>
   /** WebDAV 云备份 */
   webdavUrl: string
   webdavUser: string
@@ -123,6 +126,8 @@ const defaults: SettingsState = {
   aiBaseUrl: 'https://api.siliconflow.cn/v1',
   aiApiKey: '',
   aiModel: 'Qwen/Qwen2.5-7B-Instruct',
+  paperAgentEngine: 'pi',
+  paperAgentExecutables: { codex: '', claude: '', pi: '' },
   webdavUrl: '',
   webdavUser: '',
   webdavPass: '',
@@ -133,11 +138,21 @@ function load(): SettingsState {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return structuredClone(defaults)
     const saved = JSON.parse(raw)
+    const savedAgentExecutables = saved.paperAgentExecutables != null
+      && typeof saved.paperAgentExecutables === 'object'
+      && !Array.isArray(saved.paperAgentExecutables)
+      ? saved.paperAgentExecutables
+      : {}
     const merged = {
       ...structuredClone(defaults),
       ...saved,
       reader: { ...defaults.reader, ...saved.reader },
       pdf: { ...defaults.pdf, ...saved.pdf },
+      paperAgentExecutables: { ...defaults.paperAgentExecutables, ...savedAgentExecutables },
+    }
+    if (!['codex', 'claude', 'pi'].includes(merged.paperAgentEngine)) merged.paperAgentEngine = 'pi'
+    for (const engine of ['codex', 'claude', 'pi'] as const) {
+      if (typeof merged.paperAgentExecutables[engine] !== 'string') merged.paperAgentExecutables[engine] = ''
     }
     // v2: PDF 阅读默认翻页+适高 (纠正早期版本持久化下来的滚动模式)
     if ((saved.version ?? 1) < 2) {

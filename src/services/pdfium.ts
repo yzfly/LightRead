@@ -215,6 +215,29 @@ export class PdfiumDoc {
     return rangeText(t, 0, t.count)
   }
 
+  /**
+   * 不构建或缓存字符几何的整页纯文本。
+   * Agent 全文快照会遍历所有页面；走这个路径可避免为数百页常驻 boxes/sizes/lines。
+   */
+  pagePlainText(pageIdx: number): string {
+    const m = this.m
+    const page = m.FPDF_LoadPage(this.doc, pageIdx)
+    const textPage = m.FPDFText_LoadPage(page)
+    try {
+      const count = Math.max(0, m.FPDFText_CountChars(textPage))
+      let text = ''
+      for (let index = 0; index < count; index += 1) {
+        const code = m.FPDFText_GetUnicode(textPage, index)
+        if (code === 13) continue
+        text += code === 10 ? '\n' : String.fromCodePoint(code)
+      }
+      return text
+    } finally {
+      m.FPDFText_ClosePage(textPage)
+      m.FPDF_ClosePage(page)
+    }
+  }
+
   /** 链接热区: 内链带目标页/页内偏移, 外链带 URL */
   links(pageIdx: number): PdmLink[] {
     const m = this.m

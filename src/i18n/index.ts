@@ -4,9 +4,9 @@
  * - t() 在组件 render 中读取 pinia 响应式 state, 语言切换自动触发重渲染
  * - 惰性获取 store: 模块可在 pinia 初始化前被 import (服务层), 首次调用时再取
  */
-import { useSettings } from '../stores/settings'
-import zh from './zh'
-import en from './en'
+import { useSettings } from '../stores/settings.ts'
+import zh from './zh.ts'
+import en from './en.ts'
 
 const dicts: Record<'zh' | 'en', Record<string, string>> = { zh, en }
 

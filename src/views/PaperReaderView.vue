@@ -21,16 +21,6 @@ import {
 import { initMupdf } from '../services/mupdf'
 import { importFile } from '../services/importer'
 import { detectFormat } from '../services/format'
-import {
-  TEN_QUESTIONS,
-  SUMMARY_PROMPT,
-  DOC_CHAR_BUDGET,
-  buildDocSystem,
-  cachedAi,
-  saveAi,
-  askDoc,
-  type DocText,
-} from '../services/paperAI'
 import { FONT_FAMILIES, HIGHLIGHT_COLORS, READER_THEMES } from '../services/readerTheme'
 import { injectFontIntoDoc, resolveFontFamily } from '../services/fonts'
 import {
@@ -84,6 +74,8 @@ import {
   type PdfReaderShortcutCommandId,
 } from '../services/keyboardShortcuts'
 import TocList, { type TocItem } from '../components/TocList.vue'
+import PaperAgentSidebar from '../components/PaperAgentSidebar.vue'
+import { paperAgentRuntimeAvailable } from '../services/paperAgent.ts'
 import { t } from '../i18n'
 
 const route = useRoute()
@@ -2465,8 +2457,8 @@ function mirLayoutNow() {
   })
 }
 
-/** 右栏: 翻译 / AI 辅读 / 问答, 点击才展开, 打开论文默认纯 PDF 阅读 */
-const rightTab = ref<'translate' | 'ai' | 'chat' | null>(null)
+/** 右栏: 翻译 / 原生 Agent, 点击才展开, 打开论文默认纯 PDF 阅读 */
+const rightTab = ref<'translate' | 'agent' | null>(null)
 const translateOpen = computed(() => rightTab.value === 'translate')
 
 /* ---- 分栏拖拽: 右栏宽度可调, 持久化 ---- */
@@ -2493,7 +2485,7 @@ function startSplit(e: PointerEvent) {
   split.addEventListener('pointerup', up)
 }
 
-async function openRight(tab: 'translate' | 'ai' | 'chat') {
+async function openRight(tab: 'translate' | 'agent') {
   if (rightTab.value === tab) return closeRight()
   const wasOpen = rightTab.value !== null
   cancelTranslate()
@@ -2515,14 +2507,11 @@ async function openRight(tab: 'translate' | 'ai' | 'chat') {
       updateMirViewport()
       mirSettled()
     })
-  } else if (tab === 'ai') {
-    initAiPanel()
   }
 }
 
 function closeRight() {
   cancelTranslate()
-  cancelAi()
   rightTab.value = null
   nextTick(() => void relayout(true))
 }
@@ -2566,185 +2555,6 @@ function toggleOriginal(id: number) {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   expanded.value = next
-}
-
-/* ================= AI 辅读: 总结 / 论文十问 / 问答 =================
- * 点击才生成 (不自动消耗用量), 流式输出, 可取消; 总结与十问按论文缓存。 */
-
-const doc = ref<DocText | null>(null)
-const docParsing = ref(false)
-const aiSummary = ref('')
-const summaryBusy = ref(false)
-const tenQs = TEN_QUESTIONS()
-const tenA = ref<string[]>(Array(10).fill(''))
-/** 正在生成的题号, -1 表示无 */
-const tenBusy = ref(-1)
-const openQ = ref<Set<number>>(new Set())
-const chatMsgs = ref<AiMessage[]>([])
-const chatInput = ref('')
-const chatBusy = ref(false)
-/** 独立取消会话: 总结/十问/问答互不干扰, 新动作不打断进行中的其他生成 */
-const aiSes = { sum: 0, ten: 0, chat: 0 }
-
-const answeredCount = computed(() => tenA.value.filter(Boolean).length)
-
-function initAiPanel() {
-  aiSummary.value = cachedAi(bookId, 's') ?? ''
-  tenA.value = Array.from({ length: 10 }, (_, i) => cachedAi(bookId, `q${i}`) ?? '')
-}
-
-function cancelAi() {
-  aiSes.sum++
-  aiSes.ten++
-  aiSes.chat++
-  summaryBusy.value = false
-  tenBusy.value = -1
-  chatBusy.value = false
-}
-
-/** 首次使用时解析全文文本 (PDFium, 超预算截断), 后续复用 */
-async function ensureDoc(): Promise<DocText | null> {
-  if (doc.value) return doc.value
-  docParsing.value = true
-  try {
-    let text = ''
-    let truncated = false
-    for (let n = 1; n <= pageCount.value; n++) {
-      const pageText = await pageTextFor(n)
-      if (pageText) text += (text ? '\n\n' : '') + `[Page ${n}] ` + pageText
-      if (text.length >= DOC_CHAR_BUDGET) {
-        text = text.slice(0, DOC_CHAR_BUDGET)
-        truncated = n < pageCount.value
-        break
-      }
-    }
-    doc.value = { text, truncated }
-    if (truncated) toast(t('paper.aiTruncated'))
-    return doc.value
-  } catch (e: any) {
-    toast(String(e?.message ?? e).slice(0, 200), 'error')
-    return null
-  } finally {
-    docParsing.value = false
-  }
-}
-
-async function runSummary(force = false) {
-  if (!force && aiSummary.value) return
-  const d = await ensureDoc()
-  if (!d || !meta.value) return
-  const session = ++aiSes.sum
-  summaryBusy.value = true
-  aiSummary.value = ''
-  try {
-    const text = await askDoc(
-      buildDocSystem(meta.value.title, d),
-      [],
-      SUMMARY_PROMPT,
-      full => {
-        if (session === aiSes.sum) aiSummary.value = full
-      },
-      () => session !== aiSes.sum,
-    )
-    if (session === aiSes.sum && text) saveAi(bookId, 's', text)
-  } catch (e: any) {
-    if (session === aiSes.sum) toast(`${t('paper.aiFailed')}: ${e?.message ?? e}`, 'error', 6000)
-  } finally {
-    if (session === aiSes.sum) summaryBusy.value = false
-  }
-}
-
-function toggleQ(i: number) {
-  const next = new Set(openQ.value)
-  if (next.has(i)) next.delete(i)
-  else next.add(i)
-  openQ.value = next
-}
-
-async function runQuestion(i: number) {
-  const d = await ensureDoc()
-  if (!d || !meta.value) return
-  const session = ++aiSes.ten
-  tenBusy.value = i
-  tenA.value[i] = ''
-  openQ.value = new Set(openQ.value).add(i)
-  try {
-    const text = await askDoc(
-      buildDocSystem(meta.value.title, d),
-      [],
-      `请回答关于这篇论文的问题: ${tenQs[i]}`,
-      full => {
-        if (session === aiSes.ten) tenA.value[i] = full
-      },
-      () => session !== aiSes.ten,
-    )
-    if (session === aiSes.ten && text) saveAi(bookId, `q${i}`, text)
-  } catch (e: any) {
-    if (session === aiSes.ten) toast(`${t('paper.aiFailed')}: ${e?.message ?? e}`, 'error', 6000)
-  } finally {
-    if (session === aiSes.ten) tenBusy.value = -1
-  }
-}
-
-/** 问答 agent: 在论文语境上允许结合领域知识展开, 但要求区分论文内外 */
-function chatSystem(d: DocText): string {
-  return (
-    buildDocSystem(meta.value?.title ?? '', d) +
-    '\n\n作为论文问答助手, 你可以结合领域常识补充背景与延伸, 但必须区分哪些来自论文原文、哪些是你的补充。'
-  )
-}
-
-function clearChat() {
-  aiSes.chat++
-  chatBusy.value = false
-  chatMsgs.value = []
-}
-
-/** 消息区自动滚到最新 (流式输出期间持续跟随) */
-const chatScroll = ref<HTMLElement>()
-watch(
-  chatMsgs,
-  () => nextTick(() => {
-    const el = chatScroll.value
-    if (el) el.scrollTop = el.scrollHeight
-  }),
-  { deep: true },
-)
-
-function quickAsk(q: string) {
-  chatInput.value = q
-  sendChat()
-}
-
-async function sendChat() {
-  const q = chatInput.value.trim()
-  if (!q || chatBusy.value) return
-  const d = await ensureDoc()
-  if (!d || !meta.value) return
-  chatInput.value = ''
-  // 既往轮次做上下文 (排除流式中的空占位), 控制长度
-  const history = chatMsgs.value.filter(m => m.content).slice(-12)
-  chatMsgs.value.push({ role: 'user', content: q }, { role: 'assistant', content: '' })
-  const idx = chatMsgs.value.length - 1
-  const session = ++aiSes.chat
-  chatBusy.value = true
-  try {
-    await askDoc(
-      chatSystem(d),
-      history,
-      q,
-      full => {
-        if (session === aiSes.chat) chatMsgs.value[idx].content = full
-      },
-      () => session !== aiSes.chat,
-    )
-  } catch (e: any) {
-    if (session === aiSes.chat && !chatMsgs.value[idx].content) {
-      chatMsgs.value[idx].content = `⚠ ${String(e?.message ?? e).slice(0, 200)}`
-    }
-  } finally {
-    if (session === aiSes.chat) chatBusy.value = false
-  }
 }
 
 /* ---- BabelDOC 整本重排版翻译 ---- */
@@ -3025,6 +2835,11 @@ function copyInstall() {
 /** 页文本 (听书 / AI 上下文) */
 async function pageTextFor(n: number): Promise<string> {
   return pdm ? pdm.pageText(n - 1).replace(/\s+/g, ' ').trim() : ''
+}
+
+/** Agent 快照使用零基页索引，并保留页内换行供全文结构化阅读。 */
+function agentPageText(pageIndex: number): string {
+  return pdm ? pdm.pagePlainText(pageIndex).trim() : ''
 }
 
 /* ---- 自动阅读：翻页模式按页前进，滚动模式连续下移 ---- */
@@ -3480,9 +3295,8 @@ onMounted(async () => {
       error.value = t('reader.bookNotFound')
       return
     }
-    storage.listAnnotations(bookId).then(list => {
-      annotations.value = list.filter(a => decodeLoc(a.cfi))
-    })
+    const storedAnnotations = await storage.listAnnotations(bookId)
+    annotations.value = storedAnnotations.filter(a => decodeLoc(a.cfi))
     const blob = await storage.getBookFile(bookId)
     sourcePdfBlob = blob.slice(0, blob.size, 'application/pdf')
     const fileData = await blob.arrayBuffer()
@@ -3555,7 +3369,6 @@ onBeforeUnmount(() => {
   fullscreenWindowUnlisten = undefined
   translateSession++
   selTrSession++
-  cancelAi()
   stopTTS()
   stopAutoRead()
   clearTimeout(mirSettleTimer)
@@ -3623,24 +3436,21 @@ onBeforeUnmount(() => {
             >
               {{ t('paper.openTranslate') }}
             </button>
-            <button class="btn btn-sm context-action" :class="{ 'btn-active': rightTab === 'ai' }" :disabled="!pageCount" @click="openRight('ai')">
-              {{ t('paper.aiTab') }}
-            </button>
-            <button class="btn btn-sm context-action" :class="{ 'btn-active': rightTab === 'chat' }" :disabled="!pageCount" @click="openRight('chat')">
-              {{ t('paper.chatTab') }}
+            <button v-if="paperAgentRuntimeAvailable()" class="btn btn-sm context-action" :class="{ 'btn-active': rightTab === 'agent' }" :disabled="!pageCount" @click="openRight('agent')">
+              {{ t('paper.agentTitle') }}
             </button>
             <button v-if="bdSupported" class="btn btn-sm context-action" :title="t('paper.bdTooltip')" @click="openBabeldoc">
               {{ t('paper.bdButton') }}
             </button>
           </template>
           <button
-            v-else
+            v-else-if="paperAgentRuntimeAvailable()"
             class="btn btn-sm context-action ai-entry"
-            :class="{ 'btn-active': rightTab === 'ai' }"
+            :class="{ 'btn-active': rightTab === 'agent' }"
             :disabled="!pageCount"
-            @click="openRight('ai')"
+            @click="openRight('agent')"
           >
-            ✦ {{ t('reader.aiRead') }}
+            ✦ {{ t('paper.agentTitle') }}
           </button>
           <button class="btn btn-sm change-document" @click="router.push(backTarget)">
             {{ t('reader.changeDocument') }}
@@ -4345,12 +4155,24 @@ onBeforeUnmount(() => {
       <!-- 分栏拖拽把手 -->
       <div v-if="rightTab" class="splitter" @pointerdown.prevent="startSplit" />
 
-      <!-- 右: 翻译 (版式对照 / 段落列表) / AI 辅读 (总结 / 十问) / 问答
+      <!-- 右: 翻译 (版式对照 / 段落列表) / 原生论文 Agent
            标签切换在顶栏 (再点当前项即关闭), 面板内不再重复一排标签 -->
       <div v-if="rightTab" ref="rightPane" class="pane-right" :style="rightPaneStyle">
-        <div v-if="!aiReady" class="rt-body">
+        <PaperAgentSidebar
+          v-if="rightTab === 'agent' && meta"
+          :paper-id="bookId"
+          :meta="meta"
+          :page-count="pageCount"
+          :current-page="currentPage"
+          :selection="selection ? { page: selection.page, text: selection.text } : null"
+          :annotations="annotations"
+          :page-text="agentPageText"
+          @close="closeRight"
+        />
+
+        <div v-else-if="!aiReady" class="rt-body">
           <div class="chat-head ai-top">
-            <strong>{{ rightTab === 'ai' ? t('paper.aiTab') : rightTab === 'chat' ? t('paper.chatTab') : t('paper.translationTitle') }}</strong>
+            <strong>{{ t('paper.translationTitle') }}</strong>
             <span style="flex: 1" />
             <button class="icon-btn" :title="t('common.close')" @click="closeRight">✕</button>
           </div>
@@ -4359,92 +4181,6 @@ onBeforeUnmount(() => {
             <button class="btn btn-sm btn-primary" @click="router.push('/settings')">{{ t('ai.goSettings') }}</button>
           </div>
         </div>
-
-        <!-- AI 辅读 -->
-        <template v-else-if="rightTab === 'ai'">
-          <div class="rt-body">
-          <div class="chat-head ai-top">
-            <strong>{{ t('paper.aiTab') }}</strong>
-            <span style="flex: 1" />
-            <button class="icon-btn" :title="t('common.close')" @click="closeRight">✕</button>
-          </div>
-          <p v-if="docParsing" class="ai-parsing">{{ t('paper.aiParsing') }}</p>
-
-          <section class="ai-sec">
-            <div class="ai-sec-head">
-              <strong>{{ t('paper.aiSummary') }}</strong>
-              <span style="flex: 1" />
-              <button v-if="summaryBusy" class="pt-act" @click="cancelAi">{{ t('common.cancel') }}</button>
-              <button v-else-if="aiSummary" class="pt-act" @click="runSummary(true)">{{ t('paper.aiRegen') }}</button>
-            </div>
-            <div v-if="aiSummary" class="ai-text">{{ aiSummary }}</div>
-            <div v-else-if="summaryBusy" class="ai-text ai-pending">{{ t('paper.translating') }}</div>
-            <div v-else class="pt-start">
-              <span>{{ t('paper.aiSummaryHint') }}</span>
-              <button class="btn btn-sm btn-primary" @click="runSummary()">{{ t('paper.aiSummaryGen') }}</button>
-            </div>
-          </section>
-
-          <section class="ai-sec">
-            <div class="ai-sec-head">
-              <strong>{{ t('paper.aiTen') }}</strong>
-              <span style="flex: 1" />
-              <span class="ai-progress">{{ t('paper.aiAnswered', { n: answeredCount }) }}</span>
-            </div>
-            <p class="ai-hint">{{ t('paper.aiTenHint') }}</p>
-            <div v-for="(q, i) in tenQs" :key="i" class="ai-q">
-              <button class="ai-q-head" @click="toggleQ(i)">
-                <span class="ai-q-num" :class="{ done: !!tenA[i] }">Q{{ i + 1 }}</span>
-                <span class="ai-q-text">{{ q }}</span>
-                <span class="ai-q-arrow">{{ openQ.has(i) ? '▴' : '▾' }}</span>
-              </button>
-              <div v-if="openQ.has(i)" class="ai-q-body">
-                <div v-if="tenA[i]" class="ai-text">{{ tenA[i] }}</div>
-                <div v-else-if="tenBusy === i" class="ai-text ai-pending">{{ t('paper.translating') }}</div>
-                <div class="ai-q-actions">
-                  <button v-if="tenBusy === i" class="pt-act" @click="cancelAi">{{ t('common.cancel') }}</button>
-                  <button
-                    v-else-if="!tenA[i]"
-                    class="btn btn-sm btn-primary"
-                    :disabled="tenBusy >= 0"
-                    @click="runQuestion(i)"
-                  >✦ {{ t('paper.aiAnswer') }}</button>
-                  <button v-else class="pt-act" :disabled="tenBusy >= 0" @click="runQuestion(i)">
-                    {{ t('paper.aiRegen') }}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-          </div>
-        </template>
-
-        <!-- 问答 agent: 独立标签, 独立会话, 消息区自动跟随 -->
-        <template v-else-if="rightTab === 'chat'">
-          <div class="rt-chat">
-            <div class="chat-head">
-              <strong>{{ t('paper.aiChat') }}</strong>
-              <span style="flex: 1" />
-              <button v-if="chatMsgs.length" class="pt-act" @click="clearChat">{{ t('paper.chatClear') }}</button>
-              <button class="icon-btn" :title="t('common.close')" @click="closeRight">✕</button>
-            </div>
-            <div ref="chatScroll" class="ai-msgs">
-              <div v-if="!chatMsgs.length" class="chat-empty">
-                <p class="ai-hint">{{ t('paper.chatEmpty') }}</p>
-                <button class="chat-chip" @click="quickAsk(t('paper.chatChip1'))">{{ t('paper.chatChip1') }}</button>
-                <button class="chat-chip" @click="quickAsk(t('paper.chatChip2'))">{{ t('paper.chatChip2') }}</button>
-                <button class="chat-chip" @click="quickAsk(t('paper.chatChip3'))">{{ t('paper.chatChip3') }}</button>
-              </div>
-              <div v-for="(m, i) in chatMsgs" :key="i" class="ai-msg" :class="m.role">{{ m.content || '…' }}</div>
-            </div>
-            <form class="ai-input" @submit.prevent="sendChat">
-              <input v-model="chatInput" class="input" :placeholder="t('paper.aiChatPh')" />
-              <button class="btn btn-sm btn-primary" type="submit" :disabled="chatBusy || !chatInput.trim()">
-                {{ t('paper.aiSend') }}
-              </button>
-            </form>
-          </div>
-        </template>
 
         <!-- 翻译: 版式对照连续滚动 (独立于左栏) / 段落列表 -->
         <template v-else>
@@ -6289,13 +6025,6 @@ onBeforeUnmount(() => {
   overflow: auto;
   padding: 12px 16px;
 }
-/* 问答: 消息区占满, 输入固定底部 */
-.rt-chat {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
 .chat-head {
   display: flex;
   align-items: center;
@@ -6304,154 +6033,8 @@ onBeforeUnmount(() => {
   color: var(--text-2);
   padding: 10px 16px 6px;
 }
-.rt-chat .ai-msgs {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 6px 16px 10px;
-  margin: 0;
-}
-.rt-chat .ai-input {
-  position: static;
-  padding: 10px 16px 12px;
-  border-top: 1px solid var(--border);
-}
-.chat-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding-top: 14px;
-}
-.chat-chip {
-  border: 1px solid var(--border);
-  background: var(--bg);
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 12.5px;
-  color: var(--text-2);
-}
-.chat-chip:hover {
-  color: var(--brand);
-  border-color: var(--brand);
-}
-/* ---- AI 辅读 ---- */
 .ai-top {
   padding: 0 0 4px;
-}
-.ai-parsing {
-  font-size: 12px;
-  color: var(--brand);
-  margin: 0 0 8px;
-}
-.ai-sec {
-  margin-bottom: 20px;
-}
-.ai-sec-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-2);
-  margin-bottom: 8px;
-}
-.ai-progress {
-  font-size: 12px;
-  color: var(--text-3);
-}
-.ai-hint {
-  font-size: 12px;
-  color: var(--text-3);
-  margin: 0 0 6px;
-}
-.ai-text {
-  font-size: 13px;
-  line-height: 1.85;
-  color: var(--text);
-  white-space: pre-wrap;
-  background: var(--bg);
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-.ai-pending {
-  color: var(--text-3);
-}
-.ai-q {
-  border-bottom: 1px solid var(--border);
-}
-.ai-q-head {
-  width: 100%;
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  padding: 9px 2px;
-  border: none;
-  background: none;
-  text-align: left;
-  font-size: 13px;
-  color: var(--text-2);
-  line-height: 1.5;
-}
-.ai-q-head:hover {
-  color: var(--text);
-}
-.ai-q-num {
-  color: var(--text-3);
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.ai-q-num.done {
-  color: var(--success, #23a55a);
-}
-.ai-q-text {
-  flex: 1;
-}
-.ai-q-arrow {
-  color: var(--text-3);
-}
-.ai-q-body {
-  padding: 0 2px 10px;
-}
-.ai-q-actions {
-  margin-top: 6px;
-  display: flex;
-  justify-content: flex-end;
-}
-.ai-msgs {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.ai-msg {
-  font-size: 13px;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  border-radius: 10px;
-  padding: 8px 11px;
-  max-width: 92%;
-}
-.ai-msg.user {
-  align-self: flex-end;
-  background: var(--brand);
-  color: #fff;
-}
-.ai-msg.assistant {
-  align-self: flex-start;
-  background: var(--bg);
-  color: var(--text);
-}
-.ai-input {
-  position: sticky;
-  bottom: 0;
-  background: var(--card);
-  padding: 8px 0;
-  display: flex;
-  gap: 8px;
-}
-.ai-input .input {
-  flex: 1;
-  height: 32px;
 }
 
 .pt-setup {

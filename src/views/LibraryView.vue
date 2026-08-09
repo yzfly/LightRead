@@ -142,9 +142,18 @@ function openBook(book: BookMeta) {
 }
 
 async function removeBook(book: BookMeta) {
-  if (!confirm(t(paperMode.value ? 'library.deletePaperConfirm' : 'library.deleteConfirm', { title: book.title }))) return
-  await library.removeBook(book.id)
-  toast(t('library.deleted'), 'success')
+  const confirmation = paperMode.value
+    ? 'library.deletePaperConfirm'
+    : book.format === 'pdf'
+      ? 'library.deletePdfConfirm'
+      : 'library.deleteConfirm'
+  if (!confirm(t(confirmation, { title: book.title }))) return
+  try {
+    await library.removeBook(book.id)
+    toast(t('library.deleted'), 'success')
+  } catch (error: any) {
+    toast(t('library.deleteFailed', { msg: error?.message ?? error }), 'error', 6000)
+  }
 }
 
 // ---- URL 导入 ----
@@ -202,10 +211,25 @@ function selectAll() {
 
 async function batchDelete() {
   const count = selectedIds.value.size
-  if (!count || !confirm(t(paperMode.value ? 'library.batchDeletePapersConfirm' : 'library.batchDeleteConfirm', { count }))) return
-  for (const id of selectedIds.value) await library.removeBook(id)
-  selectedIds.value = new Set()
-  toast(t('library.batchDeleted', { count }), 'success')
+  const includesPdf = [...selectedIds.value].some(id => library.books.some(book => book.id === id && book.format === 'pdf'))
+  const confirmation = paperMode.value
+    ? 'library.batchDeletePapersConfirm'
+    : includesPdf
+      ? 'library.batchDeleteWithAgentConfirm'
+      : 'library.batchDeleteConfirm'
+  if (!count || !confirm(t(confirmation, { count }))) return
+  let deleted = 0
+  try {
+    for (const id of selectedIds.value) {
+      await library.removeBook(id)
+      deleted += 1
+    }
+    selectedIds.value = new Set()
+    toast(t('library.batchDeleted', { count }), 'success')
+  } catch (error: any) {
+    selectedIds.value = new Set([...selectedIds.value].filter(id => library.books.some(book => book.id === id)))
+    toast(t('library.batchDeleteFailed', { deleted, msg: error?.message ?? error }), 'error', 7000)
+  }
 }
 
 async function batchTag() {

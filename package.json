@@ -9,6 +9,7 @@
     "test:archive": "node scripts/test-library-archive.mjs",
     "test:keyboard-shortcuts": "node --experimental-strip-types --test scripts/test-keyboard-shortcuts.mjs",
     "test:paper-context": "node --experimental-strip-types --test scripts/test-paper-translation-context.mjs",
+    "test:paper-agent": "node --experimental-strip-types --test scripts/test-paper-agent-context.mjs scripts/test-paper-agent-ten-questions.mjs",
     "preview": "npm run build && wrangler dev",
     "tauri": "tauri",
     "e2e": "node scripts/e2e-smoke.mjs",

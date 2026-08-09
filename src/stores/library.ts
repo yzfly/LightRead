@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import type { BooklistRec, BookMeta } from '../storage'
 import { getStorage } from '../storage'
+import { activeAgentTurn, cleanupAgentPaper, paperAgentRuntimeAvailable, stopAgentTurn } from '../services/paperAgent.ts'
 
 export const useLibrary = defineStore('library', {
   state: () => ({
@@ -36,6 +37,19 @@ export const useLibrary = defineStore('library', {
     },
     async removeBook(id: string) {
       const storage = await getStorage()
+      const book = this.books.find(item => item.id === id) ?? await storage.getBook(id)
+      // Agent 数据与论文原文件分开存放；先停止并清理，任何失败都保留书库记录供重试。
+      if (paperAgentRuntimeAvailable() && book?.format === 'pdf') {
+        const active = await activeAgentTurn(id)
+        if (active) {
+          try {
+            await stopAgentTurn(id, active.turnId)
+          } catch (error) {
+            if (await activeAgentTurn(id)) throw error
+          }
+        }
+        await cleanupAgentPaper(id)
+      }
       await storage.deleteBook(id)
       this.books = this.books.filter(b => b.id !== id)
       for (const booklistId of Object.keys(this.booklistBookIds)) {

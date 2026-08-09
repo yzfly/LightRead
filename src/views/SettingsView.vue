@@ -19,6 +19,12 @@ import {
 } from '../services/updater'
 import { t } from '../i18n'
 import { AI_PROVIDERS, providerById, chatStream } from '../services/ai'
+import {
+  paperAgentRuntimeAvailable,
+  paperAgentEngineStatus,
+  type PaperAgentEngine,
+  type PaperAgentEngineStatus,
+} from '../services/paperAgent.ts'
 
 const settings = useSettings()
 const library = useLibrary()
@@ -131,6 +137,7 @@ onMounted(async () => {
   doCheckUpdate(false)
   const storage = await getStorage()
   storageKind.value = storage.kind
+  await refreshPaperAgentStatuses()
 })
 
 // ---- AI 助手 ----
@@ -147,6 +154,42 @@ function onAiProviderChange() {
 }
 
 const aiDocsUrl = computed(() => providerById(settings.aiProvider).docsUrl ?? '')
+
+const paperAgentEngines: Array<{ id: PaperAgentEngine; label: string }> = [
+  { id: 'codex', label: 'Codex' },
+  { id: 'claude', label: 'Claude Code' },
+  { id: 'pi', label: 'Pi Agent' },
+]
+const paperAgentStatuses = ref<Record<PaperAgentEngine, PaperAgentEngineStatus | null>>({
+  codex: null, claude: null, pi: null,
+})
+const checkingPaperAgents = ref(false)
+
+async function refreshPaperAgentStatuses() {
+  if (!paperAgentRuntimeAvailable() || checkingPaperAgents.value) return
+  checkingPaperAgents.value = true
+  try {
+    const entries = await Promise.all(paperAgentEngines.map(async ({ id }) => [
+      id,
+      await paperAgentEngineStatus(id, settings.paperAgentExecutables[id] || undefined),
+    ] as const))
+    paperAgentStatuses.value = Object.fromEntries(entries) as Record<PaperAgentEngine, PaperAgentEngineStatus>
+  } finally {
+    checkingPaperAgents.value = false
+  }
+}
+
+async function choosePaperAgentExecutable(engine: PaperAgentEngine) {
+  const { open } = await import('@tauri-apps/plugin-dialog')
+  const picked = await open({
+    directory: false,
+    multiple: false,
+    title: t('settings.paperAgentsBrowseTitle'),
+  })
+  if (typeof picked !== 'string') return
+  settings.paperAgentExecutables[engine] = picked
+  await refreshPaperAgentStatuses()
+}
 
 async function testAi() {
   if (aiTesting.value) return
@@ -430,6 +473,51 @@ async function doImport(e: Event) {
       </template>
     </section>
 
+    <section v-if="paperAgentRuntimeAvailable()" class="card section">
+      <h2>{{ t('settings.paperAgentsTitle') }}</h2>
+      <div class="row">
+        <div style="min-width: 0">
+          <div class="row-title">{{ t('settings.paperAgentsEngine') }}</div>
+          <div class="row-desc">{{ t('settings.paperAgentsDesc') }}</div>
+        </div>
+        <button class="btn btn-sm" :disabled="checkingPaperAgents" @click="refreshPaperAgentStatuses">
+          {{ checkingPaperAgents ? t('settings.testing') : t('settings.paperAgentsCheck') }}
+        </button>
+      </div>
+      <div class="agent-default-row">
+        <span>{{ t('settings.paperAgentsDefault') }}</span>
+        <select v-model="settings.paperAgentEngine" class="input">
+          <option v-for="engine in paperAgentEngines" :key="engine.id" :value="engine.id">{{ engine.label }}</option>
+        </select>
+      </div>
+      <div v-for="engine in paperAgentEngines" :key="engine.id" class="agent-engine-setting">
+        <div class="agent-engine-title">
+          <strong>{{ engine.label }}</strong>
+          <span
+            v-if="paperAgentStatuses[engine.id]"
+            :class="paperAgentStatuses[engine.id]?.compatible && paperAgentStatuses[engine.id]?.authenticated ? 'agent-ok' : 'agent-bad'"
+          >
+            {{ paperAgentStatuses[engine.id]?.compatible && paperAgentStatuses[engine.id]?.authenticated ? t('settings.paperAgentsReady') : paperAgentStatuses[engine.id]?.reason }}
+          </span>
+        </div>
+        <div class="agent-path-row">
+          <input
+            v-model="settings.paperAgentExecutables[engine.id]"
+            class="input"
+            :placeholder="t('settings.paperAgentsPathPlaceholder')"
+            @change="refreshPaperAgentStatuses"
+          />
+          <button type="button" class="btn btn-sm" @click="choosePaperAgentExecutable(engine.id)">
+            {{ t('settings.paperAgentsBrowse') }}
+          </button>
+        </div>
+        <div v-if="paperAgentStatuses[engine.id]?.path" class="agent-engine-meta">
+          {{ paperAgentStatuses[engine.id]?.version }} · {{ paperAgentStatuses[engine.id]?.path }}
+        </div>
+      </div>
+      <p class="agent-settings-note">{{ t('settings.paperAgentsNote') }}</p>
+    </section>
+
     <section class="card section">
       <h2>{{ t('settings.aiTitle') }}</h2>
       <div class="row">
@@ -656,6 +744,17 @@ h2 {
   font-size: 12px;
   color: var(--brand);
 }
+.agent-default-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; font-size: 13px; }
+.agent-default-row .input { width: 180px; }
+.agent-engine-setting { margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.agent-engine-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; font-size: 12px; }
+.agent-engine-title span { color: var(--text-3); font-size: 11px; text-align: right; }
+.agent-engine-title .agent-ok { color: var(--success, #238b50); }
+.agent-engine-title .agent-bad { color: var(--danger, #c94545); }
+.agent-path-row { display: flex; gap: 7px; }
+.agent-path-row .input { flex: 1; min-width: 0; }
+.agent-engine-meta { margin-top: 5px; color: var(--text-3); font-size: 10.5px; overflow-wrap: anywhere; }
+.agent-settings-note { margin: 10px 0 0; color: var(--text-3); font-size: 11px; line-height: 1.55; }
 .webdav-grid {
   display: flex;
   gap: 8px;

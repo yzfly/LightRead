@@ -1,3 +1,4 @@
+mod agent;
 mod babeldoc;
 mod calibre;
 mod edge_tts;
@@ -121,22 +122,38 @@ mod tests {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  let mut builder = tauri::Builder::default();
-
   // Windows/Linux 会把关联文件作为新进程参数传入；把它转交给已经运行的主实例。
   #[cfg(desktop)]
-  {
-    builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-      queue_open_files(app, supported_paths(args));
-    }));
-  }
+  let builder = tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+    queue_open_files(app, supported_paths(args));
+  }));
+  #[cfg(not(desktop))]
+  let builder = tauri::Builder::default();
 
   let app = builder
     .manage(OpenFilesState::default())
+    .manage(agent::ContextState::default())
+    .manage(agent::AgentSupervisor::default())
     .manage(babeldoc::BabeldocState::default())
     .invoke_handler(tauri::generate_handler![
       take_open_files,
       read_open_file,
+      agent::context::agent_snapshot_begin,
+      agent::context::agent_snapshot_append_text,
+      agent::context::agent_snapshot_finalize,
+      agent::context::agent_snapshot_abort,
+      agent::context::agent_cleanup_paper,
+      agent::context::agent_workspace_path,
+      agent::supervisor::agent_active_turn,
+      agent::supervisor::agent_replay_events,
+      agent::supervisor::agent_stop_turn,
+      agent::supervisor::agent_respond_interaction,
+      agent::engines::agent_engine_status,
+      agent::engines::agent_start_turn,
+      agent::engines::agent_reset_session,
+      agent::worksheet::agent_worksheet_load,
+      agent::worksheet::agent_worksheet_save_draft,
+      agent::worksheet::agent_worksheet_commit_human,
       edge_tts::edge_tts_synthesize,
       fonts::list_system_fonts,
       calibre::calibre_list_books,
@@ -186,6 +203,9 @@ pub fn run() {
     .expect("error while building tauri application");
 
   app.run(|app_handle, event| {
+    if matches!(&event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+      app_handle.state::<agent::AgentSupervisor>().stop_all();
+    }
     // macOS/移动端通过系统 Opened 事件交付关联文件；冷启动事件同样先进入队列。
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
     if let tauri::RunEvent::Opened { urls } = event {

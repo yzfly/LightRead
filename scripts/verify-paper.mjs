@@ -1,5 +1,5 @@
 // 论文阅读器验证: 导入多页 PDF → 连续滚动 → 缩放 → 目录 → 链接跳转/返回 → 划词高亮 → 持久化
-// → AI 辅读 (总结/十问/问答, 走本地 mock SSE 服务) → 划词翻译 → 整页翻译
+// → Web 端不暴露原生 Agent → 划词翻译 → 整页翻译
 import { chromium } from 'playwright'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -65,6 +65,159 @@ writeFileSync(pdfPath, pdfContent)
 
 const browser = await chromium.launch()
 const pg = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+
+function installPaperAgentBridge() {
+  const listeners = new Set()
+  const events = { codex: { chat: [], worksheet: [] }, claude: { chat: [], worksheet: [] }, pi: { chat: [], worksheet: [] } }
+  const sequences = { codex: { chat: 0, worksheet: 0 }, claude: { chat: 0, worksheet: 0 }, pi: { chat: 0, worksheet: 0 } }
+  let active = null
+  const worksheetKey = 'lightread-agent-test-worksheet'
+  const defaultWorksheet = () => ({
+    version: 1,
+    questions: Array.from({ length: 10 }, (_, index) => ({
+      id: `q${index + 1}`, aiInitial: null, humanDraft: '', humanEditRevision: 0,
+      humanCommitted: '', humanCommittedRevision: 0, aiReanswer: null, pending: null,
+    })),
+    updatedAtMs: Date.now(),
+  })
+  const loadWorksheet = () => JSON.parse(localStorage.getItem(worksheetKey) || JSON.stringify(defaultWorksheet()))
+  const saveWorksheet = value => {
+    value.updatedAtMs = Date.now()
+    localStorage.setItem(worksheetKey, JSON.stringify(value))
+    return structuredClone(value)
+  }
+  const emit = (info, payload) => {
+    const sequence = ++sequences[info.engine][info.conversation]
+    const event = {
+      ...info, sequence, timestampMs: Date.now(), payload,
+    }
+    events[info.engine][info.conversation].push(event)
+    for (const listener of listeners) listener(structuredClone(event))
+  }
+  window.__LIGHTREAD_PAPER_AGENT_TEST_BRIDGE__ = {
+    listen(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    async invoke(command, args) {
+      if (command === 'agent_engine_status') {
+        return {
+          engine: args.engine, found: true, compatible: true, authenticated: true,
+          path: `/mock/${args.engine}`, version: `${args.engine}-mock 1.0.0`,
+          reason: 'mock ready', approvalPosture: 'Mock native approval behavior',
+        }
+      }
+      if (command === 'agent_snapshot_begin') {
+        return {
+          token: `snapshot-${Date.now()}`, needsText: true, sourceSha256: 'sha256:' + '1'.repeat(64),
+          currentPaperPath: '/tmp/lightread-agent-test/current-paper',
+          workspacePath: '/tmp/lightread-agent-test/workspace',
+        }
+      }
+      if (command === 'agent_snapshot_append_text' || command === 'agent_snapshot_abort') return null
+      if (command === 'agent_snapshot_finalize') {
+        return {
+          revision: args.snapshotRevision, sourceSha256: 'sha256:' + '1'.repeat(64), fileHashes: {},
+          currentPaperPath: '/tmp/lightread-agent-test/current-paper',
+          workspacePath: '/tmp/lightread-agent-test/workspace',
+        }
+      }
+      if (command === 'agent_replay_events') {
+        return events[args.engine][args.conversation].filter(event => event.sequence > (args.afterSequence || 0))
+      }
+      if (command === 'agent_active_turn') return active
+      if (command === 'agent_worksheet_load') return structuredClone(loadWorksheet())
+      if (command === 'agent_worksheet_save_draft') {
+        const worksheet = loadWorksheet()
+        const question = worksheet.questions.find(item => item.id === args.questionId)
+        if (question.humanEditRevision !== args.expectedEditRevision) throw new Error('revision conflict')
+        if (question.humanDraft !== args.text) {
+          question.humanDraft = args.text
+          question.humanEditRevision += 1
+          if (question.aiReanswer) question.aiReanswer.stale = true
+        }
+        return saveWorksheet(worksheet)
+      }
+      if (command === 'agent_worksheet_commit_human') {
+        const worksheet = loadWorksheet()
+        const question = worksheet.questions.find(item => item.id === args.questionId)
+        if (question.humanEditRevision !== args.expectedEditRevision) throw new Error('revision conflict')
+        question.humanCommitted = question.humanDraft
+        question.humanCommittedRevision += 1
+        return saveWorksheet(worksheet)
+      }
+      if (command === 'agent_start_turn') {
+        if (active) throw new Error('another Agent turn is already active for this paper')
+        const request = args.request
+        const info = {
+          paperId: request.paperId, engine: request.engine, conversation: request.conversation,
+          conversationId: request.conversationId, turnId: `turn-${Date.now()}`,
+          contextRevision: request.contextRevision, stopping: false,
+        }
+        active = info
+        emit(info, { type: 'user_message', text: request.message })
+        if (request.conversation === 'chat') {
+          emit(info, {
+            type: 'interaction_requested', requestId: `request-${info.turnId}`,
+            prompt: 'Mock native permission',
+            choices: [{ value: 'true', label: 'Confirm', description: '' }],
+            inputAllowed: false,
+          })
+        }
+        if (request.conversation === 'worksheet') {
+          const worksheet = loadWorksheet()
+          const question = worksheet.questions.find(item => item.id === request.worksheet.questionId)
+          question.pending = {
+            phase: request.worksheet.phase, engine: request.engine, turnId: info.turnId,
+            contextRevision: request.contextRevision, humanRevision: request.worksheet.humanRevision,
+            humanEditRevision: request.worksheet.humanEditRevision, startedAtMs: Date.now(),
+          }
+          saveWorksheet(worksheet)
+        }
+        setTimeout(() => {
+          if (active?.turnId !== info.turnId) return
+          const text = request.conversation === 'worksheet'
+            ? request.worksheet.phase === 'initial' ? 'MOCK AI 初答：论文提出新架构并报告准确率提升。' : 'MOCK AI 再答：结合人工修订，20% 提升仍需核对基线。'
+            : 'MOCK Agent 已读取第 4 页结论与读者笔记。'
+          emit(info, { type: 'text_delta', text })
+          if (request.conversation === 'worksheet') {
+            const worksheet = loadWorksheet()
+            const question = worksheet.questions.find(item => item.id === request.worksheet.questionId)
+            const answer = {
+              text, engine: request.engine, turnId: info.turnId,
+              nativeSessionId: `session-${request.engine}`, nativeTurnId: `native-${info.turnId}`,
+              contextRevision: request.contextRevision,
+              humanRevision: request.worksheet.humanRevision,
+              humanEditRevision: request.worksheet.humanEditRevision,
+              completedAtMs: Date.now(), stale: false,
+            }
+            if (request.worksheet.phase === 'initial') {
+              question.aiInitial = answer
+              if (!question.humanDraft) {
+                question.humanDraft = text
+                question.humanEditRevision = 1
+              }
+            } else question.aiReanswer = answer
+            question.pending = null
+            saveWorksheet(worksheet)
+          }
+          emit(info, { type: 'message_completed', text })
+          emit(info, { type: 'turn_completed' })
+          active = null
+        }, 700)
+        return structuredClone(info)
+      }
+      if (command === 'agent_stop_turn') {
+        if (active) emit(active, { type: 'turn_interrupted', reason: 'mock stop' })
+        active = null
+        return null
+      }
+      if (command === 'agent_respond_interaction') return null
+      if (command === 'agent_reset_session' || command === 'agent_cleanup_paper') return null
+      throw new Error(`Unhandled mock Agent command: ${command}`)
+    },
+  }
+}
 // 注入 AI 配置指向 mock 服务 (页面脚本执行前)
 await pg.addInitScript(() => {
   if (!localStorage.getItem('lightread-settings')) {
@@ -299,43 +452,11 @@ await step('标注列表删除高亮', async () => {
   await pg.click('button[title="划线想法"]') // 收起抽屉
 })
 
-await step('AI 辅读: 生成总结 (流式)', async () => {
-  await pg.click('header button:has-text("AI 辅读")')
-  await pg.waitForSelector('.ai-sec', { timeout: 5000 })
-  await pg.click('button:has-text("生成总结")')
-  // 等到最后一个流式分片, 确认生成完整结束 (才会写缓存)
-  await pg.waitForSelector('.ai-sec .ai-text:has-text("MOCK答复丙")', { timeout: 10000 })
-  await pg.waitForTimeout(300)
-})
-await pg.screenshot({ path: join(TMP, 'shots', '06-ai-summary.png') })
-
-await step('AI 辅读: 十问逐问回答', async () => {
-  await pg.click('.ai-q-head:has-text("Q1")')
-  await pg.click('.ai-q-body button:has-text("回答")')
-  await pg.waitForSelector('.ai-q-body .ai-text:has-text("MOCK答复丙")', { timeout: 10000 })
-  await pg.waitForTimeout(300)
-  const progress = await pg.textContent('.ai-progress')
-  if (!progress.includes('1/10')) throw new Error(`进度未更新: ${progress}`)
-})
-
-await step('问答 agent: 独立标签对话', async () => {
-  await pg.click('header button:has-text("问答")')
-  await pg.waitForSelector('.ai-input input', { timeout: 5000 })
-  await pg.fill('.ai-input input', '这篇论文的方法是什么')
-  await pg.click('.ai-input button')
-  await pg.waitForSelector('.ai-msg.assistant:has-text("MOCK答复丙")', { timeout: 10000 })
-})
-await pg.screenshot({ path: join(TMP, 'shots', '07-ai-chat.png') })
-
-await step('AI 辅读: 关闭再打开, 总结与十问答案有缓存', async () => {
-  await pg.click('header button:has-text("AI 辅读")') // 从问答切回 AI 辅读
-  await pg.waitForSelector('.ai-sec', { timeout: 5000 })
-  await pg.click('header button:has-text("AI 辅读")') // 再点当前项即关闭
-  await pg.waitForSelector('.pane-right', { state: 'detached', timeout: 5000 })
-  await pg.click('header button:has-text("AI 辅读")')
-  await pg.waitForSelector('.ai-sec .ai-text:has-text("MOCK答复")', { timeout: 5000 })
-  const progress = await pg.textContent('.ai-progress')
-  if (!progress.includes('1/10')) throw new Error(`缓存未生效: ${progress}`)
+await step('Web 端不暴露原生 Agent，旧 AI 辅读/问答入口已移除', async () => {
+  if (await pg.locator('header button:has-text("Agent")').count()) throw new Error('Web 端不应暴露本机 Agent')
+  if (await pg.locator('header button:has-text("AI 辅读")').count()) throw new Error('旧 AI 辅读入口仍存在')
+  if (await pg.locator('header button:text-is("问答")').count()) throw new Error('旧问答入口仍存在')
+  if (await pg.locator('.ai-sec, .ai-q-list, .ai-input').count()) throw new Error('旧论文 AI DOM 仍可达')
 })
 
 await step('划词 AI 翻译浮卡 (流式)', async () => {
@@ -370,29 +491,15 @@ await step('藏书 PDF 同样走论文阅读器', async () => {
   await pg.setInputFiles('input[type=file][multiple]', pdfPath)
   await pg.waitForSelector('.book-card', { timeout: 15000 })
   await pg.click('.book-card')
-  await pg.waitForSelector('.paged-box', { timeout: 15000 })
+  await pg.waitForSelector('.pane-left', { timeout: 15000 })
   await pg.waitForSelector('.p-holder canvas', { timeout: 15000 })
   const backTitle = await pg.locator('header .icon-btn').first().getAttribute('title')
   if (backTitle !== '返回藏书') throw new Error(`返回目标错误: ${backTitle}`)
-  const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
-  const h0 = await pg.locator('.spread-host canvas').evaluate(el => parseFloat(el.style.height))
-  await pg.keyboard.press(`${primaryKey}+=`)
-  await pg.waitForFunction(
-    height => parseFloat(document.querySelector('.spread-host canvas')?.style.height || '0') > height,
-    h0,
-    { timeout: 5000 },
-  )
-  await pg.keyboard.press(`${primaryKey}+0`)
-  await pg.waitForFunction(
-    height => Math.abs(parseFloat(document.querySelector('.spread-host canvas')?.style.height || '0') - height) < 3,
-    h0,
-    { timeout: 5000 },
-  )
-  // 藏书功能集: 听书/自动阅读, 无翻译/AI 辅读
+  // 藏书功能集: 听书/自动阅读, Web 端无翻译/原生 Agent
   await pg.waitForSelector('header button:has-text("听书")', { timeout: 4000 })
   await pg.waitForSelector('header button:has-text("自动阅读")', { timeout: 4000 })
   if (await pg.locator('header button:text-is("翻译")').count()) throw new Error('藏书 PDF 不应显示翻译按钮')
-  if (await pg.locator('header button:has-text("AI 辅读")').count()) throw new Error('藏书 PDF 不应显示 AI 辅读')
+  if (await pg.locator('header button:has-text("Agent")').count()) throw new Error('Web 藏书 PDF 不应显示本机 Agent')
   await pg.click('header .icon-btn')
   await pg.waitForSelector('.book-card', { timeout: 8000 })
   await pg.goto('http://localhost:4173/#/papers', { waitUntil: 'networkidle' })
@@ -413,6 +520,57 @@ await step('分栏拖拽调宽', async () => {
   if (w1 - w0 < 100) throw new Error(`右栏宽度未随拖拽变化 ${w0} -> ${w1}`)
 })
 await pg.screenshot({ path: join(TMP, 'shots', '09-split.png') })
+
+await step('Mock 原生 Agent 对话、单任务锁与论文十问人工修订闭环', async () => {
+  await pg.addInitScript(installPaperAgentBridge)
+  await pg.evaluate(() => {
+    const settings = JSON.parse(localStorage.getItem('lightread-settings') || '{}')
+    settings.libraryRoot = '/tmp/lightread-agent-test'
+    settings.paperAgentEngine = 'pi'
+    localStorage.setItem('lightread-settings', JSON.stringify(settings))
+  })
+  await pg.reload({ waitUntil: 'networkidle' })
+  await pg.waitForSelector('.p-holder canvas', { timeout: 15000 })
+  await pg.click('header button:has-text("Agent")')
+  await pg.waitForSelector('.agent-sidebar', { timeout: 5000 })
+
+  await pg.fill('.composer textarea', '请结合末页与笔记回答')
+  await pg.click('.composer button[type="submit"]')
+  await pg.waitForSelector('.interaction-card:has-text("Mock native permission")', { timeout: 5000 })
+  await pg.click('.interaction-card button:has-text("Confirm")')
+  await pg.waitForSelector('.message.assistant:has-text("MOCK Agent")', { timeout: 10000 })
+
+  await pg.click('.view-tabs button:has-text("论文十问")')
+  await pg.locator('.question-card').first().getByText('让 AI 初答').click()
+  await pg.waitForSelector('.question-card:first-of-type .ai-initial .answer-text:has-text("MOCK AI 初答")', { timeout: 10000 })
+  const humanAnswer = '人工修订：论文报告 20% 提升，但必须核对实验基线与任务领域。'
+  await pg.locator('.question-card').first().locator('.human-answer textarea').fill(humanAnswer)
+  await pg.locator('.question-card').first().getByText('保存并让 AI 再答').click()
+  await pg.waitForSelector('.question-card:first-of-type .ai-reanswer .answer-text:has-text("MOCK AI 再答")', { timeout: 10000 })
+  if (await pg.locator('.question-card').first().locator('.human-answer textarea').inputValue() !== humanAnswer) {
+    throw new Error('AI 再答覆盖了人工回答')
+  }
+
+  await pg.reload({ waitUntil: 'networkidle' })
+  await pg.waitForSelector('.p-holder canvas', { timeout: 15000 })
+  await pg.click('header button:has-text("Agent")')
+  await pg.click('.view-tabs button:has-text("论文十问")')
+  await pg.waitForSelector('.question-card:first-of-type .ai-reanswer .answer-text:has-text("MOCK AI 再答")', { timeout: 10000 })
+  if (await pg.locator('.question-card').first().locator('.human-answer textarea').inputValue() !== humanAnswer) {
+    throw new Error('刷新后人工回答未持久化')
+  }
+
+  await pg.click('.view-tabs button:has-text("对话")')
+  await pg.fill('.composer textarea', '验证跨引擎单任务锁')
+  await pg.click('.composer button[type="submit"]')
+  await pg.waitForSelector('.running-dot:has-text("Pi Agent")', { timeout: 5000 })
+  await pg.locator('.engine-row button').filter({ hasText: 'Codex' }).click()
+  const stopButton = pg.locator('.composer button.stop')
+  if (!(await stopButton.isVisible())) throw new Error('切换引擎后未保留运行引擎的 Stop 操作')
+  await stopButton.click()
+  await pg.waitForSelector('.running-dot', { state: 'detached', timeout: 5000 })
+})
+await pg.screenshot({ path: join(TMP, 'shots', '10-paper-agent.png') })
 
 const expectedPdfRepairLogs = [
   'format error: cannot find startxref',
