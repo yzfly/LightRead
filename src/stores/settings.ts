@@ -79,7 +79,7 @@ interface SettingsState {
   aiBaseUrl: string
   aiApiKey: string
   aiModel: string
-  /** 论文 Agent: 当前引擎与可选的手动可执行文件路径 */
+  /** AI 辅读: 设置页选择的本机引擎与可选手动可执行文件路径 */
   paperAgentEngine: 'codex' | 'claude' | 'pi'
   paperAgentExecutables: Record<'codex' | 'claude' | 'pi', string>
   /** WebDAV 云备份 */

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { AnnotationRec, BookMeta } from '../storage/types.ts'
 import { useSettings } from '../stores/settings.ts'
 import { bookFilePath } from '../services/babeldoc.ts'
@@ -28,7 +29,6 @@ import {
   startAgentTurn,
   stopAgentTurn,
   type PaperAgentActiveTurn,
-  type PaperAgentEngine,
   type PaperAgentEngineStatus,
   type PaperAgentEvent,
 } from '../services/paperAgent.ts'
@@ -81,12 +81,11 @@ type UiInteraction = {
 }
 
 const settings = useSettings()
-const selectedEngine = computed({
-  get: () => settings.paperAgentEngine,
-  set: value => { settings.paperAgentEngine = value },
-})
+const router = useRouter()
+const selectedEngine = computed(() => settings.paperAgentEngine)
 const sidebarView = ref<SidebarView>('chat')
-const statuses = ref<Record<PaperAgentEngine, PaperAgentEngineStatus | null>>({ codex: null, claude: null, pi: null })
+const selectedStatus = ref<PaperAgentEngineStatus | null>(null)
+const checkingSelectedStatus = ref(true)
 const messages = ref<UiMessage[]>([])
 const tools = ref<UiTool[]>([])
 const interactions = ref<UiInteraction[]>([])
@@ -110,19 +109,12 @@ let contextTimer: ReturnType<typeof setTimeout> | undefined
 const draftTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const seenSequences = new Set<string>()
 
-const engineOrder: PaperAgentEngine[] = ['codex', 'claude', 'pi']
-const engineLabels: Record<PaperAgentEngine, string> = {
-  codex: 'Codex',
-  claude: 'Claude Code',
-  pi: 'Pi Agent',
-}
-
-const selectedStatus = computed(() => statuses.value[selectedEngine.value])
+const engineReady = computed(() => Boolean(selectedStatus.value?.compatible && selectedStatus.value?.authenticated))
 const canSend = computed(() =>
   !preparing.value
   && !activeTurn.value
   && Boolean(input.value.trim())
-  && Boolean(selectedStatus.value?.compatible && selectedStatus.value?.authenticated),
+  && engineReady.value,
 )
 const answeredQuestionCount = computed(() => worksheet.value?.questions.filter(question => question.aiReanswer).length ?? 0)
 
@@ -134,12 +126,29 @@ async function sha256(value: string): Promise<string> {
   return `sha256:${hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))}`
 }
 
-async function loadStatuses() {
-  const results = await Promise.all(engineOrder.map(async engine => {
-    const path = settings.paperAgentExecutables[engine] || undefined
-    return [engine, await paperAgentEngineStatus(engine, path)] as const
-  }))
-  statuses.value = Object.fromEntries(results) as Record<PaperAgentEngine, PaperAgentEngineStatus>
+async function loadSelectedStatus() {
+  const engine = selectedEngine.value
+  checkingSelectedStatus.value = true
+  try {
+    const status = await paperAgentEngineStatus(engine, settings.paperAgentExecutables[engine] || undefined)
+    if (selectedEngine.value === engine) selectedStatus.value = status
+  } catch {
+    if (selectedEngine.value === engine) selectedStatus.value = null
+  } finally {
+    if (selectedEngine.value === engine) checkingSelectedStatus.value = false
+  }
+}
+
+function displayAgentError(error: unknown): string {
+  const message = String(error)
+  if (/executable|probe executable version|did not report a version|authentication|not logged in|no such file or directory/i.test(message)) {
+    return t('paper.agentSetupNeeded')
+  }
+  return message
+}
+
+function openAgentSettings() {
+  void router.push('/settings')
 }
 
 async function ensureTextSnapshot(showProgress: boolean, sourceFingerprint: string): Promise<PaperTextSnapshot> {
@@ -350,9 +359,9 @@ function applyEvent(event: PaperAgentEvent) {
     if (!isChat) void loadWorksheet()
   } else if (payload.type === 'error') {
     interactions.value = interactions.value.filter(interaction => interaction.turnId !== event.turnId)
-    if (isChat) messages.value.push({ id: `${event.turnId}:error:${event.sequence}`, role: 'assistant', text: `⚠ ${String(payload.message ?? 'Agent error')}` })
+    if (isChat) messages.value.push({ id: `${event.turnId}:error:${event.sequence}`, role: 'assistant', text: `⚠ ${displayAgentError(payload.message ?? 'AI error')}` })
     else {
-      worksheetError.value = String(payload.message ?? 'Agent error')
+      worksheetError.value = displayAgentError(payload.message ?? 'AI error')
       void loadWorksheet()
     }
   }
@@ -417,7 +426,7 @@ async function saveHumanDraft(
     if (showFeedback) worksheetError.value = t('paper.agentHumanSaved')
     return saved
   } catch (error) {
-    worksheetError.value = String(error)
+    worksheetError.value = displayAgentError(error)
     await loadWorksheet().catch(() => {})
     return undefined
   } finally {
@@ -452,7 +461,7 @@ async function startInitialAnswer(questionId: TenQuestionId) {
     })
     await loadWorksheet()
   } catch (error) {
-    worksheetError.value = String(error)
+    worksheetError.value = displayAgentError(error)
   } finally {
     worksheetBusy.value = null
   }
@@ -491,7 +500,7 @@ async function saveAndReanswer(questionId: TenQuestionId) {
     })
     await loadWorksheet()
   } catch (error) {
-    worksheetError.value = String(error)
+    worksheetError.value = displayAgentError(error)
     await loadWorksheet().catch(() => {})
   } finally {
     worksheetBusy.value = null
@@ -515,7 +524,7 @@ async function send() {
     })
   } catch (error) {
     input.value = message
-    messages.value.push({ id: `local-error:${Date.now()}`, role: 'assistant', text: `⚠ ${String(error)}` })
+    messages.value.push({ id: `local-error:${Date.now()}`, role: 'assistant', text: `⚠ ${displayAgentError(error)}` })
   }
 }
 
@@ -523,8 +532,8 @@ async function stop() {
   const turn = activeTurn.value
   if (!turn) return
   await stopAgentTurn(props.paperId, turn.turnId).catch(error => {
-    if (turn.conversation === 'worksheet') worksheetError.value = String(error)
-    else messages.value.push({ id: `stop-error:${Date.now()}`, role: 'assistant', text: `⚠ ${String(error)}` })
+    if (turn.conversation === 'worksheet') worksheetError.value = displayAgentError(error)
+    else messages.value.push({ id: `stop-error:${Date.now()}`, role: 'assistant', text: `⚠ ${displayAgentError(error)}` })
   })
   activeTurn.value = null
   if (turn.conversation === 'worksheet') await loadWorksheet().catch(() => {})
@@ -599,7 +608,7 @@ async function openWorkspace() {
     const { openPath } = await import('@tauri-apps/plugin-opener')
     await openPath(workspacePath)
   } catch (error) {
-    messages.value.push({ id: `workspace-error:${Date.now()}`, role: 'assistant', text: `⚠ ${String(error)}` })
+    messages.value.push({ id: `workspace-error:${Date.now()}`, role: 'assistant', text: `⚠ ${displayAgentError(error)}` })
   }
 }
 
@@ -611,13 +620,16 @@ async function resetNativeSession() {
     if (sidebarView.value === 'chat') messages.value.push({ id: `session-reset:${Date.now()}`, role: 'assistant', text })
     else worksheetError.value = text
   } catch (error) {
-    const text = String(error)
+    const text = displayAgentError(error)
     if (sidebarView.value === 'chat') messages.value.push({ id: `session-reset-error:${Date.now()}`, role: 'assistant', text: `⚠ ${text}` })
     else worksheetError.value = text
   }
 }
 
-watch(selectedEngine, () => void loadConversation())
+watch(selectedEngine, async () => {
+  await loadSelectedStatus()
+  await loadConversation()
+})
 watch(
   () => [props.currentPage, props.selection?.page, props.selection?.text, props.annotations],
   () => {
@@ -631,7 +643,7 @@ watch(
 
 onMounted(async () => {
   removeLegacyTenQuestionCache(props.paperId)
-  await loadStatuses()
+  await loadSelectedStatus()
   unlisten = await onPaperAgentEvent(applyEvent)
   await loadConversation()
   await loadWorksheet()
@@ -655,34 +667,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="agent-sidebar" aria-label="Paper Agent">
+  <section class="agent-sidebar" :aria-label="t('paper.agentTitle')">
     <header class="agent-head">
       <strong>{{ t('paper.agentTitle') }}</strong>
-      <span v-if="activeTurn" class="running-dot">{{ engineLabels[activeTurn.engine] }} · {{ t('paper.agentRunning') }}</span>
+      <span v-if="activeTurn" class="running-dot">{{ t('paper.agentRunning') }}</span>
       <button class="open-workspace" type="button" @click="openWorkspace">{{ t('paper.agentOpenWorkspace') }}</button>
       <button class="close" type="button" :aria-label="t('common.close')" @click="$emit('close')">✕</button>
     </header>
 
-    <div class="engine-row" :aria-label="t('paper.agentEngine')">
-      <button
-        v-for="engine in engineOrder"
-        :key="engine"
-        type="button"
-        :class="{ active: selectedEngine === engine }"
-        :aria-pressed="selectedEngine === engine"
-        @click="selectedEngine = engine"
-      >
-        <span>{{ engineLabels[engine] }}</span>
-        <i :class="statuses[engine]?.compatible && statuses[engine]?.authenticated ? 'ok' : 'bad'" />
-      </button>
+    <div v-if="!checkingSelectedStatus && !engineReady" class="agent-setup-notice">
+      <span>{{ t('paper.agentSetupNeeded') }}</span>
+      <button type="button" class="btn btn-sm" @click="openAgentSettings">{{ t('paper.agentOpenSettings') }}</button>
     </div>
-
-    <p v-if="selectedStatus && (!selectedStatus.compatible || !selectedStatus.authenticated)" class="engine-error">
-      {{ selectedStatus.reason }}
-    </p>
-    <p v-else-if="selectedStatus" class="engine-meta" :title="selectedStatus.path">
-      {{ selectedStatus.version }} · {{ selectedStatus.approvalPosture }}
-    </p>
     <button type="button" class="session-reset" :disabled="!!activeTurn" @click="resetNativeSession">
       {{ t('paper.agentResetSession') }}
     </button>
@@ -780,18 +776,18 @@ onBeforeUnmount(() => {
               <small
                 v-if="question.aiInitial"
                 :title="`${question.aiInitial.contextRevision} · ${question.aiInitial.nativeSessionId} · ${question.aiInitial.nativeTurnId}`"
-              >{{ engineLabels[question.aiInitial.engine] }}</small>
+              >{{ t('paper.agentTitle') }}</small>
             </header>
             <div v-if="question.aiInitial" class="answer-text">{{ question.aiInitial.text }}</div>
             <p v-if="question.aiInitial?.stale" class="stale-note">{{ t('paper.agentInitialStale') }}</p>
             <p v-else-if="question.pending?.phase === 'initial'" class="answer-pending">
-              {{ engineLabels[question.pending.engine] }} · {{ t('paper.agentRunning') }}
+              {{ t('paper.agentRunning') }}
             </p>
             <button
               v-else
               type="button"
               class="btn btn-sm"
-              :disabled="!!activeTurn || !!worksheetBusy || !selectedStatus?.compatible || !selectedStatus?.authenticated"
+              :disabled="!!activeTurn || !!worksheetBusy || !engineReady"
               @click="startInitialAnswer(question.id)"
             >{{ t('paper.agentAskInitial') }}</button>
           </section>
@@ -818,7 +814,7 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="btn btn-sm btn-primary"
-                :disabled="!question.aiInitial || !!activeTurn || !!worksheetBusy || !selectedStatus?.compatible || !selectedStatus?.authenticated || !worksheetDrafts[question.id]?.trim()"
+                :disabled="!question.aiInitial || !!activeTurn || !!worksheetBusy || !engineReady || !worksheetDrafts[question.id]?.trim()"
                 @click="saveAndReanswer(question.id)"
               >{{ t('paper.agentSaveAndReanswer') }}</button>
             </div>
@@ -831,18 +827,18 @@ onBeforeUnmount(() => {
                 v-if="question.aiReanswer"
                 :title="`${question.aiReanswer.contextRevision} · ${question.aiReanswer.nativeSessionId} · ${question.aiReanswer.nativeTurnId}`"
               >
-                {{ engineLabels[question.aiReanswer.engine] }} · {{ t('paper.agentBasedOnRevision', { revision: question.aiReanswer.humanRevision }) }}
+                {{ t('paper.agentTitle') }} · {{ t('paper.agentBasedOnRevision', { revision: question.aiReanswer.humanRevision }) }}
               </small>
             </header>
             <div v-if="question.aiReanswer" class="answer-text">{{ question.aiReanswer.text }}</div>
             <p v-else-if="question.pending?.phase === 'reanswer'" class="answer-pending">
-              {{ engineLabels[question.pending.engine] }} · {{ t('paper.agentRunning') }}
+              {{ t('paper.agentRunning') }}
             </p>
             <p v-else class="answer-empty">{{ t('paper.agentReanswerEmpty') }}</p>
             <p v-if="question.aiReanswer?.stale" class="stale-note">
               {{ t('paper.agentReanswerStale') }}
             </p>
-            <p v-if="question.lastError" class="answer-error">{{ question.lastError }}</p>
+            <p v-if="question.lastError" class="answer-error">{{ displayAgentError(question.lastError) }}</p>
           </section>
         </div>
       </article>
@@ -893,15 +889,9 @@ onBeforeUnmount(() => {
 .running-dot { font-size: 11px; color: var(--brand); }
 .open-workspace { margin-left: auto; border: 0; background: none; color: var(--brand); font-size: 11px; }
 .close { border: 0; background: none; color: var(--text-3); font-size: 15px; }
-.engine-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 9px 12px 5px; }
-.engine-row button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 31px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-2); font-size: 11px; }
-.engine-row button.active { border-color: var(--brand); color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, var(--card)); }
-.engine-row i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
-.engine-row i.ok { background: var(--success, #23a55a); }
-.engine-row i.bad { background: var(--danger, #d64b4b); }
-.engine-error, .engine-meta { margin: 0; padding: 2px 14px 7px; font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.engine-error { color: var(--danger, #c94545); white-space: normal; }
-.session-reset { align-self: flex-end; margin: -2px 12px 3px; border: 0; background: none; color: var(--text-3); font-size: 10px; }
+.agent-setup-notice { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 9px 12px 4px; padding: 8px 9px; border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--border)); border-radius: 8px; background: var(--bg); color: var(--text-2); font-size: 11px; line-height: 1.45; }
+.agent-setup-notice .btn { flex: 0 0 auto; }
+.session-reset { align-self: flex-end; margin: 4px 12px 3px; border: 0; background: none; color: var(--text-3); font-size: 10px; }
 .session-reset:disabled { opacity: .45; }
 .view-tabs { display: flex; gap: 3px; padding: 4px 12px 8px; }
 .view-tabs button { flex: 1; border: 0; border-radius: 7px; padding: 6px; background: transparent; color: var(--text-3); font-size: 12px; }

@@ -156,9 +156,9 @@ function onAiProviderChange() {
 const aiDocsUrl = computed(() => providerById(settings.aiProvider).docsUrl ?? '')
 
 const paperAgentEngines: Array<{ id: PaperAgentEngine; label: string }> = [
+  { id: 'pi', label: 'Pi Agent' },
   { id: 'codex', label: 'Codex' },
   { id: 'claude', label: 'Claude Code' },
-  { id: 'pi', label: 'Pi Agent' },
 ]
 const paperAgentStatuses = ref<Record<PaperAgentEngine, PaperAgentEngineStatus | null>>({
   codex: null, claude: null, pi: null,

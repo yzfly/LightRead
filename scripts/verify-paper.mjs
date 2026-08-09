@@ -452,9 +452,9 @@ await step('标注列表删除高亮', async () => {
   await pg.click('button[title="划线想法"]') // 收起抽屉
 })
 
-await step('Web 端不暴露原生 Agent，旧 AI 辅读/问答入口已移除', async () => {
+await step('Web 端不暴露桌面 AI 辅读，旧问答入口已移除', async () => {
   if (await pg.locator('header button:has-text("Agent")').count()) throw new Error('Web 端不应暴露本机 Agent')
-  if (await pg.locator('header button:has-text("AI 辅读")').count()) throw new Error('旧 AI 辅读入口仍存在')
+  if (await pg.locator('header button:has-text("AI 辅读")').count()) throw new Error('Web 端不应暴露本机 AI 辅读')
   if (await pg.locator('header button:text-is("问答")').count()) throw new Error('旧问答入口仍存在')
   if (await pg.locator('.ai-sec, .ai-q-list, .ai-input').count()) throw new Error('旧论文 AI DOM 仍可达')
 })
@@ -521,7 +521,7 @@ await step('分栏拖拽调宽', async () => {
 })
 await pg.screenshot({ path: join(TMP, 'shots', '09-split.png') })
 
-await step('Mock 原生 Agent 对话、单任务锁与论文十问人工修订闭环', async () => {
+await step('Mock AI 辅读对话、停止操作与论文十问人工修订闭环', async () => {
   await pg.addInitScript(installPaperAgentBridge)
   await pg.evaluate(() => {
     const settings = JSON.parse(localStorage.getItem('lightread-settings') || '{}')
@@ -531,8 +531,13 @@ await step('Mock 原生 Agent 对话、单任务锁与论文十问人工修订�
   })
   await pg.reload({ waitUntil: 'networkidle' })
   await pg.waitForSelector('.p-holder canvas', { timeout: 15000 })
-  await pg.click('header button:has-text("Agent")')
+  await pg.click('header button:has-text("AI 辅读")')
   await pg.waitForSelector('.agent-sidebar', { timeout: 5000 })
+  const sidebarText = await pg.locator('.agent-sidebar').innerText()
+  for (const hiddenDetail of ['Codex', 'Claude Code', 'Pi Agent', 'executable did not report a version']) {
+    if (sidebarText.includes(hiddenDetail)) throw new Error(`论文 AI 辅读不应呈现引擎细节: ${hiddenDetail}`)
+  }
+  if (await pg.locator('.engine-row').count()) throw new Error('论文 AI 辅读不应包含引擎选择器')
 
   await pg.fill('.composer textarea', '请结合末页与笔记回答')
   await pg.click('.composer button[type="submit"]')
@@ -553,7 +558,7 @@ await step('Mock 原生 Agent 对话、单任务锁与论文十问人工修订�
 
   await pg.reload({ waitUntil: 'networkidle' })
   await pg.waitForSelector('.p-holder canvas', { timeout: 15000 })
-  await pg.click('header button:has-text("Agent")')
+  await pg.click('header button:has-text("AI 辅读")')
   await pg.click('.view-tabs button:has-text("论文十问")')
   await pg.waitForSelector('.question-card:first-of-type .ai-reanswer .answer-text:has-text("MOCK AI 再答")', { timeout: 10000 })
   if (await pg.locator('.question-card').first().locator('.human-answer textarea').inputValue() !== humanAnswer) {
@@ -561,16 +566,26 @@ await step('Mock 原生 Agent 对话、单任务锁与论文十问人工修订�
   }
 
   await pg.click('.view-tabs button:has-text("对话")')
-  await pg.fill('.composer textarea', '验证跨引擎单任务锁')
+  await pg.fill('.composer textarea', '验证运行中任务可以停止')
   await pg.click('.composer button[type="submit"]')
-  await pg.waitForSelector('.running-dot:has-text("Pi Agent")', { timeout: 5000 })
-  await pg.locator('.engine-row button').filter({ hasText: 'Codex' }).click()
+  await pg.waitForSelector('.running-dot', { timeout: 5000 })
   const stopButton = pg.locator('.composer button.stop')
-  if (!(await stopButton.isVisible())) throw new Error('切换引擎后未保留运行引擎的 Stop 操作')
+  if (!(await stopButton.isVisible())) throw new Error('运行中未提供停止操作')
   await stopButton.click()
   await pg.waitForSelector('.running-dot', { state: 'detached', timeout: 5000 })
 })
 await pg.screenshot({ path: join(TMP, 'shots', '10-paper-agent.png') })
+
+await step('设置页集中选择 AI 辅读引擎，默认 Pi Agent', async () => {
+  await pg.goto('http://localhost:4173/#/settings', { waitUntil: 'networkidle' })
+  await pg.waitForSelector('section:has(h2:text-is("AI 辅读")) .agent-default-row select', { timeout: 5000 })
+  const engineSelect = pg.locator('section:has(h2:text-is("AI 辅读")) .agent-default-row select')
+  if (await engineSelect.inputValue() !== 'pi') throw new Error('AI 辅读默认引擎不是 Pi Agent')
+  const options = await engineSelect.locator('option').allTextContents()
+  for (const engine of ['Pi Agent', 'Codex', 'Claude Code']) {
+    if (!options.includes(engine)) throw new Error(`设置页缺少 AI 辅读引擎: ${engine}`)
+  }
+})
 
 const expectedPdfRepairLogs = [
   'format error: cannot find startxref',

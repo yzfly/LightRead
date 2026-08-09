@@ -4155,7 +4155,7 @@ onBeforeUnmount(() => {
       <!-- 分栏拖拽把手 -->
       <div v-if="rightTab" class="splitter" @pointerdown.prevent="startSplit" />
 
-      <!-- 右: 翻译 (版式对照 / 段落列表) / 原生论文 Agent
+      <!-- 右: 翻译 (版式对照 / 段落列表) / AI 辅读
            标签切换在顶栏 (再点当前项即关闭), 面板内不再重复一排标签 -->
       <div v-if="rightTab" ref="rightPane" class="pane-right" :style="rightPaneStyle">
         <PaperAgentSidebar
