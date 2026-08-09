@@ -24,23 +24,27 @@ def main():
     high_level.init()
     translator = OpenAITranslator(
         lang_in=cfg.get("lang_in", "en"),
-        lang_out=cfg.get("lang_out", "zh"),
+        lang_out=cfg["lang_out"],
         model=cfg["model"],
         base_url=cfg["base_url"],
         api_key=cfg["api_key"],
         ignore_cache=bool(cfg.get("ignore_cache", False)),
     )
+    context_options = {}
+    if cfg.get("custom_system_prompt"):
+        context_options["custom_system_prompt"] = cfg["custom_system_prompt"]
     config = TranslationConfig(
         input_file=cfg["input"],
         translator=translator,
         lang_in=cfg.get("lang_in", "en"),
-        lang_out=cfg.get("lang_out", "zh"),
+        lang_out=cfg["lang_out"],
         doc_layout_model=DocLayoutModel.load_onnx(),
         output_dir=cfg["output"],
         pages=cfg.get("pages") or None,
         watermark_output_mode=WatermarkOutputMode.NoWatermark,
         qps=int(cfg.get("qps", 4)),
         report_interval=0.5,
+        **context_options,
     )
 
     async def run():

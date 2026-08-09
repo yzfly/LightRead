@@ -42,6 +42,23 @@ import {
   babeldocTaskActive,
   startBabeldocTask,
 } from '../services/babeldocTask'
+import {
+  buildBabeldocContextPrompt,
+  extractAbstractCandidate,
+  loadPaperTranslationContext,
+  PAPER_CONTEXT_REFERENCE_CHAR_LIMIT,
+  PAPER_CONTEXT_SOURCE_CHAR_LIMIT,
+  savePaperTranslationContext,
+  type ApprovedPaperTranslationContext,
+} from '../services/paperTranslationContext'
+import { generatePaperTranslationContext } from '../services/paperTranslationContextGeneration'
+import {
+  BABELDOC_TARGET_LANGUAGES,
+  loadBabeldocTargetLanguage,
+  resolveBabeldocTargetLanguage,
+  saveBabeldocTargetLanguage,
+  type BabeldocTargetLanguageCode,
+} from '../services/babeldocLanguages'
 import { useLibrary } from '../stores/library'
 import { useSettings } from '../stores/settings'
 import { useReadingTimer } from '../composables/useReadingTimer'
@@ -1702,7 +1719,7 @@ function onScrollerDblClick(e: MouseEvent) {
 const selBarStyle = computed(() => {
   if (!selection.value) return {}
   const { x, y } = selection.value.anchor
-  const toolbarWidth = Math.min(420, window.innerWidth - 24)
+  const toolbarWidth = Math.min(isPaper.value && bdSupported ? 560 : 420, window.innerWidth - 24)
   const centerX = window.innerWidth <= toolbarWidth + 24
     ? window.innerWidth / 2
     : Math.min(Math.max(x, toolbarWidth / 2 + 12), window.innerWidth - toolbarWidth / 2 - 12)
@@ -2656,36 +2673,271 @@ async function sendChat() {
 
 /* ---- BabelDOC 整本重排版翻译 ---- */
 type BdPhase = 'checking' | 'notfound' | 'ready'
+type BdContextSource = 'abstract' | 'selection' | 'saved' | 'manual'
+const BD_CONTEXT_SOURCE_LABELS: Record<BdContextSource, string> = {
+  abstract: 'paper.bdSourceAbstract',
+  selection: 'paper.bdSourceSelection',
+  saved: 'paper.bdSourceSaved',
+  manual: 'paper.bdSourceManual',
+}
 const bdSupported = babeldocSupported()
 const bd = ref<{
   open: boolean
   phase: BdPhase
   status?: BabeldocStatus
   pages: string
-}>({ open: false, phase: 'checking', pages: '' })
+  targetLanguage: BabeldocTargetLanguageCode
+}>({
+  open: false,
+  phase: 'checking',
+  pages: '',
+  targetLanguage: loadBabeldocTargetLanguage(),
+})
+const bdContext = ref({
+  source: '',
+  sourceKind: 'manual' as BdContextSource,
+  english: '',
+  translation: '',
+  generatedFrom: '',
+  busy: false,
+  error: '',
+  approved: false,
+})
 const bdProviderOk = computed(() => babeldocUsableProvider())
+const bdContextReady = computed(() =>
+  !isPaper.value || Boolean(bdContext.value.english.trim() && bdContext.value.translation.trim()),
+)
+const bdTargetLanguage = computed(() => resolveBabeldocTargetLanguage(bd.value.targetLanguage))
+let bdAbstractCache: string | undefined
+let bdContextGeneration = 0
+let bdContextAbort: AbortController | null = null
 
-async function openBabeldoc() {
-  if (babeldocTaskActive()) {
-    toast(t('paper.bdAlreadyRunning'))
+function invalidateBdContextGeneration() {
+  bdContextGeneration++
+  bdContextAbort?.abort()
+  bdContextAbort = null
+  bdContext.value.busy = false
+}
+
+function abstractForBabeldoc(): string {
+  if (bdAbstractCache !== undefined) return bdAbstractCache
+  if (!pdm) return ''
+  const texts: string[] = []
+  for (let page = 0; page < Math.min(3, pageCount.value); page++) {
+    try {
+      texts.push(pdm.pageText(page))
+    } catch { /* 个别页提取失败时继续尝试后续首页 */ }
+  }
+  bdAbstractCache = extractAbstractCandidate(texts)
+  return bdAbstractCache
+}
+
+const bdContextSourceLabel = computed(() => t(BD_CONTEXT_SOURCE_LABELS[bdContext.value.sourceKind]))
+
+function setBdContextSource(source: string, sourceKind: BdContextSource) {
+  invalidateBdContextGeneration()
+  bdContext.value = {
+    source: source.slice(0, PAPER_CONTEXT_SOURCE_CHAR_LIMIT),
+    sourceKind,
+    english: '',
+    translation: '',
+    generatedFrom: '',
+    busy: false,
+    error: '',
+    approved: false,
+  }
+}
+
+function applySavedBdContext(saved: ApprovedPaperTranslationContext) {
+  invalidateBdContextGeneration()
+  bdContext.value = {
+    source: saved.source,
+    sourceKind: 'saved',
+    english: saved.english,
+    translation: saved.translation,
+    generatedFrom: saved.source,
+    busy: false,
+    error: '',
+    approved: true,
+  }
+}
+
+function initializeBdContext(seed?: { text: string; kind: BdContextSource }) {
+  if (!isPaper.value) return
+  if (seed?.text.trim()) {
+    setBdContextSource(seed.text.trim(), seed.kind)
     return
   }
-  bd.value = { open: true, phase: 'checking', pages: '' }
+  const saved = loadPaperTranslationContext(bookId, bd.value.targetLanguage)
+  if (saved) {
+    applySavedBdContext(saved)
+    return
+  }
+  useAbstractForBdContext()
+}
+
+async function checkBabeldoc() {
+  bd.value.phase = 'checking'
   const st = await babeldocStatus().catch(() => ({ found: false, path: '', version: '' }))
   bd.value.status = st
   bd.value.phase = st.found ? 'ready' : 'notfound'
 }
 
+async function showBabeldoc(seed?: { text: string; kind: BdContextSource }) {
+  if (babeldocTaskActive()) {
+    toast(t('paper.bdAlreadyRunning'))
+    return
+  }
+  bd.value = {
+    open: true,
+    phase: 'checking',
+    pages: '',
+    targetLanguage: loadBabeldocTargetLanguage(),
+  }
+  const status = checkBabeldoc()
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  initializeBdContext(seed)
+  await status
+}
+
+function openBabeldoc() {
+  void showBabeldoc()
+}
+
+function closeBabeldoc() {
+  invalidateBdContextGeneration()
+  bd.value.open = false
+}
+
+function useAbstractForBdContext() {
+  const abstract = abstractForBabeldoc()
+  setBdContextSource(abstract, 'abstract')
+  if (!abstract) bdContext.value.error = t('paper.bdAbstractNotFound')
+}
+
+function onBdTargetLanguageChange() {
+  bd.value.targetLanguage = saveBabeldocTargetLanguage(bd.value.targetLanguage)
+  if (!isPaper.value) return
+  const source = bdContext.value.source.trim()
+  const sourceKind = bdContext.value.sourceKind
+  const saved = loadPaperTranslationContext(bookId, bd.value.targetLanguage)
+  if (saved) {
+    applySavedBdContext(saved)
+    return
+  }
+  if (!source) {
+    useAbstractForBdContext()
+    return
+  }
+  setBdContextSource(source, sourceKind === 'saved' ? 'manual' : sourceKind)
+}
+
+function onBdContextSourceInput() {
+  invalidateBdContextGeneration()
+  if (bdContext.value.source !== bdContext.value.generatedFrom) {
+    bdContext.value.english = ''
+    bdContext.value.translation = ''
+  }
+  bdContext.value.sourceKind = 'manual'
+  bdContext.value.error = ''
+  bdContext.value.approved = false
+}
+
+function markBdContextDirty() {
+  invalidateBdContextGeneration()
+  bdContext.value.approved = false
+}
+
+async function generateBdContext() {
+  if (!meta.value || !bdContext.value.source.trim() || bdContext.value.busy) return
+  if (!aiReady.value) {
+    toast(t('paper.setupHint'), 'error', 5000)
+    return
+  }
+  const source = bdContext.value.source
+  const session = ++bdContextGeneration
+  const controller = new AbortController()
+  bdContextAbort = controller
+  bdContext.value.busy = true
+  bdContext.value.error = ''
+  try {
+    const generated = await generatePaperTranslationContext(
+      meta.value.title,
+      source,
+      bd.value.targetLanguage,
+      () => session !== bdContextGeneration || source !== bdContext.value.source,
+      controller.signal,
+    )
+    if (session !== bdContextGeneration || source !== bdContext.value.source) return
+    bdContext.value.english = generated.english
+    bdContext.value.translation = generated.translation
+    bdContext.value.generatedFrom = source
+    bdContext.value.approved = false
+  } catch (error: any) {
+    if (session === bdContextGeneration) {
+      bdContext.value.error = String(error?.message ?? error).slice(0, 240)
+    }
+  } finally {
+    if (session === bdContextGeneration) {
+      if (bdContextAbort === controller) bdContextAbort = null
+      bdContext.value.busy = false
+    }
+  }
+}
+
+function useSelectionAsBdContext() {
+  const selected = selection.value?.text.trim()
+  if (!selected) return
+  window.getSelection()?.removeAllRanges()
+  selection.value = null
+  void showBabeldoc({ text: selected, kind: 'selection' })
+}
+
 function startBabeldoc() {
   if (!meta.value) return
+  let backgroundPrompt: string | undefined
+  if (isPaper.value) {
+    if (!bdContextReady.value) return
+    const previousContext = loadPaperTranslationContext(bookId, bd.value.targetLanguage)
+    let approved
+    try {
+      approved = savePaperTranslationContext(bookId, {
+        source: bdContext.value.source,
+        english: bdContext.value.english,
+        translation: bdContext.value.translation,
+        targetLanguage: bd.value.targetLanguage,
+      })
+    } catch {
+      toast(t('paper.bdContextSaveFailed'), 'error', 6000)
+      return
+    }
+    if (
+      bd.value.targetLanguage === 'zh'
+      && approved.updatedAt !== previousContext?.updatedAt
+    ) {
+      cancelTranslate()
+      const untranslated: Record<number, MirPageData> = {}
+      for (const [page, data] of Object.entries(mirData.value)) {
+        untranslated[Number(page)] = {
+          ...data,
+          trs: new Array(data.paras.length).fill(''),
+        }
+      }
+      mirData.value = untranslated
+    }
+    backgroundPrompt = buildBabeldocContextPrompt(approved)
+    bdContext.value.approved = true
+  }
   const started = startBabeldocTask({
     bookId,
     fileName: meta.value.fileName,
     title: meta.value.title,
     kind: isPaper.value ? 'paper' : 'book',
+    targetLanguage: bd.value.targetLanguage,
     pages: bd.value.pages,
+    backgroundPrompt,
   })
-  if (started) bd.value.open = false
+  if (started) closeBabeldoc()
 }
 
 function copyInstall() {
@@ -3221,6 +3473,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   reflowSession++
+  invalidateBdContextGeneration()
   window.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('webkitfullscreenchange', onFullscreenChange as EventListener)
@@ -3561,7 +3814,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- BabelDOC 整本重排版翻译面板 -->
-    <div v-if="bd.open" class="bd-mask" @click.self="bd.open = false">
+    <div v-if="bd.open" class="bd-mask" @click.self="closeBabeldoc">
       <div class="bd-panel">
         <h3>{{ t('paper.bdTitle') }}</h3>
         <p class="bd-sub">{{ t('paper.bdDesc') }}</p>
@@ -3576,7 +3829,7 @@ onBeforeUnmount(() => {
           </div>
           <p class="bd-hint">{{ t('paper.bdInstallHint') }}</p>
           <div class="bd-actions">
-            <button class="btn btn-sm" @click="openBabeldoc">{{ t('paper.bdRecheck') }}</button>
+            <button class="btn btn-sm" @click="checkBabeldoc">{{ t('paper.bdRecheck') }}</button>
           </div>
         </template>
 
@@ -3584,13 +3837,77 @@ onBeforeUnmount(() => {
           <p class="bd-ok">✓ {{ bd.status?.version || 'babeldoc' }}</p>
           <p v-if="!bdProviderOk" class="bd-warn">{{ t('paper.bdTrialUnsupported') }}</p>
           <label class="bd-field">
+            {{ t('paper.bdTargetLanguage') }}
+            <select v-model="bd.targetLanguage" class="input" @change="onBdTargetLanguageChange">
+              <option
+                v-for="language in BABELDOC_TARGET_LANGUAGES"
+                :key="language.code"
+                :value="language.code"
+              >
+                {{ t(language.labelKey) }}
+              </option>
+            </select>
+          </label>
+          <section v-if="isPaper" class="bd-context">
+            <div class="bd-context-head">
+              <div>
+                <strong>{{ t('paper.bdContextTitle') }}</strong>
+                <span class="bd-context-source">{{ bdContextSourceLabel }}</span>
+              </div>
+              <span v-if="bdContext.approved" class="bd-approved">✓ {{ t('paper.bdContextApproved') }}</span>
+            </div>
+            <p class="bd-hint">{{ t('paper.bdContextDesc') }}</p>
+            <div class="bd-context-tools">
+              <button class="btn btn-sm" type="button" @click="useAbstractForBdContext">
+                {{ t('paper.bdUseAbstract') }}
+              </button>
+            </div>
+            <label class="bd-context-field">
+              <span>{{ t('paper.bdContextSource') }}</span>
+              <textarea
+                v-model="bdContext.source"
+                class="input"
+                rows="4"
+                :maxlength="PAPER_CONTEXT_SOURCE_CHAR_LIMIT"
+                :placeholder="t('paper.bdContextSourcePh')"
+                @input="onBdContextSourceInput"
+              />
+            </label>
+            <p v-if="bdContext.error" class="bd-warn">{{ bdContext.error }}</p>
+            <div class="bd-context-tools bd-context-generate">
+              <button
+                class="btn btn-sm"
+                type="button"
+                :disabled="!aiReady || !bdContext.source.trim() || bdContext.busy"
+                @click="generateBdContext"
+              >
+                {{ bdContext.busy ? t('paper.bdGeneratingContext') : t('paper.bdGenerateContext') }}
+              </button>
+            </div>
+            <div v-if="bdContext.english || bdContext.translation" class="bd-context-review">
+              <p class="bd-hint">{{ t('paper.bdContextReviewHint') }}</p>
+              <label class="bd-context-field">
+                <span>{{ t('paper.bdEnglishContext') }}</span>
+                <textarea v-model="bdContext.english" class="input" rows="5" :maxlength="PAPER_CONTEXT_REFERENCE_CHAR_LIMIT" @input="markBdContextDirty" />
+              </label>
+              <label class="bd-context-field">
+                <span>{{ t('paper.bdTargetContext', { language: t(bdTargetLanguage.labelKey) }) }}</span>
+                <textarea v-model="bdContext.translation" class="input" rows="5" :maxlength="PAPER_CONTEXT_REFERENCE_CHAR_LIMIT" @input="markBdContextDirty" />
+              </label>
+            </div>
+          </section>
+          <label class="bd-field">
             {{ t('paper.bdPages') }}
             <input v-model="bd.pages" class="input" :placeholder="t('paper.bdPagesPh')" />
           </label>
           <p class="bd-hint">{{ t('paper.bdTimeHint') }}</p>
           <div class="bd-actions">
-            <button class="btn btn-sm btn-primary" :disabled="!bdProviderOk || !aiReady" @click="startBabeldoc">
-              {{ t('paper.bdStart') }}
+            <button
+              class="btn btn-sm btn-primary"
+              :disabled="!bdProviderOk || !aiReady || bdContext.busy || !bdContextReady"
+              @click="startBabeldoc"
+            >
+              {{ isPaper ? t('paper.bdConfirmStart') : t('paper.bdStart') }}
             </button>
           </div>
         </template>
@@ -4122,6 +4439,10 @@ onBeforeUnmount(() => {
       <button type="button" class="sel-act sel-act-ai" @click="translateSelection">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10.2 2.75c.45 3.2 1.85 4.6 5.05 5.05-3.2.45-4.6 1.85-5.05 5.05-.45-3.2-1.85-4.6-5.05-5.05 3.2-.45 4.6-1.85 5.05-5.05Z" /><path d="M15.15 12.65c.2 1.45.85 2.1 2.3 2.3-1.45.2-2.1.85-2.3 2.3-.2-1.45-.85-2.1-2.3-2.3 1.45-.2 2.1-.85 2.3-2.3Z" /></svg>
         <span>{{ isPaper ? t('paper.selTranslateBtn') : t('ai.explain') }}</span>
+      </button>
+      <button v-if="isPaper && bdSupported" type="button" class="sel-act" @click="useSelectionAsBdContext">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.25h12v11.5H4z" /><path d="M7 7.25h6M7 10h6M7 12.75h3.5" /></svg>
+        <span>{{ t('paper.bdUseSelection') }}</span>
       </button>
       <button type="button" class="sel-act" @click="copySelection">
         <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6.25" y="6.25" width="9.5" height="9.5" rx="1.75" /><path d="M13.75 6.25v-1.5a1.5 1.5 0 0 0-1.5-1.5h-7.5a1.5 1.5 0 0 0-1.5 1.5v7.5a1.5 1.5 0 0 0 1.5 1.5h1.5" /></svg>
@@ -6213,8 +6534,10 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 .bd-panel {
-  width: 420px;
+  width: 720px;
   max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   background: var(--card);
   border-radius: 12px;
   padding: 20px 22px;
@@ -6275,6 +6598,71 @@ onBeforeUnmount(() => {
   flex: 1;
   height: 30px;
 }
+.bd-context {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+.bd-context-head,
+.bd-context-head > div,
+.bd-context-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bd-context-head {
+  justify-content: space-between;
+  font-size: 13px;
+}
+.bd-context-source,
+.bd-approved {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.bd-context-source {
+  color: var(--text-3);
+  background: var(--card);
+}
+.bd-approved {
+  color: var(--success, #238653);
+  background: color-mix(in srgb, var(--success, #238653) 10%, transparent);
+}
+.bd-context-tools {
+  justify-content: flex-end;
+  margin: 6px 0;
+}
+.bd-context-generate {
+  margin-top: 10px;
+}
+.bd-context-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.bd-context-field textarea.input {
+  width: 100%;
+  height: auto;
+  min-height: 82px;
+  padding: 9px 10px;
+  resize: vertical;
+  line-height: 1.55;
+  font-family: inherit;
+}
+.bd-context-review {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 12px;
+}
+.bd-context-review > .bd-hint {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
 .bd-actions {
   display: flex;
   gap: 8px;
@@ -6299,6 +6687,9 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 860px) {
+  .bd-context-review {
+    grid-template-columns: 1fr;
+  }
   .paper-bar {
     min-height: 58px;
     padding-right: 10px;

@@ -119,7 +119,10 @@ export function aiConfigured(): boolean {
  * 流式对话。逐段 yield 增量文本; 非 2xx 时抛出带服务端信息的错误。
  * 服务端不支持流式时回退整段返回。
  */
-export async function* chatStream(messages: AiMessage[]): AsyncGenerator<string> {
+export async function* chatStream(
+  messages: AiMessage[],
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
   const s = useSettings()
   const url = s.aiBaseUrl.trim().replace(/\/+$/, '') + '/chat/completions'
   const res = await fetchRemote(url, undefined, {
@@ -137,6 +140,7 @@ export async function* chatStream(messages: AiMessage[]): AsyncGenerator<string>
       stream: true,
       temperature: 0.6,
     }),
+    signal,
     raw: true,
   })
   if (!res.ok) {

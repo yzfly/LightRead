@@ -12,6 +12,10 @@ import {
 } from './babeldoc'
 import { importFile } from './importer'
 import { toast } from './toast'
+import {
+  resolveBabeldocTargetLanguage,
+  type BabeldocTargetLanguageCode,
+} from './babeldocLanguages'
 
 export type BabeldocTaskPhase = 'idle' | 'running' | 'cancelling' | 'importing' | 'error'
 
@@ -20,7 +24,9 @@ export interface BabeldocTaskRequest {
   fileName: string
   title: string
   kind: 'book' | 'paper'
+  targetLanguage: BabeldocTargetLanguageCode
   pages?: string
+  backgroundPrompt?: string
 }
 
 export interface BabeldocTaskState {
@@ -104,7 +110,12 @@ async function executeBabeldocTask(request: BabeldocTaskRequest) {
     if (cancellationRequested()) throw new Error('已取消')
     const path = await bookFilePath(request.bookId, request.fileName)
     if (cancellationRequested()) throw new Error('已取消')
-    const outputs = await babeldocTranslate(path, request.pages)
+    const outputs = await babeldocTranslate({
+      filePath: path,
+      targetLanguage: request.targetLanguage,
+      pages: request.pages,
+      backgroundPrompt: request.backgroundPrompt,
+    })
     if (cancellationRequested()) throw new Error('已取消')
     babeldocTask.phase = 'importing'
     const imported: Array<{ id: string; variant: 'mono' | 'dual' }> = []
@@ -112,7 +123,10 @@ async function executeBabeldocTask(request: BabeldocTaskRequest) {
 
     for (const output of outputs) {
       const variant = output.includes('.dual.') ? 'dual' : 'mono'
-      const label = variant === 'dual' ? t('paper.bdDual') : t('paper.bdMono')
+      const languageLabel = t(resolveBabeldocTargetLanguage(request.targetLanguage).labelKey)
+      const label = variant === 'dual'
+        ? `${languageLabel} · ${t('paper.bdDual')}`
+        : languageLabel
       try {
         const blob = await babeldocReadOutput(output)
         const title = `${request.title} · ${label}`
