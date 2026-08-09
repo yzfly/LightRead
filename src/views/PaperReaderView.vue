@@ -1209,7 +1209,6 @@ function tocNavigate(href: string) {
   pushBack()
   const yOffset = y ? Math.max(0, parseFloat(y) * displaySizeOf(parseInt(p, 10)).sy - 60) : 0
   gotoPage(parseInt(p, 10), false, yOffset)
-  if (!isFullscreen.value) closeDrawer()
 }
 
 /* ================= 划词: 高亮 / 想法 / 复制 / AI 翻译 ================= */
@@ -1857,7 +1856,6 @@ async function removeAnnotation(a: AnnotationRec) {
 function gotoAnnotation(a: AnnotationRec) {
   const loc = decodeLoc(a.cfi)
   if (!loc) return
-  closeDrawer()
   pushBack()
   gotoPage(loc.page, false, Math.max(0, (loc.rects[0]?.y ?? 0) * displaySizeOf(loc.page).sy - 100))
 }

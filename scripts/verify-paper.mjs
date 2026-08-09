@@ -276,6 +276,10 @@ await step('缩略图侧栏: 懒渲染、当前页高亮与点击跳转', async 
   await pg.screenshot({ path: join(TMP, 'shots', '00-thumbnails.png') })
   await pg.click('.thumbnail-item[data-thumbnail-page="4"]')
   await pg.waitForFunction(() => document.querySelector('.page-input')?.value === '4', null, { timeout: 5000 })
+  if (!(await pg.locator('.side-drawer').isVisible())) throw new Error('缩略图跳转后侧栏被自动关闭')
+  if (await pg.locator('.drawer-tabs button:has-text("缩略图")').getAttribute('aria-selected') !== 'true') {
+    throw new Error('缩略图跳转后当前侧栏标签发生变化')
+  }
   if (!(await pg.locator('.thumbnail-item[data-thumbnail-page="4"]').evaluate(el => el.classList.contains('active')))) {
     throw new Error('缩略图跳转后高亮未同步')
   }
@@ -374,6 +378,10 @@ await step('目录抽屉与跳转', async () => {
   await pg.waitForSelector('.toc-item:has-text("Results")', { timeout: 5000 })
   await pg.click('.toc-item:has-text("Results")')
   await pg.waitForFunction(() => document.querySelector('.page-input')?.value === '3', null, { timeout: 5000 })
+  if (!(await pg.locator('.side-drawer').isVisible())) throw new Error('目录跳转后侧栏被自动关闭')
+  if (await pg.locator('.drawer-tabs button:has-text("目录")').getAttribute('aria-selected') !== 'true') {
+    throw new Error('目录跳转后当前侧栏标签发生变化')
+  }
 })
 await pg.screenshot({ path: join(TMP, 'shots', '02-toc-jump.png') })
 
@@ -430,8 +438,17 @@ await step('高亮保存并渲染', async () => {
 })
 
 await step('标注列表显示并可跳转', async () => {
+  await pg.fill('.page-input', '3')
+  await pg.press('.page-input', 'Enter')
+  await pg.waitForTimeout(300)
   await pg.click('button[title="划线想法"]')
   await pg.waitForSelector('.anno-item', { timeout: 4000 })
+  await pg.click('.anno-item')
+  await pg.waitForFunction(() => document.querySelector('.page-input')?.value === '1', null, { timeout: 5000 })
+  if (!(await pg.locator('.side-drawer').isVisible())) throw new Error('划线想法跳转后侧栏被自动关闭')
+  if (await pg.locator('.drawer-tabs button:has-text("划线想法")').getAttribute('aria-selected') !== 'true') {
+    throw new Error('划线想法跳转后当前侧栏标签发生变化')
+  }
 })
 await pg.screenshot({ path: join(TMP, 'shots', '04-annotations.png') })
 
