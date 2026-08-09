@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::process::{Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -28,7 +30,7 @@ pub struct ProcessIo {
 pub struct ManagedProcess {
   child: Child,
   #[cfg(windows)]
-  job: windows_sys::Win32::Foundation::HANDLE,
+  job: OwnedHandle,
 }
 
 impl ProcessIo {
@@ -57,9 +59,8 @@ fn configure_process_group(command: &mut Command) {
 fn configure_process_group(_command: &mut Command) {}
 
 #[cfg(windows)]
-fn create_job(child: &Child) -> Result<windows_sys::Win32::Foundation::HANDLE, String> {
+fn create_job(child: &Child) -> Result<OwnedHandle, String> {
   use std::mem::size_of;
-  use std::os::windows::io::AsRawHandle;
   use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
@@ -69,20 +70,19 @@ fn create_job(child: &Child) -> Result<windows_sys::Win32::Foundation::HANDLE, S
     if job.is_null() {
       return Err(format!("create Windows Job Object: {}", std::io::Error::last_os_error()));
     }
+    let job = OwnedHandle::from_raw_handle(job);
     let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     if SetInformationJobObject(
-      job,
+      job.as_raw_handle(),
       JobObjectExtendedLimitInformation,
       &info as *const _ as *const _,
       size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
     ) == 0
     {
-      windows_sys::Win32::Foundation::CloseHandle(job);
       return Err(format!("configure Windows Job Object: {}", std::io::Error::last_os_error()));
     }
-    if AssignProcessToJobObject(job, child.as_raw_handle() as _) == 0 {
-      windows_sys::Win32::Foundation::CloseHandle(job);
+    if AssignProcessToJobObject(job.as_raw_handle(), child.as_raw_handle()) == 0 {
       return Err(format!("assign Windows Job Object: {}", std::io::Error::last_os_error()));
     }
     Ok(job)
@@ -248,7 +248,7 @@ impl ManagedProcess {
     }
     #[cfg(windows)]
     unsafe {
-      if windows_sys::Win32::System::JobObjects::TerminateJobObject(self.job, 1) == 0 {
+      if windows_sys::Win32::System::JobObjects::TerminateJobObject(self.job.as_raw_handle(), 1) == 0 {
         return Err(format!("terminate Windows Job Object: {}", std::io::Error::last_os_error()));
       }
     }
@@ -262,12 +262,6 @@ impl ManagedProcess {
 impl Drop for ManagedProcess {
   fn drop(&mut self) {
     let _ = self.terminate_tree();
-    #[cfg(windows)]
-    unsafe {
-      if !self.job.is_null() {
-        windows_sys::Win32::Foundation::CloseHandle(self.job);
-      }
-    }
   }
 }
 
