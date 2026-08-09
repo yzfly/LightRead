@@ -1,0 +1,140 @@
+name: 论文阅读 / PDF / Agent 问题
+description: 报告 PDF 渲染、翻译、Pi Agent、论文十问或批注相关问题
+title: "[论文阅读] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。填写前请先阅读 [论文阅读完整指南](https://github.com/yzfly/LightRead/blob/main/docs/paper-reading.md)。
+
+        GitHub Issue 是公开的。请勿粘贴论文全文、未公开研究资料、API Key、登录凭据或包含隐私的完整日志。
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题类型
+      options:
+        - PDF 渲染、缩放或页面接缝
+        - 搜索、文字选择、目录或内部链接
+        - 高亮、笔记或批注定位
+        - 划词翻译或逐页翻译
+        - BabelDOC 整本翻译
+        - Pi Agent 对话
+        - 可选的 Codex / Claude Code 引擎
+        - 论文十问与人工修订
+        - PDF 导入、删除或数据清理
+        - 其他论文阅读问题
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: LightRead 版本
+      description: 可在“设置 → 关于”查看；源码构建请填写 commit。
+      placeholder: "例如：v1.1.10 或 main@22e5b6b"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 操作系统
+      options:
+        - macOS Apple Silicon
+        - macOS Intel
+        - Windows 10 / 11
+        - Ubuntu / Debian
+        - 其他 Linux
+        - Android
+        - Web
+    validations:
+      required: true
+
+  - type: input
+    id: platform_version
+    attributes:
+      label: 系统版本与安装包
+      placeholder: "例如：macOS 15.6，LightRead_1.1.10_aarch64.dmg"
+
+  - type: dropdown
+    id: renderer
+    attributes:
+      label: PDF 渲染引擎
+      options:
+        - MuPDF（默认）
+        - PDFium
+        - 不确定 / 不适用
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent_engine
+    attributes:
+      label: Agent 引擎
+      description: 只报告与本机 Agent 有关的问题时选择；Codex 和 Claude Code 不是必需项。
+      options:
+        - 未使用 Agent / 不适用
+        - Pi Agent（默认）
+        - Codex（可选）
+        - Claude Code（可选）
+    validations:
+      required: true
+
+  - type: textarea
+    id: pdf_characteristics
+    attributes:
+      label: PDF 特征
+      description: 请说明页数、单栏 / 双栏、横版 / 竖版、是否扫描件、是否带文本层。只有文件可公开时才提供样本链接。
+      placeholder: "例如：48 页双栏论文，竖版，带可选择文本；第 17 页为横版表格。"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 导入论文……
+        2. 切换到连续滚动与适宽……
+        3. 打开 Agent 并……
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 可拖入不含敏感内容的截图或短录屏。
+    validations:
+      required: true
+
+  - type: textarea
+    id: agent_status
+    attributes:
+      label: Agent 状态（如适用）
+      description: 填写“设置 → 论文 Agent”显示的版本与错误原因。不要粘贴凭据、环境变量或完整配置文件。
+      placeholder: "例如：Pi 0.78.1，自动发现成功；发送后显示……"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志（可选）
+      description: 只粘贴与问题直接相关、已移除论文内容和凭据的短日志。
+      render: shell
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 隐私确认
+      options:
+        - label: 我已确认本 Issue 不包含 API Key、登录凭据、未公开论文全文或其他敏感数据。
+          required: true

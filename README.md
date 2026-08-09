@@ -9,13 +9,15 @@
 藏书、论文、阅读进度和批注默认保存在自己的设备上；无需注册账号，本地阅读无需联网。
 
 [![License: AGPL v3+](https://img.shields.io/badge/License-AGPL_v3%2B-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/yzfly/LightRead?display_name=tag&sort=semver)](https://github.com/yzfly/LightRead/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/yzfly/LightRead/total)](https://github.com/yzfly/LightRead/releases)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Android-1664FF)
 ![Tauri](https://img.shields.io/badge/Tauri%202-Rust-orange)
 ![Vue 3](https://img.shields.io/badge/Vue%203-TypeScript-42b883)
 
 ### [⬇️ 新手点这里下载最新版](https://github.com/yzfly/LightRead/releases/latest)
 
-[安装教程](#下载与安装) · [第一次使用](#第一次使用) · [论文阅读](#论文阅读与-ai-精读) · [如何更新](#如何更新) · [问题反馈](https://github.com/yzfly/LightRead/issues)
+[近期论文增强](#近期重点论文阅读升级) · [安装教程](#下载与安装) · [第一次使用](#第一次使用) · [论文阅读](#论文阅读与-ai-精读) · [完整论文指南](docs/paper-reading.md) · [问题反馈](https://github.com/yzfly/LightRead/issues)
 
 **如果 LightRead 对你有帮助，欢迎在 [GitHub](https://github.com/yzfly/LightRead) 点个 ⭐ Star，你的支持是项目持续更新的动力。**
 
@@ -29,13 +31,30 @@
 
 - **阅读常见电子书**：EPUB、MOBI、AZW / AZW3、FB2 / FB2.zip、CBZ / CBR、DjVu、PDF、TXT、HTML、Markdown。
 - **管理藏书与论文**：本地导入、拖拽导入、分类标签、置顶、批量管理、阅读进度、书签与批注。
-- **专业 PDF 阅读**：MuPDF / PDFium 渲染可选（默认 MuPDF），支持原版/流式重排、翻页、连续滚动、双页、自动阅读和听书。
-- **论文精读**：独立论文库、划词翻译、版式对照翻译、可选本机 Agent 对话、带人工修订的论文十问和 BabelDOC 整本翻译。
+- **专业 PDF 阅读**：MuPDF / PDFium 渲染可选（默认 MuPDF），支持清晰原版页面、连续滚动、单页 / 对页 / 书籍视图、自动阅读和听书。
+- **论文精读**：独立论文库、划词翻译、版式对照翻译、以 Pi Agent 为默认主路径的本机对话、带人工修订的论文十问和 BabelDOC 整本翻译；Codex 与 Claude Code 均为可选引擎。
 - **找书和找论文**：OPDS、Calibre、GitHub 社区书源、古登堡计划和 arXiv。
 - **听书**：在线神经音色、本地离线模型和系统语音三种方式。
 - **开放迁移**：按 Google OKF v0.1 导入 / 导出 `.okf.zip` 藏书包，可被其他 OKF 工具读取；另有 WebDAV 云备份和自定义书库存储位置。
 
 > 本地阅读不需要账号或网络。书源下载、在线听书、AI、版本检查和 WebDAV 是可选联网功能；使用哪个服务由你自己决定。
+
+## 近期重点：论文阅读升级
+
+最近几个版本持续强化 PDF 与论文精读，变化不只是增加按钮，而是把“清晰阅读 → 定位与批注 → 翻译 → Agent 深读 → 人工形成答案”串成了一条完整工作流。
+
+| 版本 / 状态 | 增强 | 带来的实际变化 | 对应提交 |
+|---|---|---|---|
+| v1.1.10 | 本机论文 Agent 与人工修订论文十问 | 默认使用 Pi Agent；自动读取完整论文、笔记、当前页与选中文本。AI 初答、人工回答、AI 再答互不覆盖 | [`22e5b6b`](https://github.com/yzfly/LightRead/commit/22e5b6b) |
+| v1.1.9 | 连续页面无接缝 | 连续滚动时移除页面四周和页间的额外缝隙，横版与双栏论文阅读更连贯 | [`404bc32`](https://github.com/yzfly/LightRead/commit/404bc32) |
+| v1.1.8 | PDF 适宽 / 适高贴合可视区域 | 缩放按 96 DPI 百分比语义与设备像素渲染，减少留白、模糊和彩色文字雾边 | [`223691b`](https://github.com/yzfly/LightRead/commit/223691b) |
+| v1.1.7 | 论文翻译、BabelDOC 上下文与完整快捷键 | 强化版式对照翻译、术语上下文、PDF 搜索 / 保存 / 打开 / 缩放等键盘操作 | [`867f93a`](https://github.com/yzfly/LightRead/commit/867f93a) |
+
+<div align="center"><img src="docs/screenshots/pdf-spread.png" width="880" alt="LightRead PDF 论文双页阅读" /></div>
+
+> v1.1.10 提供本机论文 Agent 与人工修订论文十问；v1.1.9 已包含无接缝连续阅读和此前的 PDF 渲染、翻译与快捷键增强。功能状态以本表为准。
+
+不使用 Agent 时无需安装任何命令行工具。需要 Agent 时只安装并配置 **Pi Agent** 就可以完整使用对话与论文十问；Codex 和 Claude Code 是独立的可选增强，不会影响 Pi、论文翻译或普通阅读。详细能力、数据目录与排错方法见 [论文阅读完整指南](docs/paper-reading.md)。
 
 ## 下载与安装
 
@@ -120,20 +139,28 @@ chmod +x LightRead_x.y.z_amd64.AppImage
 
 <div align="center"><img src="docs/screenshots/sources-arxiv.png" width="880" alt="LightRead arXiv 论文书源" /></div>
 
-- **连续阅读与清晰渲染**：论文默认连续滚动，可切换为类 EPUB 的单栏流式正文；原版页面由可选的 MuPDF 或 PDFium 按设备像素比绘制（默认 MuPDF），PDFium 提供文字选择、链接、目录、批注和文本分析。
+- **连续阅读与清晰渲染**：论文默认连续滚动和适宽显示，也可切换单页、对页或书籍视图。原版页面由 MuPDF 或 PDFium 按设备像素比绘制（默认 MuPDF），PDFium 提供文字选择、链接、目录、批注和文本分析。
 - **划词工具**：选择文字后可高亮、写想法、复制或 AI 翻译；标注可以集中查看并跳回原文。
 - **引文与目录跳转**：点击页内链接或目录后，可以一键回到刚才的阅读位置。
 - **AI 中文翻译**：右侧支持“版式对照”和“段落列表”；滚动到哪一页就按需翻译哪一页，翻译结果会缓存。
-- **本机论文 Agent（桌面端）**：右侧栏可选择 Codex、Claude Code 或 Pi Agent。发送问题时，LightRead 自动准备完整 PDF 文本、笔记、当前页和选中文本；Agent 保留自身的工具、联网与审批能力，并可在共享工作区写文件。
+- **本机论文 Agent（桌面端）**：默认使用 Pi Agent；Codex、Claude Code 可按需选择但不要求安装。发送问题时，LightRead 自动准备完整 PDF 文本、笔记、当前页和选中文本；Agent 保留自身的工具、联网与审批能力，并可在共享工作区写文件。
 - **论文十问**：每一问分为不可覆盖的“AI 初答”、可人工编辑保存的“我的回答”和独立的“AI 再答”。点击“保存并让 AI 再答”时，人工版本会先持久化，再交给当前 Agent 重新阅读论文后完整回答。
-- **整本重排版翻译**：桌面端可选安装 BabelDOC，生成保持图表、公式和原版布局的中文版 / 双语版 PDF，并自动导入论文库。该功能需要额外安装约 700 MB 的模型和工具。
+- **整本重排版翻译**：桌面端可选安装 BabelDOC，生成保持图表、公式和原版布局的中文版 / 双语版 PDF，并自动导入论文库。该功能需要额外安装约 700 MB 的模型和工具，并使用“设置 → AI 助手”中配置的个人模型服务；内置试用通道不支持 BabelDOC。
 - **arXiv**：在“书源”里按分类浏览或搜索 arXiv，下载后直接进入本地阅读流程。
 
 翻译不会在打开论文时自动消耗模型用量，只有点击翻译后才会请求已配置的 OpenAI 兼容服务。进入“设置 → AI 助手”可以选择内置限速试用通道，也可以配置硅基流动、智谱、千问、Kimi、豆包、本地 Ollama 或任意兼容接口。
 
-论文 Agent 需要先自行安装并登录对应 CLI，然后可在“设置 → 论文 Agent”检查自动发现结果或填写可执行文件绝对路径。LightRead 不代为安装或登录。Codex 使用自身登录；Pi Agent 使用自身配置；Claude Code 仅允许第三方 API 或企业认证，个人 `claude.ai` OAuth 不会被接入。不同引擎的会话独立，但共享同一论文工作区。
+### 只使用 Pi Agent 的最短路径
+
+1. 按 [Pi 官方说明](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/README.md) 安装 Pi 0.78 或更高版本，并在 Pi 中配置自己使用的模型提供商。
+2. 打开 LightRead 的“设置 → 论文 Agent”，确认 Pi 显示为可用；桌面应用没有找到 `pi` 时，可手动选择其可执行文件。
+3. 打开一篇论文，点击右上方 **Agent**。直接对话，或切到 **论文十问** 生成 AI 初答、编辑“我的回答”，再点击“保存并让 AI 再答”。
+
+这条路径不需要安装 Codex 或 Claude Code。LightRead 不代为安装、登录或保存任何引擎凭据；Pi 使用自身的提供商与模型配置。Codex 使用自身登录；Claude Code 仅允许第三方 API 或企业认证，个人 `claude.ai` OAuth 不会被接入。不同引擎的会话独立，但共享同一论文工作区。
 
 Agent 上下文保存在系统应用数据目录的 `paper-agents/<论文 ID>/` 下，不随自定义书库位置迁移，也不包含在 OKF/WebDAV 备份中。`current-paper` 是由 LightRead 反复生成的只读副本（不是原论文的链接），用于防止误写；由于 Agent 仍以当前系统用户运行并保留完整能力，这不是防篡改沙箱。删除论文时，对话、论文十问人工回答和共享工作区会一起删除。
+
+更完整的阅读模式、Agent 文件结构、引擎差异、隐私边界与排错说明见 [论文阅读完整指南](docs/paper-reading.md)。
 
 > 扫描版或纯图片 PDF 如果没有文本层，将无法进行文字选择、听书和 AI 文本分析；普通页面阅读不受影响。
 
@@ -147,11 +174,9 @@ Agent 上下文保存在系统应用数据目录的 `paper-agents/<论文 ID>/` 
 - 四色划线、写想法、书签、目录定位和阅读时长统计。
 - 普通阅读页也支持 AI 问答和划词解读，AI 服务为可选配置。
 
-<div align="center"><img src="docs/screenshots/pdf-spread.png" width="880" alt="LightRead PDF 双页阅读" /></div>
-
-- PDF 默认适高整页，可切换适宽、连续滚动和双页并列。
+- PDF 默认连续滚动并适宽显示，可切换适高、单页、对页和书籍视图。
 - 自动阅读会根据当前模式连续滚动或自动翻页，控制条可自动收起。
-- PDF 页面可在设置中选择 MuPDF 或 PDFium 渲染，默认使用与 SumatraPDF 同源的 MuPDF；阅读页可在原版与单栏流式正文之间切换，文字选择、目录、链接和标注由 PDFium 提供。
+- PDF 页面可在设置中选择 MuPDF 或 PDFium 渲染，默认使用 MuPDF；文字选择、目录、链接、搜索和标注由 PDFium 提供。页面始终保持原版 PDF 版式，不进行容易破坏公式与图表的正文重排。
 - 桌面系统注册文件关联，可通过“打开方式”直接打开 PDF 和其他支持格式。
 
 ## 听书
@@ -201,6 +226,14 @@ GitHub 社区书源清单保存在 [booksources.json](booksources.json)。欢迎
 
 扫描版通常只有图片，没有可选择的文字层。LightRead 可以正常显示页面，但文字相关功能需要 PDF 自带文本层；目前不内置 OCR。
 
+### 使用论文 Agent 必须安装 Codex、Claude Code 和 Pi 吗？
+
+不需要。不使用 Agent 时三个都不用安装；需要 Agent 时默认只安装 Pi 即可完成对话和论文十问。Codex 与 Claude Code 是可选引擎，缺失或未登录不会阻塞 Pi，也不会影响论文翻译、BabelDOC 或普通 PDF 阅读。Agent 目前仅在桌面版提供。
+
+### Agent 会改坏原论文或我的批注吗？
+
+LightRead 会把原论文复制到独立的 `current-paper` 快照，并把 PDF、全文、笔记和上下文文件标记为只读；Agent 的正常写入位置是同级 `workspace`。原始 PDF 与批注数据库不直接交给 Agent 写入。只读属性主要防止误操作，并不是针对同一系统用户的安全沙箱。
+
 ### 支持 Kindle KFX 或带 DRM 的书吗？
 
 不支持 KFX 和 DRM 加密文件。请先使用合法方式在 Calibre 等工具中转换为 EPUB、AZW3 或其他受支持格式。
@@ -223,7 +256,7 @@ npm run build
 npm run tauri build
 ```
 
-核心结构：Vue 3 + TypeScript 负责界面，foliate-js 负责电子书，MuPDF / PDFium 负责可选的 PDF 页面渲染，PDFium 同时负责 PDF 交互和文本几何，Tauri 2 / Rust 提供桌面文件系统、SQLite、网络和本地能力。网页版可以通过 `npm run build` 生成，但桌面版拥有完整的文件关联、Calibre、本地离线语音和无跨域网络能力。
+核心结构：Vue 3 + TypeScript 负责界面，foliate-js 负责电子书，MuPDF / PDFium 负责可选的 PDF 页面渲染，PDFium 同时负责 PDF 交互和文本几何，Tauri 2 / Rust 提供桌面文件系统、SQLite、网络、本机 Agent 进程管理和其他本地能力。网页版可以通过 `npm run build` 生成，但桌面版才拥有文件关联、Calibre、本地离线语音、本机论文 Agent 和无跨域网络能力。
 
 ## 反馈、联系与参与
 
