@@ -51,6 +51,8 @@ const stalePdfPath = join(TMP, 'stale-open.pdf')
 writeFileSync(stalePdfPath, pdfContent)
 const corruptPdfPath = join(TMP, 'corrupt.pdf')
 writeFileSync(corruptPdfPath, 'This file only has a PDF extension.', 'utf-8')
+const widePdfPath = join(TMP, 'bilingual-wide.pdf')
+writeFileSync(widePdfPath, pdfContent.replaceAll('/MediaBox [0 0 612 792]', '/MediaBox [0 0 1224 792]'))
 
 const browserType = process.env.ENGINE === 'webkit' ? webkit : chromium
 const browser = await browserType.launch()
@@ -227,18 +229,44 @@ await step('返回书架并打开 PDF', async () => {
 await page.screenshot({ path: join(TMP, 'shots', '06-pdf.png') })
 
 await step('PDF 默认连续滚动与适宽', async () => {
+  await page.waitForFunction(() => {
+    const box = document.querySelector('.pane-left')
+    const canvas = document.querySelector('.pane-left canvas')
+    if (!box || !canvas) return false
+    return Math.abs(parseFloat(canvas.style.width) - box.clientWidth) <= 1
+  }, null, { timeout: 3000 })
   const fit = await page.evaluate(() => {
     const box = document.querySelector('.pane-left')
     const canvas = document.querySelector('.pane-left canvas')
+    const boxRect = box?.getBoundingClientRect()
+    const canvasRect = canvas?.getBoundingClientRect()
+    const clientLeft = (boxRect?.left ?? 0) + (box?.clientLeft ?? 0)
+    const clientRight = clientLeft + (box?.clientWidth ?? 0)
+    const clientTop = (boxRect?.top ?? 0) + (box?.clientTop ?? 0)
+    const style = box ? getComputedStyle(box) : null
     return {
       hasScrollMode: !!document.querySelector('.reader-segment button.active')?.textContent?.includes('滚动'),
       boxW: box?.clientWidth ?? 0,
       canvasW: parseFloat(canvas?.style.width ?? '0'),
+      leftGap: (canvasRect?.left ?? 0) - clientLeft,
+      rightGap: clientRight - (canvasRect?.right ?? 0),
+      topGap: (canvasRect?.top ?? 0) - clientTop,
+      paddingLeft: parseFloat(style?.paddingLeft ?? '0'),
+      paddingRight: parseFloat(style?.paddingRight ?? '0'),
+      paddingTop: parseFloat(style?.paddingTop ?? '0'),
+      paddingBottom: parseFloat(style?.paddingBottom ?? '0'),
     }
   })
   if (!fit.hasScrollMode) throw new Error('默认模式不是滚动')
-  if (!(fit.canvasW <= fit.boxW && fit.canvasW > fit.boxW * 0.8)) {
-    throw new Error(`页宽未适宽: ${Math.round(fit.canvasW)} / ${fit.boxW}`)
+  if (Math.abs(fit.canvasW - fit.boxW) > 1
+    || Math.abs(fit.leftGap) > 1
+    || Math.abs(fit.rightGap) > 1
+    || Math.abs(fit.topGap) > 1
+    || fit.paddingLeft !== 0
+    || fit.paddingRight !== 0
+    || fit.paddingTop !== 0
+    || fit.paddingBottom !== 0) {
+    throw new Error(`页宽未铺满: ${JSON.stringify(fit)}`)
   }
 })
 
@@ -275,13 +303,35 @@ await step('PDF 可切换翻页并一键适高', async () => {
   await page.getByRole('button', { name: '翻页', exact: true }).click()
   await page.getByRole('button', { name: '适高', exact: true }).click()
   await page.waitForSelector('.paged-box .p-holder canvas', { timeout: 8000 })
+  await page.waitForFunction(() => {
+    const box = document.querySelector('.paged-box')
+    const canvas = document.querySelector('.spread-host canvas')
+    if (!box || !canvas) return false
+    return Math.abs(parseFloat(canvas.style.height) - box.clientHeight) <= 1
+  }, null, { timeout: 3000 })
   const fit = await page.evaluate(() => {
     const box = document.querySelector('.paged-box')
     const canvas = document.querySelector('.spread-host canvas')
-    return { boxH: box?.clientHeight ?? 0, canvasH: parseFloat(canvas?.style.height ?? '0') }
+    const boxRect = box?.getBoundingClientRect()
+    const canvasRect = canvas?.getBoundingClientRect()
+    const clientTop = (boxRect?.top ?? 0) + (box?.clientTop ?? 0)
+    const clientBottom = clientTop + (box?.clientHeight ?? 0)
+    const style = box ? getComputedStyle(box) : null
+    return {
+      boxH: box?.clientHeight ?? 0,
+      canvasH: parseFloat(canvas?.style.height ?? '0'),
+      topGap: (canvasRect?.top ?? 0) - clientTop,
+      bottomGap: clientBottom - (canvasRect?.bottom ?? 0),
+      paddingTop: parseFloat(style?.paddingTop ?? '0'),
+      paddingBottom: parseFloat(style?.paddingBottom ?? '0'),
+    }
   })
-  if (!(fit.canvasH <= fit.boxH && fit.canvasH > fit.boxH * 0.8)) {
-    throw new Error(`页高未适高: ${Math.round(fit.canvasH)} / ${fit.boxH}`)
+  if (Math.abs(fit.canvasH - fit.boxH) > 1
+    || Math.abs(fit.topGap) > 1
+    || Math.abs(fit.bottomGap) > 1
+    || fit.paddingTop !== 0
+    || fit.paddingBottom !== 0) {
+    throw new Error(`页高未铺满: ${JSON.stringify(fit)}`)
   }
 })
 
@@ -643,6 +693,50 @@ await step('PDF 自动阅读控制条自动与手动收起', async () => {
   await page.click('.paper-actions .reader-tool:has-text("自动阅读中")')
   await page.click('.auto-panel button[title="停止"]')
   await page.waitForSelector('.paper-actions .reader-tool:has-text("自动阅读")')
+})
+
+await step('双语横版 PDF 适宽后四周无外层边缝', async () => {
+  await page.goto('http://localhost:4173/#/library', { waitUntil: 'networkidle' })
+  await page.setInputFiles('input[type=file][multiple]', widePdfPath)
+  await page.waitForSelector('.book-card:has-text("bilingual-wide")', { timeout: 15000 })
+  await page.click('.book-card:has-text("bilingual-wide")')
+  await page.waitForSelector('.p-holder canvas', { timeout: 15000 })
+  await page.getByRole('button', { name: '滚动', exact: true }).click()
+  await page.getByRole('button', { name: '单页', exact: true }).click()
+  await page.getByRole('button', { name: '适宽', exact: true }).click()
+  await page.waitForFunction(() => {
+    const box = document.querySelector('.pane-left')
+    const canvas = document.querySelector('.pane-left canvas')
+    if (!box || !canvas) return false
+    const boxRect = box.getBoundingClientRect()
+    const canvasRect = canvas.getBoundingClientRect()
+    const clientLeft = boxRect.left + box.clientLeft
+    const clientRight = clientLeft + box.clientWidth
+    const clientTop = boxRect.top + box.clientTop
+    return Math.abs(canvasRect.left - clientLeft) <= 1
+      && Math.abs(canvasRect.right - clientRight) <= 1
+      && Math.abs(canvasRect.top - clientTop) <= 1
+  }, null, { timeout: 5000 })
+  const geometry = await page.evaluate(() => {
+    const box = document.querySelector('.pane-left')
+    const canvas = document.querySelector('.pane-left canvas')
+    const boxRect = box.getBoundingClientRect()
+    const canvasRect = canvas.getBoundingClientRect()
+    const style = getComputedStyle(box)
+    const clientLeft = boxRect.left + box.clientLeft
+    const clientRight = clientLeft + box.clientWidth
+    const clientTop = boxRect.top + box.clientTop
+    return {
+      leftGap: canvasRect.left - clientLeft,
+      rightGap: clientRight - canvasRect.right,
+      topGap: canvasRect.top - clientTop,
+      padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+    }
+  })
+  if (geometry.padding.some(value => parseFloat(value) !== 0)) {
+    throw new Error(`双语横版仍有容器 padding: ${JSON.stringify(geometry)}`)
+  }
+  await page.screenshot({ path: join(TMP, 'shots', '06f-bilingual-wide-fit.png') })
 })
 
 await step('刷新后藏书与进度仍在 (持久化)', async () => {
