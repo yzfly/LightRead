@@ -4,6 +4,10 @@
  */
 import { chatStream, type AiMessage } from './ai'
 import { useSettings } from '../stores/settings'
+import {
+  loadPaperTranslationContext,
+  paperTranslationReference,
+} from './paperTranslationContext'
 
 const SYSTEM_PROMPT =
   '你是专业的学术论文翻译。把用户提供的编号段落逐段翻译成流畅准确的简体中文: ' +
@@ -19,7 +23,13 @@ const cacheKey = (bookId: string, page: number) => `lightread-ptr:${bookId}:${pa
 export function cachedTranslation(bookId: string, page: number, expect: number): string[] | null {
   try {
     const data = JSON.parse(localStorage.getItem(cacheKey(bookId, page)) ?? '')
-    if (Array.isArray(data.t) && data.t.length === expect && data.model) return data.t
+    const contextUpdatedAt = loadPaperTranslationContext(bookId)?.updatedAt ?? 0
+    if (
+      Array.isArray(data.t)
+      && data.t.length === expect
+      && data.model
+      && (data.contextUpdatedAt ?? 0) === contextUpdatedAt
+    ) return data.t
   } catch { /* 无缓存 */ }
   return null
 }
@@ -27,8 +37,17 @@ export function cachedTranslation(bookId: string, page: number, expect: number):
 function saveTranslation(bookId: string, page: number, translations: string[]) {
   try {
     const s = useSettings()
-    localStorage.setItem(cacheKey(bookId, page), JSON.stringify({ model: s.aiModel, t: translations }))
+    const contextUpdatedAt = loadPaperTranslationContext(bookId)?.updatedAt ?? 0
+    localStorage.setItem(
+      cacheKey(bookId, page),
+      JSON.stringify({ model: s.aiModel, contextUpdatedAt, t: translations }),
+    )
   } catch { /* 存储满时放弃缓存, 不影响功能 */ }
+}
+
+function translationSystemPrompt(bookId: string): string {
+  const context = loadPaperTranslationContext(bookId)
+  return context ? `${SYSTEM_PROMPT}\n\n${paperTranslationReference(context)}` : SYSTEM_PROMPT
 }
 
 /** 把段落切成若干批, 每批总字符不超预算 */
@@ -63,10 +82,11 @@ export async function translatePage(
   cancelled: () => boolean,
 ): Promise<string[]> {
   const out: string[] = new Array(paras.length).fill('')
+  const systemPrompt = translationSystemPrompt(bookId)
   for (const batch of makeBatches(paras)) {
     const numbered = batch.items.map((p, i) => `[[${i + 1}]] ${p}`).join('\n\n')
     const messages: AiMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: numbered },
     ]
     let buffer = ''

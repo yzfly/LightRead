@@ -1,12 +1,14 @@
 {
   "name": "lightread",
   "private": true,
-  "version": "1.1.6",
+  "version": "1.1.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "test:archive": "node scripts/test-library-archive.mjs",
+    "test:keyboard-shortcuts": "node --experimental-strip-types --test scripts/test-keyboard-shortcuts.mjs",
+    "test:paper-context": "node --experimental-strip-types --test scripts/test-paper-translation-context.mjs",
     "preview": "npm run build && wrangler dev",
     "tauri": "tauri",
     "e2e": "node scripts/e2e-smoke.mjs",

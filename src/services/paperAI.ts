@@ -61,6 +61,7 @@ export async function askDoc(
   question: string,
   onDelta: (full: string) => void,
   cancelled: () => boolean,
+  signal?: AbortSignal,
 ): Promise<string> {
   const messages: AiMessage[] = [
     { role: 'system', content: system },
@@ -68,7 +69,7 @@ export async function askDoc(
     { role: 'user', content: question },
   ]
   let full = ''
-  for await (const delta of chatStream(messages)) {
+  for await (const delta of chatStream(messages, signal)) {
     if (cancelled()) return full
     full += delta
     onDelta(full)

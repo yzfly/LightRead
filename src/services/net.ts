@@ -40,6 +40,7 @@ export interface RemoteRequestInit {
   method?: string
   body?: BodyInit
   headers?: Record<string, string>
+  signal?: AbortSignal
   /** true 时不因非 2xx 抛错, 由调用方处理状态码 (WebDAV 探测等) */
   raw?: boolean
 }
@@ -65,6 +66,7 @@ export async function fetchRemote(
       method: init.method ?? 'GET',
       body: init.body,
       headers,
+      signal: init.signal,
       connectTimeout: 30_000,
       ...(proxyUrl ? { proxy: { all: proxyUrl } } : {}),
     } as any)
@@ -73,6 +75,7 @@ export async function fetchRemote(
       method: init.method ?? 'GET',
       body: init.body,
       headers,
+      signal: init.signal,
     })
   }
 

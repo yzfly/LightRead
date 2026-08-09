@@ -5,6 +5,7 @@
 import { isTauri, getLibraryRoot } from '../storage/types'
 import { useSettings } from '../stores/settings'
 import { TRIAL_BASE_URL } from './ai'
+import type { BabeldocTargetLanguageCode } from './babeldocLanguages'
 
 export interface BabeldocStatus {
   found: boolean
@@ -17,6 +18,13 @@ export interface BabeldocProgress {
   stage?: string | null
   current?: number | null
   total?: number | null
+}
+
+interface BabeldocTranslationRequest {
+  filePath: string
+  targetLanguage: BabeldocTargetLanguageCode
+  pages?: string
+  backgroundPrompt?: string
 }
 
 /** 引擎阶段名 → 中文 (模糊匹配, 未识别的显示原文) */
@@ -65,15 +73,19 @@ export async function bookFilePath(bookId: string, fileName: string): Promise<st
 }
 
 /** 启动翻译 (长任务), 返回产出 PDF 的绝对路径列表 (mono/dual) */
-export async function babeldocTranslate(filePath: string, pages?: string): Promise<string[]> {
+export async function babeldocTranslate(
+  request: BabeldocTranslationRequest,
+): Promise<string[]> {
   const s = useSettings()
   const { invoke } = await import('@tauri-apps/api/core')
   return invoke<string[]>('babeldoc_translate', {
-    filePath,
+    filePath: request.filePath,
     baseUrl: s.aiBaseUrl.trim().replace(/\/+$/, ''),
     apiKey: s.aiApiKey.trim(),
     model: s.aiModel.trim(),
-    pages: pages?.trim() || null,
+    targetLanguage: request.targetLanguage,
+    pages: request.pages?.trim() || null,
+    backgroundPrompt: request.backgroundPrompt ?? null,
   })
 }
 

@@ -6,6 +6,7 @@
 
 use serde::Serialize;
 use std::collections::VecDeque;
+use std::ffi::OsString;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -13,6 +14,9 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
 const RUNNER_PY: &str = include_str!("../resources/babeldoc_runner.py");
+const MAX_BACKGROUND_PROMPT_CHARS: usize = 20_000;
+const SUPPORTED_TARGET_LANGUAGES: &[&str] =
+  &["zh", "zh-TW", "ja", "ko", "fr", "de", "es", "pt", "it", "ru"];
 
 enum BabeldocProcess {
   Idle,
@@ -36,7 +40,9 @@ struct TranslationRequest {
   base_url: String,
   api_key: String,
   model: String,
+  target_language: String,
   pages: Option<String>,
+  background_prompt: Option<String>,
 }
 
 /// 在准备配置与拉起子进程前占住任务槽；早退时保证槽位复位。
@@ -227,6 +233,85 @@ fn parse_percent(line: &str) -> Option<f32> {
   best
 }
 
+fn validate_background_prompt(prompt: Option<String>) -> Result<Option<String>, String> {
+  let Some(prompt) = prompt else {
+    return Ok(None);
+  };
+  let trimmed = prompt.trim();
+  if trimmed.is_empty() {
+    return Ok(None);
+  }
+  if trimmed.chars().count() > MAX_BACKGROUND_PROMPT_CHARS {
+    return Err(format!("论文翻译背景过长，最多 {MAX_BACKGROUND_PROMPT_CHARS} 个字符"));
+  }
+  Ok(Some(trimmed.to_string()))
+}
+
+fn validate_target_language(language: String) -> Result<String, String> {
+  let language = language.trim();
+  if SUPPORTED_TARGET_LANGUAGES.contains(&language) {
+    return Ok(language.to_string());
+  }
+  Err("不支持的目标语言".into())
+}
+
+fn build_python_runner_config(
+  request: &TranslationRequest,
+  src: &Path,
+  out_dir: &Path,
+  pages: Option<&str>,
+) -> serde_json::Value {
+  serde_json::json!({
+    "input": src.to_string_lossy(),
+    "output": out_dir.to_string_lossy(),
+    "model": request.model,
+    "base_url": request.base_url,
+    "api_key": request.api_key,
+    "lang_out": request.target_language,
+    "pages": pages,
+    "custom_system_prompt": request.background_prompt,
+  })
+}
+
+fn build_cli_arguments(
+  request: &TranslationRequest,
+  src: &Path,
+  cfg_path: &Path,
+  out_dir: &Path,
+  pages: Option<&str>,
+) -> Vec<OsString> {
+  let mut args = vec![
+    "--files".into(),
+    src.as_os_str().into(),
+    "-c".into(),
+    cfg_path.as_os_str().into(),
+    "--openai".into(),
+    "--openai-model".into(),
+    request.model.as_str().into(),
+    "--openai-base-url".into(),
+    request.base_url.as_str().into(),
+    "--lang-in".into(),
+    "en".into(),
+    "--lang-out".into(),
+    request.target_language.as_str().into(),
+    "--output".into(),
+    out_dir.as_os_str().into(),
+    "--watermark-output-mode".into(),
+    "no_watermark".into(),
+    "--report-interval".into(),
+    "1".into(),
+  ];
+  if let Some(pages) = pages {
+    args.push("--pages".into());
+    args.push(pages.into());
+  }
+  if let Some(prompt) = request.background_prompt.as_deref() {
+    args.push("--custom-system-prompt".into());
+    args.push(prompt.into());
+  }
+  args
+}
+
 /// stdout 行 → 进度事件。runner 的 JSON 行优先, 非 JSON 走原始行解析。
 /// 返回 done 事件的产物路径 / error 事件的消息。
 fn handle_line(app: &AppHandle, raw: &str, outputs: &mut Vec<String>, error: &mut Option<String>) {
@@ -309,14 +394,7 @@ fn run_translation(
     // runner 模式: 结构化 JSON 进度
     let runner_path = out_dir.join("runner.py");
     std::fs::write(&runner_path, RUNNER_PY).map_err(|e| e.to_string())?;
-    let cfg = serde_json::json!({
-      "input": src.to_string_lossy(),
-      "output": out_dir.to_string_lossy(),
-      "model": request.model,
-      "base_url": request.base_url,
-      "api_key": request.api_key,
-      "pages": pages_arg,
-    });
+    let cfg = build_python_runner_config(&request, &src, &out_dir, pages_arg);
     std::fs::write(&cfg_path, cfg.to_string()).map_err(|e| e.to_string())?;
     cmd = Command::new(py);
     cmd.arg(&runner_path).arg(&cfg_path);
@@ -326,29 +404,7 @@ fn run_translation(
     std::fs::write(&cfg_path, format!("[babeldoc]\nopenai-api-key = \"{escaped_key}\"\n"))
       .map_err(|e| e.to_string())?;
     cmd = Command::new(&bin);
-    cmd
-      .arg("--files")
-      .arg(&src)
-      .arg("-c")
-      .arg(&cfg_path)
-      .arg("--openai")
-      .arg("--openai-model")
-      .arg(&request.model)
-      .arg("--openai-base-url")
-      .arg(&request.base_url)
-      .arg("--lang-in")
-      .arg("en")
-      .arg("--lang-out")
-      .arg("zh")
-      .arg("--output")
-      .arg(&out_dir)
-      .arg("--watermark-output-mode")
-      .arg("no_watermark")
-      .arg("--report-interval")
-      .arg("1");
-    if let Some(p) = pages_arg {
-      cmd.arg("--pages").arg(p);
-    }
+    cmd.args(build_cli_arguments(&request, &src, &cfg_path, &out_dir, pages_arg));
   }
   cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
 
@@ -487,11 +543,23 @@ pub async fn babeldoc_translate(
   base_url: String,
   api_key: String,
   model: String,
+  target_language: String,
   pages: Option<String>,
+  background_prompt: Option<String>,
 ) -> Result<Vec<String>, String> {
   let state = Arc::clone(&state.0);
   let reservation = TranslationReservation::acquire(state.clone())?;
-  let request = TranslationRequest { file_path, base_url, api_key, model, pages };
+  let background_prompt = validate_background_prompt(background_prompt)?;
+  let target_language = validate_target_language(target_language)?;
+  let request = TranslationRequest {
+    file_path,
+    base_url,
+    api_key,
+    model,
+    target_language,
+    pages,
+    background_prompt,
+  };
   tauri::async_runtime::spawn_blocking(move || {
     run_translation(app, state, request, reservation)
   })
@@ -544,6 +612,19 @@ pub fn babeldoc_read_output(path: String) -> Result<tauri::ipc::Response, String
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::ffi::OsStr;
+
+  fn translation_request(background_prompt: Option<&str>) -> TranslationRequest {
+    TranslationRequest {
+      file_path: "/tmp/input.pdf".into(),
+      base_url: "https://example.invalid/v1".into(),
+      api_key: String::new(),
+      model: "test-model".into(),
+      target_language: "ja".into(),
+      pages: None,
+      background_prompt: background_prompt.map(str::to_string),
+    }
+  }
 
   #[test]
   fn reservation_blocks_another_translation_until_drop() {
@@ -574,5 +655,96 @@ mod tests {
     assert!(TranslationReservation::acquire(state.clone()).is_err());
     drop(reservation);
     assert!(matches!(&*state.lock().unwrap(), BabeldocProcess::Idle));
+  }
+
+  #[test]
+  fn empty_background_prompt_is_ignored() {
+    assert_eq!(validate_background_prompt(Some("  \n ".into())).unwrap(), None);
+  }
+
+  #[test]
+  fn oversized_background_prompt_is_rejected() {
+    let prompt = "x".repeat(MAX_BACKGROUND_PROMPT_CHARS + 1);
+    assert!(validate_background_prompt(Some(prompt)).is_err());
+  }
+
+  #[test]
+  fn supported_target_language_is_accepted() {
+    assert_eq!(validate_target_language(" ja ".into()).unwrap(), "ja");
+  }
+
+  #[test]
+  fn unsupported_target_language_is_rejected() {
+    assert!(validate_target_language("ar".into()).is_err());
+  }
+
+  #[test]
+  fn python_runner_config_forwards_target_language_and_background_prompt() {
+    let request = translation_request(Some("approved context"));
+    let config = build_python_runner_config(
+      &request,
+      Path::new("/tmp/input.pdf"),
+      Path::new("/tmp/output"),
+      None,
+    );
+
+    assert_eq!(config.get("lang_out").and_then(serde_json::Value::as_str), Some("ja"));
+    assert_eq!(
+      config.get("custom_system_prompt").and_then(serde_json::Value::as_str),
+      Some("approved context")
+    );
+  }
+
+  #[test]
+  fn python_runner_config_uses_null_when_background_prompt_is_absent() {
+    let request = translation_request(None);
+    let config = build_python_runner_config(
+      &request,
+      Path::new("/tmp/input.pdf"),
+      Path::new("/tmp/output"),
+      None,
+    );
+
+    assert!(config.get("custom_system_prompt").is_some_and(serde_json::Value::is_null));
+  }
+
+  #[test]
+  fn cli_arguments_forward_target_language_and_background_prompt_as_opaque_values() {
+    let request = translation_request(Some("approved context"));
+    let args = build_cli_arguments(
+      &request,
+      Path::new("/tmp/input.pdf"),
+      Path::new("/tmp/config.toml"),
+      Path::new("/tmp/output"),
+      None,
+    );
+
+    let language_flag = args.iter().position(|arg| arg == OsStr::new("--lang-out")).unwrap();
+    assert_eq!(args.get(language_flag + 1).map(OsString::as_os_str), Some(OsStr::new("ja")));
+
+    let prompt_flags: Vec<_> = args
+      .iter()
+      .enumerate()
+      .filter(|(_, arg)| *arg == OsStr::new("--custom-system-prompt"))
+      .collect();
+    assert_eq!(prompt_flags.len(), 1);
+    assert_eq!(
+      args.get(prompt_flags[0].0 + 1).map(OsString::as_os_str),
+      Some(OsStr::new("approved context"))
+    );
+  }
+
+  #[test]
+  fn cli_arguments_omit_background_prompt_when_absent() {
+    let request = translation_request(None);
+    let args = build_cli_arguments(
+      &request,
+      Path::new("/tmp/input.pdf"),
+      Path::new("/tmp/config.toml"),
+      Path::new("/tmp/output"),
+      None,
+    );
+
+    assert!(!args.iter().any(|arg| arg == OsStr::new("--custom-system-prompt")));
   }
 }
