@@ -66,6 +66,37 @@ impl TextDeltaBatch {
   }
 }
 
+fn engine_runtime_bin(executable: &Path) -> Option<PathBuf> {
+  let runtime_name = if cfg!(windows) { "node.exe" } else { "node" };
+  executable.ancestors().find_map(|ancestor| {
+    let bin = ancestor.join("bin");
+    bin.join(runtime_name).is_file().then_some(bin)
+  })
+}
+
+fn configure_engine_environment(command: &mut Command, executable: &Path) {
+  let mut paths = Vec::new();
+  if let Some(runtime_bin) = engine_runtime_bin(executable) {
+    paths.push(runtime_bin);
+  }
+  if let Some(executable_dir) = executable.parent() {
+    let executable_dir = executable_dir.to_path_buf();
+    if !paths.contains(&executable_dir) {
+      paths.push(executable_dir);
+    }
+  }
+  if let Some(inherited) = std::env::var_os("PATH") {
+    for path in std::env::split_paths(&inherited) {
+      if !paths.contains(&path) {
+        paths.push(path);
+      }
+    }
+  }
+  if let Ok(path) = std::env::join_paths(paths) {
+    command.env("PATH", path);
+  }
+}
+
 pub(super) fn engine_command(executable: &Path) -> Command {
   #[cfg(windows)]
   if executable.extension().and_then(|value| value.to_str())
@@ -73,9 +104,12 @@ pub(super) fn engine_command(executable: &Path) -> Command {
   {
     let mut command = Command::new("cmd.exe");
     command.args(["/D", "/S", "/C"]).arg(executable);
+    configure_engine_environment(&mut command, executable);
     return command;
   }
-  Command::new(executable)
+  let mut command = Command::new(executable);
+  configure_engine_environment(&mut command, executable);
+  command
 }
 
 #[derive(Debug, Clone, Serialize)]

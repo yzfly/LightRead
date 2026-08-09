@@ -213,6 +213,27 @@ mod tests {
     std::fs::remove_file(path).unwrap();
   }
 
+  #[cfg(unix)]
+  #[test]
+  fn probes_a_node_cli_from_its_version_manager_runtime() {
+    use std::os::unix::fs::PermissionsExt;
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let root = std::env::temp_dir().join(format!("lightread-node-engine-{nonce}"));
+    let version_root = root.join(".nvm/versions/node/v24.16.0");
+    let runtime = version_root.join("bin/node");
+    let executable = version_root.join("lib/node_modules/@openai/codex/bin/codex.js");
+    std::fs::create_dir_all(runtime.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    std::fs::write(&runtime, "#!/bin/sh\necho 'codex-cli 0.147.0'\n").unwrap();
+    std::fs::write(&executable, "#!/usr/bin/env node\nthis is intentionally invalid javascript\n").unwrap();
+    std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    assert_eq!(version_output(&executable).unwrap(), "codex-cli 0.147.0");
+
+    std::fs::remove_dir_all(root).unwrap();
+  }
+
   #[test]
   fn gates_each_native_protocol_at_its_tested_version_floor() {
     assert!(!version_matches(EngineKind::Codex, "codex-cli 0.146.0"));
