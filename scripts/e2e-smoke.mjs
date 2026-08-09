@@ -695,7 +695,7 @@ await step('PDF 自动阅读控制条自动与手动收起', async () => {
   await page.waitForSelector('.paper-actions .reader-tool:has-text("自动阅读")')
 })
 
-await step('双语横版 PDF 适宽后四周无外层边缝', async () => {
+await step('双语横版 PDF 适宽后四周和页间均无接缝', async () => {
   await page.goto('http://localhost:4173/#/library', { waitUntil: 'networkidle' })
   await page.setInputFiles('input[type=file][multiple]', widePdfPath)
   await page.waitForSelector('.book-card:has-text("bilingual-wide")', { timeout: 15000 })
@@ -736,7 +736,27 @@ await step('双语横版 PDF 适宽后四周无外层边缝', async () => {
   if (geometry.padding.some(value => parseFloat(value) !== 0)) {
     throw new Error(`双语横版仍有容器 padding: ${JSON.stringify(geometry)}`)
   }
+  const seam = await page.evaluate(() => {
+    const groups = [...document.querySelectorAll('.pane-left .scroll-spread-host')]
+    if (groups.length < 2) return null
+    const firstRect = groups[0].getBoundingClientRect()
+    const secondRect = groups[1].getBoundingClientRect()
+    return {
+      gap: secondRect.top - firstRect.bottom,
+      firstMarginBottom: getComputedStyle(groups[0]).marginBottom,
+      firstPageBoxShadow: getComputedStyle(groups[0].querySelector('.p-holder')).boxShadow,
+    }
+  })
+  if (!seam || Math.abs(seam.gap) > 1 || seam.firstPageBoxShadow !== 'none') {
+    throw new Error(`PDF 两页之间仍有接缝: ${JSON.stringify(seam)}`)
+  }
   await page.screenshot({ path: join(TMP, 'shots', '06f-bilingual-wide-fit.png') })
+  await page.evaluate(() => {
+    const box = document.querySelector('.pane-left')
+    const firstGroup = document.querySelector('.pane-left .scroll-spread-host')
+    if (box && firstGroup) box.scrollTop = Math.max(0, firstGroup.scrollHeight - box.clientHeight / 2)
+  })
+  await page.screenshot({ path: join(TMP, 'shots', '06g-bilingual-wide-page-seam.png') })
 })
 
 await step('刷新后藏书与进度仍在 (持久化)', async () => {
