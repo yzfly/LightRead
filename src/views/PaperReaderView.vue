@@ -153,7 +153,7 @@ const scrollSpread = computed(() =>
 /* ================= 连续滚动渲染 (虚拟化: 只渲染视口附近页) ================= */
 
 const GAP = 16
-const PAD = 16
+const NORMAL_SCROLL_PADDING = 28
 const KEEP = 4
 /** PDF 坐标是 72 pt/in，CSS 的基准分辨率是 96 px/in。 */
 const CSS_PX_PER_PT = 96 / 72
@@ -173,6 +173,7 @@ const LEGACY_ZOOM_KEY = 'lightread-paper-zoom'
 const ZOOM_KEY = `lightread-pdf-zoom:${bookId}`
 const restoredZoom = restoreZoom()
 const zoom = ref<PdfZoom>(restoredZoom ?? (settings.pdf.mode === 'scroll' ? 'fit-width' : 'fit-page'))
+const scrollStartPadding = computed(() => typeof zoom.value === 'number' ? NORMAL_SCROLL_PADDING : 0)
 
 function restoreZoom(): PdfZoom | null {
   const raw = localStorage.getItem(ZOOM_KEY) ?? localStorage.getItem(LEGACY_ZOOM_KEY)
@@ -197,8 +198,8 @@ function dimensionsOf(pageNum: number) {
  */
 function displaySizeOf(pageNum: number, scale = curScale.value) {
   const dims = dimensionsOf(pageNum)
-  const w = Math.max(1, Math.floor(dims.w * scale))
-  const h = Math.max(1, Math.floor(dims.h * scale))
+  const w = Math.max(1, Math.round(dims.w * scale))
+  const h = Math.max(1, Math.round(dims.h * scale))
   return { w, h, sx: w / dims.w, sy: h / dims.h }
 }
 
@@ -227,7 +228,7 @@ const scrollPageGroups = computed<number[][]>(() => {
 })
 
 const scrollGroupLayout = computed(() => {
-  let top = PAD
+  let top = scrollStartPadding.value
   return scrollPageGroups.value.map(pages => {
     const height = Math.max(...pages.map(page => displaySizeOf(page).h))
     const entry = { pages, top, height }
@@ -237,7 +238,7 @@ const scrollGroupLayout = computed(() => {
 })
 
 const scrollPageLayout = computed(() => {
-  const pages = Array.from({ length: pageCount.value }, () => ({ top: PAD, height: 0 }))
+  const pages = Array.from({ length: pageCount.value }, () => ({ top: scrollStartPadding.value, height: 0 }))
   for (const group of scrollGroupLayout.value) {
     for (const page of group.pages) pages[page - 1] = { top: group.top, height: group.height }
   }
@@ -258,20 +259,17 @@ function holderOf(num: number) {
 
 function fitScale(kind: 'fit-page' | 'fit-width'): number {
   const box = scroller.value
-  // 与 Sumatra 一样让同一文档所有页面使用相同倍率；双页布局同时约束整组宽度。
-  const width = Math.max((box?.clientWidth ?? 800) - 48, 240)
-  const height = Math.max((box?.clientHeight ?? 700) - 32, 240)
+  // 适配模式移除四周容器内边距，直接使用完整可视尺寸，避免页面外框留缝。
+  const width = Math.max(box?.clientWidth ?? 800, 1)
+  const height = Math.max(box?.clientHeight ?? 700, 1)
   const dims = pageDims.value.length ? pageDims.value : [baseDims.value]
   let scale = Math.min(...dims.map(page => kind === 'fit-page'
-    ? Math.min(width / page.w, height / page.h)
+    ? height / page.h
     : width / page.w))
-  if (scrollSpread.value) {
+  if (kind === 'fit-width' && scrollSpread.value) {
     for (const group of scrollPageGroups.value) {
       const groupWidth = group.reduce((sum, page) => sum + dimensionsOf(page).w, 0)
       scale = Math.min(scale, Math.max(1, width - GAP * (group.length - 1)) / Math.max(1, groupWidth))
-      if (kind === 'fit-page') {
-        scale = Math.min(scale, ...group.map(page => height / Math.max(1, dimensionsOf(page).h)))
-      }
     }
   }
   return Number.isFinite(scale) ? scale : 1
@@ -300,19 +298,19 @@ const atLastPage = computed(() => pdfLayout.value === 'reflow'
       ? currentPage.value >= (scrollPageGroups.value.at(-1)?.[0] ?? pageCount.value)
       : currentPage.value >= pageCount.value)
 
-/** 翻页模式默认适高；双页时同时受可用宽度约束，避免页面被裁掉。 */
+/** 适宽严格铺满可视宽度，适高严格铺满可视高度；另一轴超出时交给滚动容器。 */
 function pagedScale(): number {
   if (typeof zoom.value === 'number') return fixedZoomScale(zoom.value)
   const box = pagedBox.value
-  const availW = Math.max((box?.clientWidth ?? 800) - 32, 240)
-  const availH = Math.max((box?.clientHeight ?? 700) - 24, 240)
+  const availW = Math.max(box?.clientWidth ?? 800, 1)
+  const availH = Math.max(box?.clientHeight ?? 700, 1)
   const pages = pagedPages.value
   const dims = pages.map(dimensionsOf)
   const totalW = dims.reduce((sum, page) => sum + page.w, 0)
   const widthScale = Math.max(1, availW - GAP * (pages.length - 1)) / Math.max(1, totalW)
   if (zoom.value === 'fit-width') return widthScale
   const heightScale = Math.min(...dims.map(page => availH / Math.max(1, page.h)))
-  return Math.min(widthScale, heightScale)
+  return heightScale
 }
 
 /**
@@ -412,7 +410,14 @@ async function renderScrollPage(num: number) {
 async function renderPaged() {
   if (!pdm || !pagedBox.value || !bookPaged.value) return
   const pages = pagedPages.value
-  curScale.value = pagedScale()
+  // WebKit 的 8px 滚动条会在适宽/适高切换后改变另一轴的 client 尺寸。
+  // 先让 holder 尺寸收敛，再绘制 canvas，避免短暂出现 4px 边缝。
+  for (let pass = 0; pass < 3; pass++) {
+    const next = pagedScale()
+    if (pass > 0 && Math.abs(next - curScale.value) < 0.001) break
+    curScale.value = next
+    await nextTick()
+  }
   // 页组切换会创建新的 holder，不能沿用连续滚动视图的 DOM 渲染缓存。
   for (const page of pages) renderedScale.delete(page)
   await nextTick()
@@ -450,9 +455,9 @@ async function switchMode(next: 'paged' | 'scroll') {
   if (next === 'paged') {
     await pagedGoto(currentPage.value)
   } else {
-    curScale.value = typeof zoom.value === 'number' ? fixedZoomScale(zoom.value) : fitScale(zoom.value)
     attachScrollListener()
     await nextTick()
+    await relayout(true)
     scrollGoto(currentPage.value)
     updateViewport()
   }
@@ -467,7 +472,7 @@ async function setSpreadMode(next: 'single' | 'facing' | 'book') {
     currentPage.value = spreadOf(currentPage.value)[0]
     await renderPaged()
   } else {
-    relayout(true)
+    await relayout(true)
   }
 }
 
@@ -575,7 +580,7 @@ function observeActiveViewport() {
 }
 
 function pageTop(n: number): number {
-  return scrollPageLayout.value[n - 1]?.top ?? PAD
+  return scrollPageLayout.value[n - 1]?.top ?? scrollStartPadding.value
 }
 
 function scrollGoto(n: number, smooth = false, yOffsetPx = 0) {
@@ -592,11 +597,13 @@ function gotoPage(n: number, smooth = false, yOffsetPx = 0) {
 async function applyZoom(next: PdfZoom) {
   zoom.value = next
   localStorage.setItem(ZOOM_KEY, String(next))
+  // 先让适配模式的无边距样式生效，再读取 clientWidth/clientHeight 计算精确倍率。
+  await nextTick()
   if (bookPaged.value) {
     renderedScale.clear()
     await renderPaged()
   } else {
-    relayout(true)
+    await relayout(true)
   }
 }
 
@@ -885,21 +892,28 @@ function onFullscreenChange() {
   if (wasFullscreen && !active && presentationMode.value) void exitPresentation(false)
 }
 
+let relayoutSession = 0
+
 /** 重算缩放并保持当前页锚点 (页内比例) */
-function relayout(force = false) {
+async function relayout(force = false) {
   const el = scroller.value
   if (!el) return
   const next = typeof zoom.value === 'number' ? fixedZoomScale(zoom.value) : fitScale(zoom.value)
   if (!force && Math.abs(next - curScale.value) < 0.001) return
+  const session = ++relayoutSession
   const anchorPage = currentPage.value
   const anchorHeight = displaySizeOf(anchorPage).h
   const frac = anchorHeight ? (el.scrollTop - pageTop(anchorPage)) / (anchorHeight + GAP) : 0
-  curScale.value = next
-  renderedScale.clear()
-  nextTick(() => {
-    scrollGoto(anchorPage, false, frac * (displaySizeOf(anchorPage).h + GAP))
-    updateViewport()
-  })
+  for (let pass = 0; pass < 3; pass++) {
+    const settled = typeof zoom.value === 'number' ? fixedZoomScale(zoom.value) : fitScale(zoom.value)
+    if (pass > 0 && Math.abs(settled - curScale.value) < 0.001) break
+    curScale.value = settled
+    renderedScale.clear()
+    await nextTick()
+    if (session !== relayoutSession) return
+  }
+  scrollGoto(anchorPage, false, frac * (displaySizeOf(anchorPage).h + GAP))
+  updateViewport()
 }
 
 /* ================= 页码 / 进度 ================= */
@@ -2487,7 +2501,7 @@ async function openRight(tab: 'translate' | 'ai' | 'chat') {
   await nextTick()
   if (!wasOpen) {
     // 面板挂载后左栏变窄, 重排原文页
-    relayout(true)
+    await relayout(true)
     if (rightPane.value) resizeObserver?.observe(rightPane.value)
   }
   if (tab === 'translate') {
@@ -2510,7 +2524,7 @@ function closeRight() {
   cancelTranslate()
   cancelAi()
   rightTab.value = null
-  nextTick(() => relayout(true))
+  nextTick(() => void relayout(true))
 }
 
 function cancelTranslate() {
@@ -3512,7 +3526,7 @@ onMounted(async () => {
       resizeTimer = setTimeout(() => {
         if (pdfLayout.value === 'original') {
           if (bookPaged.value) void renderPaged()
-          else if (typeof zoom.value !== 'number') relayout()
+          else if (typeof zoom.value !== 'number') void relayout()
           else if (renderedScale.get(currentPage.value) !== renderKeyFor(currentPage.value, curScale.value)) {
             renderedScale.clear()
             updateViewport()
@@ -4152,6 +4166,7 @@ onBeforeUnmount(() => {
           v-else-if="bookPaged"
           ref="pagedBox"
           class="paged-box"
+          :class="{ 'is-fit-width': zoom === 'fit-width', 'is-fit-height': zoom === 'fit-page' }"
           @pointerdown="onScrollerPointerDown"
           @dblclick="onScrollerDblClick"
           @wheel="onPdfWheel"
@@ -4200,6 +4215,7 @@ onBeforeUnmount(() => {
           v-else
           ref="scroller"
           class="pane pane-left"
+          :class="{ 'is-fit-width': zoom === 'fit-width', 'is-fit-height': zoom === 'fit-page' }"
           @pointerdown="onScrollerPointerDown"
           @dblclick="onScrollerDblClick"
           @wheel="onPdfWheel"
@@ -5282,6 +5298,18 @@ onBeforeUnmount(() => {
   padding: 28px 20px;
   background: #eef1f5;
   touch-action: pan-x pan-y;
+}
+.pane-left:is(.is-fit-width, .is-fit-height),
+.paged-box:is(.is-fit-width, .is-fit-height),
+.paper.is-fullscreen .pane-left:is(.is-fit-width, .is-fit-height),
+.paper.is-fullscreen .paged-box:is(.is-fit-width, .is-fit-height) {
+  padding: 0;
+}
+.pane-left:is(.is-fit-width, .is-fit-height) .p-holder,
+.paged-box:is(.is-fit-width, .is-fit-height) .p-holder,
+.pane-left:is(.is-fit-width, .is-fit-height) .p-canvas :deep(canvas),
+.paged-box:is(.is-fit-width, .is-fit-height) .p-canvas :deep(canvas) {
+  border-radius: 0;
 }
 .paged-box.is-panning,
 .pane-left.is-panning {
