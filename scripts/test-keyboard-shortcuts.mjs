@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  PDF_READER_SHORTCUTS,
+  dispatchPdfReaderShortcut,
+  getPdfShortcutHelpRows,
   handleReaderCopyShortcut,
   isPlatformCopyShortcut,
+  resolvePdfReaderShortcut,
   shouldClearCopiedSelection,
 } from '../src/services/keyboardShortcuts.ts'
 
@@ -99,4 +103,105 @@ test('only clears the selection copied by the completed async operation', () => 
   const newer = { text: 'second' }
   assert.equal(shouldClearCopiedSelection(copied, copied), true)
   assert.equal(shouldClearCopiedSelection(newer, copied), false)
+})
+
+const readerState = { isPaper: false, pdfLayout: 'original' }
+
+test('resolves primary commands with the strict platform modifier', () => {
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 'f', metaKey: true }), true, readerState), 'search')
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 'f', ctrlKey: true }), true, readerState), null)
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 'f', ctrlKey: true }), false, readerState), 'search')
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 'f', metaKey: true }), false, readerState), null)
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 'f', ctrlKey: true, metaKey: true }), false, readerState), null)
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 'f', ctrlKey: true, altKey: true }), false, readerState), null)
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 'f', ctrlKey: true, shiftKey: true }), false, readerState), null)
+})
+
+test('filters commands by PDF reader capability', () => {
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: '6', ctrlKey: true }), false, readerState), 'layoutSingle')
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: '6', ctrlKey: true }), false, { ...readerState, isPaper: true }), null)
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: '1', ctrlKey: true }), false, { ...readerState, pdfLayout: 'reflow' }), null)
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: '0', ctrlKey: true }), false, { ...readerState, pdfLayout: 'reflow' }), 'zoomReset')
+})
+
+const dispatchReaderCommand = (eventOverrides = {}, contextOverrides = {}) => {
+  const calls = { actions: [], canHandleChecks: 0, editableChecks: 0, prevented: 0 }
+  const event = keyEvent({
+    key: 'f',
+    ctrlKey: true,
+    preventDefault: () => { calls.prevented += 1 },
+    ...eventOverrides,
+  })
+  const context = {
+    state: readerState,
+    isEditableTarget: () => {
+      calls.editableChecks += 1
+      return false
+    },
+    canHandleCommand: () => {
+      calls.canHandleChecks += 1
+      return true
+    },
+    runCommand: command => { calls.actions.push(command) },
+    ...contextOverrides,
+  }
+  return {
+    calls,
+    handled: dispatchPdfReaderShortcut(event, false, context),
+  }
+}
+
+test('dispatches recognized commands through one repeat-safe boundary', () => {
+  const initial = dispatchReaderCommand()
+  assert.equal(initial.handled, true)
+  assert.deepEqual(initial.calls, {
+    actions: ['search'],
+    canHandleChecks: 1,
+    editableChecks: 1,
+    prevented: 1,
+  })
+
+  const repeated = dispatchReaderCommand({ repeat: true })
+  assert.equal(repeated.handled, true)
+  assert.deepEqual(repeated.calls, {
+    actions: [],
+    canHandleChecks: 1,
+    editableChecks: 1,
+    prevented: 1,
+  })
+})
+
+test('preserves native behavior for editable targets before command-specific probes', () => {
+  const result = dispatchReaderCommand({}, { isEditableTarget: () => true })
+  assert.equal(result.handled, false)
+  assert.equal(result.calls.prevented, 0)
+  assert.equal(result.calls.canHandleChecks, 0)
+  assert.deepEqual(result.calls.actions, [])
+})
+
+test('does not inspect DOM or selection state for unrelated keys', () => {
+  const result = dispatchReaderCommand({ key: 'v', ctrlKey: false })
+  assert.equal(result.handled, false)
+  assert.deepEqual(result.calls, {
+    actions: [],
+    canHandleChecks: 0,
+    editableChecks: 0,
+    prevented: 0,
+  })
+})
+
+test('projects every runtime command into capability-aware help', () => {
+  const bookRows = getPdfShortcutHelpRows(readerState, false)
+  const paperRows = getPdfShortcutHelpRows({ ...readerState, isPaper: true }, false)
+  const reflowRows = getPdfShortcutHelpRows({ ...readerState, pdfLayout: 'reflow' }, false)
+  const visibleIds = new Set(bookRows.flatMap(row => row.commandIds))
+
+  assert.deepEqual(
+    PDF_READER_SHORTCUTS.filter(command => command.isAvailable(readerState)).map(command => command.id).sort(),
+    [...visibleIds].sort(),
+  )
+  assert.equal(bookRows.some(row => row.commandIds.includes('layoutSingle')), true)
+  assert.equal(paperRows.some(row => row.commandIds.includes('layoutSingle')), false)
+  assert.equal(reflowRows.some(row => row.commandIds.includes('actualSize')), false)
+  assert.equal(reflowRows.some(row => row.commandIds.includes('zoomReset')), true)
 })

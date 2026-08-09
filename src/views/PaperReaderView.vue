@@ -75,7 +75,12 @@ import {
 } from '../services/tts'
 import { EDGE_VOICES, edgeAvailable, playAudio } from '../services/edgeTts'
 import { localTtsAvailable, localTtsDownload, localTtsStatus, localTtsSynthesize } from '../services/localTts'
-import { handleReaderCopyShortcut, shouldClearCopiedSelection } from '../services/keyboardShortcuts'
+import {
+  dispatchPdfReaderShortcut,
+  getPdfShortcutHelpRows,
+  shouldClearCopiedSelection,
+  type PdfReaderShortcutCommandId,
+} from '../services/keyboardShortcuts'
 import TocList, { type TocItem } from '../components/TocList.vue'
 import { t } from '../i18n'
 
@@ -618,24 +623,10 @@ const isMacPlatform = typeof navigator !== 'undefined'
   && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
 const primaryShortcutLabel = isMacPlatform ? '⌘' : 'Ctrl'
 const shortcutsOpen = ref(false)
-const shortcutRows = computed(() => [
-  { shortcuts: [[primaryShortcutLabel, 'C']], label: t('paper.copy') },
-  { shortcuts: [[primaryShortcutLabel, 'F']], label: t('reader.searchInBook') },
-  { shortcuts: [[primaryShortcutLabel, 'P']], label: t('reader.print') },
-  { shortcuts: [[primaryShortcutLabel, '⇧', 'S']], label: t('reader.saveAs') },
-  { shortcuts: [[primaryShortcutLabel, '＋']], label: t('reader.shortcutZoomIn') },
-  { shortcuts: [[primaryShortcutLabel, '−']], label: t('reader.shortcutZoomOut') },
-  { shortcuts: [[primaryShortcutLabel, '0'], [primaryShortcutLabel, '1'], [primaryShortcutLabel, '2']], label: t('reader.shortcutZoomModes') },
-  { shortcuts: [[primaryShortcutLabel, '6'], [primaryShortcutLabel, '7'], [primaryShortcutLabel, '8']], label: t('reader.shortcutPageLayouts') },
-  { shortcuts: [['N'], ['P']], label: t('reader.shortcutPrevNextPage') },
-  { shortcuts: [['J'], ['K'], ['H'], ['L']], label: t('reader.shortcutScroll') },
-  { shortcuts: [['Page Up'], ['⇧', 'Space']], label: t('reader.shortcutPrevPage') },
-  { shortcuts: [['Page Down'], ['Space']], label: t('reader.shortcutNextPage') },
-  { shortcuts: [['Home'], ['End']], label: t('reader.shortcutFirstLast') },
-  { shortcuts: [['F'], ['F11']], label: t('reader.shortcutFullscreen') },
-  { shortcuts: [['?']], label: t('reader.shortcutHelp') },
-  { shortcuts: [['Esc']], label: t('reader.shortcutClose') },
-])
+const shortcutRows = computed(() => getPdfShortcutHelpRows({
+  isPaper: isPaper.value,
+  pdfLayout: pdfLayout.value,
+}, isMacPlatform).map(row => ({ ...row, label: t(row.labelKey) })))
 
 function changeReaderZoom(dir: 1 | -1) {
   zoomMenu.value = false
@@ -3218,182 +3209,165 @@ function isEditableShortcutTarget(target: EventTarget | null): boolean {
   ))
 }
 
-function handleKeydown(e: KeyboardEvent) {
-  const primaryPressed = e.metaKey || e.ctrlKey
-  if (handleReaderCopyShortcut(e, isMacPlatform, {
-    hasCustomSelection: Boolean(selection.value?.text),
-    isEditableTarget: () => isEditableShortcutTarget(e.target),
-    hasNativeSelection: () => Boolean(window.getSelection()?.toString()),
-    copySelection: () => { void copySelection() },
-  })) return
-  if (e.key === 'Escape' && (presentationMode.value || isFullscreen.value)) {
-    e.preventDefault()
-    if (presentationMode.value) void exitPresentation()
-    else void setFullscreen(false)
-    return
-  }
-  if (primaryPressed && !e.altKey && e.key.toLowerCase() === 'p') {
-    e.preventDefault()
-    void printDocument()
-    return
-  }
-  if (primaryPressed && e.shiftKey && !e.altKey && e.key.toLowerCase() === 's') {
-    e.preventDefault()
-    void saveDocumentAs()
-    return
-  }
-  if (primaryPressed && !e.altKey && e.key.toLowerCase() === 'f') {
-    e.preventDefault()
-    openPdfSearch()
-    return
-  }
-  if (e.key === 'F3') {
-    e.preventDefault()
-    if (!pdfSearchOpen.value) openPdfSearch()
-    if (pdfSearchResults.value.length) {
-      void activatePdfSearchHit(pdfSearchActive.value + (e.shiftKey ? -1 : 1))
-    }
-    return
-  }
-  if (e.altKey && !primaryPressed && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-    e.preventDefault()
-    if (e.key === 'ArrowLeft') goBack()
-    else goForward()
-    return
-  }
-  const zoomInKey = e.key === '+' || e.key === '=' || e.code === 'Equal' || e.code === 'NumpadAdd'
-  const zoomOutKey = e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract'
-  if (primaryPressed && !e.altKey && (zoomInKey || zoomOutKey)) {
-    e.preventDefault()
-    if (zoomInKey) changeReaderZoom(1)
-    else changeReaderZoom(-1)
-    return
-  }
-  if (primaryPressed && !e.altKey && ['0', '1', '2'].includes(e.key)) {
-    e.preventDefault()
-    if (pdfLayout.value === 'reflow') {
-      if (e.key === '0') resetReaderZoom()
-    } else if (e.key === '0') {
-      void applyZoom('fit-page')
-    } else if (e.key === '1') {
-      void applyZoom(1)
-    } else {
-      void applyZoom('fit-width')
-    }
-    return
-  }
-  if (primaryPressed && !e.altKey && ['6', '7', '8'].includes(e.key) && !isPaper.value) {
-    e.preventDefault()
-    const next = e.key === '6' ? 'single' : e.key === '7' ? 'facing' : 'book'
-    void (async () => {
-      if (pdfLayout.value === 'reflow') await switchPdfLayout('original')
-      if (mode.value !== 'paged') await switchMode('paged')
-      await setSpreadMode(next)
-    })()
-    return
-  }
-  if (primaryPressed && !e.altKey && e.key.toLowerCase() === 'g') {
-    e.preventDefault()
-    const input = paperRoot.value?.querySelector<HTMLInputElement>('.page-input')
-    input?.focus()
-    input?.select()
-    return
-  }
-  if (primaryPressed && !e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-    e.preventDefault()
-    scrollByScreen(e.key === 'ArrowDown' ? 1 : -1)
-    return
-  }
+function focusPageInput() {
+  const input = paperRoot.value?.querySelector<HTMLInputElement>('.page-input')
+  input?.focus()
+  input?.select()
+}
 
-  if (pdfSearchOpen.value && e.key === 'Escape') {
-    e.preventDefault()
-    closePdfSearch()
-    return
+function runPdfShortcutCommand(command: PdfReaderShortcutCommandId) {
+  switch (command) {
+    case 'copy':
+      void copySelection()
+      break
+    case 'print':
+      void printDocument()
+      break
+    case 'saveAs':
+      void saveDocumentAs()
+      break
+    case 'search':
+      openPdfSearch()
+      break
+    case 'findNext':
+    case 'findPrevious':
+      if (!pdfSearchOpen.value) openPdfSearch()
+      if (pdfSearchResults.value.length) {
+        void activatePdfSearchHit(pdfSearchActive.value + (command === 'findPrevious' ? -1 : 1))
+      }
+      break
+    case 'historyBack':
+      goBack()
+      break
+    case 'historyForward':
+      goForward()
+      break
+    case 'zoomIn':
+      changeReaderZoom(1)
+      break
+    case 'zoomOut':
+      changeReaderZoom(-1)
+      break
+    case 'zoomReset':
+      resetReaderZoom()
+      break
+    case 'actualSize':
+      void applyZoom(1)
+      break
+    case 'fitWidth':
+      void applyZoom('fit-width')
+      break
+    case 'layoutSingle':
+    case 'layoutFacing':
+    case 'layoutBook': {
+      const next = command === 'layoutSingle' ? 'single' : command === 'layoutFacing' ? 'facing' : 'book'
+      void (async () => {
+        if (pdfLayout.value === 'reflow') await switchPdfLayout('original')
+        if (mode.value !== 'paged') await switchMode('paged')
+        await setSpreadMode(next)
+      })()
+      break
+    }
+    case 'focusPage':
+      focusPageInput()
+      break
+    case 'screenUp':
+      scrollByScreen(-1)
+      break
+    case 'screenDown':
+      scrollByScreen(1)
+      break
+    case 'closePanels':
+      if (presentationMode.value) {
+        void exitPresentation()
+      } else if (isFullscreen.value) {
+        void setFullscreen(false)
+      } else if (pdfSearchOpen.value) {
+        closePdfSearch()
+      } else {
+        selection.value = null
+        liveSel.value = null
+        dragSel = null
+        activeAnnotation.value = null
+        closeSelTr()
+        closeDrawer()
+        zoomMenu.value = false
+        typographyOpen.value = false
+        shortcutsOpen.value = false
+        stopAutoRead()
+        autoPanel.value = false
+      }
+      break
+    case 'toggleHelp':
+      toggleShortcutGuide()
+      break
+    case 'toggleFullscreen':
+      void toggleFullscreen()
+      break
+    case 'presentation':
+      void enterPresentation()
+      break
+    case 'toggleToc':
+      toggleDrawerTab('toc')
+      break
+    case 'cycleFit':
+      cycleFitMode()
+      break
+    case 'togglePageMode':
+      void switchMode(mode.value === 'paged' ? 'scroll' : 'paged')
+      break
+    case 'firstPage':
+      gotoPage(1)
+      break
+    case 'lastPage':
+      gotoPage(pageCount.value)
+      break
+    case 'nextPage':
+      nextPage()
+      break
+    case 'previousPage':
+      prevPage()
+      break
+    case 'pageUp':
+      scrollByScreen(-1)
+      break
+    case 'pageDown':
+      scrollByScreen(1)
+      break
+    case 'lineUp': {
+      const moved = scrollViewportBy(0, -48)
+      if (bookPaged.value && !moved) prevPage()
+      break
+    }
+    case 'lineDown': {
+      const moved = scrollViewportBy(0, 48)
+      if (bookPaged.value && !moved) nextPage()
+      break
+    }
+    case 'lineLeft': {
+      const moved = scrollViewportBy(-64, 0)
+      if (bookPaged.value && !moved) prevPage()
+      break
+    }
+    case 'lineRight': {
+      const moved = scrollViewportBy(64, 0)
+      if (bookPaged.value && !moved) nextPage()
+      break
+    }
   }
-  if (isEditableShortcutTarget(e.target)) return
-  if (e.metaKey || e.ctrlKey || e.altKey) return
-  if (e.key === 'Escape') {
-    selection.value = null
-    liveSel.value = null
-    dragSel = null
-    activeAnnotation.value = null
-    closeSelTr()
-    closeDrawer()
-    zoomMenu.value = false
-    typographyOpen.value = false
-    shortcutsOpen.value = false
-    stopAutoRead()
-    autoPanel.value = false
-    return
-  }
-  if (e.key === '?' || (e.shiftKey && (e.key === '/' || e.code === 'Slash'))) {
-    e.preventDefault()
-    toggleShortcutGuide()
-  } else if (e.key === '/') {
-    e.preventDefault()
-    openPdfSearch()
-  } else if (e.key.toLowerCase() === 'f' || e.key === 'F11') {
-    e.preventDefault()
-    void toggleFullscreen()
-  } else if (e.key === 'F5') {
-    e.preventDefault()
-    void enterPresentation()
-  } else if (e.key === 'F12') {
-    e.preventDefault()
-    toggleDrawerTab('toc')
-  } else if (zoomInKey || zoomOutKey) {
-    e.preventDefault()
-    changeReaderZoom(zoomInKey ? 1 : -1)
-  } else if (e.key.toLowerCase() === 'z' && pdfLayout.value === 'original') {
-    e.preventDefault()
-    cycleFitMode()
-  } else if (e.key.toLowerCase() === 'c' && !isPaper.value && pdfLayout.value === 'original') {
-    e.preventDefault()
-    void switchMode(mode.value === 'paged' ? 'scroll' : 'paged')
-  } else if (e.key.toLowerCase() === 'g') {
-    e.preventDefault()
-    const input = paperRoot.value?.querySelector<HTMLInputElement>('.page-input')
-    input?.focus()
-    input?.select()
-  } else if (e.key === 'Home') {
-    e.preventDefault()
-    gotoPage(1)
-  } else if (e.key === 'End') {
-    e.preventDefault()
-    gotoPage(pageCount.value)
-  } else if (e.key.toLowerCase() === 'n') {
-    e.preventDefault()
-    nextPage()
-  } else if (e.key.toLowerCase() === 'p') {
-    e.preventDefault()
-    prevPage()
-  } else if (e.key === 'PageUp' || (e.key === ' ' && e.shiftKey)) {
-    e.preventDefault()
-    scrollByScreen(-1)
-  } else if (e.key === 'PageDown' || e.key === ' ') {
-    e.preventDefault()
-    scrollByScreen(1)
-  } else if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'k') {
-    e.preventDefault()
-    const moved = scrollViewportBy(0, -48)
-    if (bookPaged.value && !moved) prevPage()
-  } else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 'j') {
-    e.preventDefault()
-    const moved = scrollViewportBy(0, 48)
-    if (bookPaged.value && !moved) nextPage()
-  } else if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'h') {
-    e.preventDefault()
-    const moved = scrollViewportBy(-64, 0)
-    if (bookPaged.value && !moved) prevPage()
-  } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'l') {
-    e.preventDefault()
-    const moved = scrollViewportBy(64, 0)
-    if (bookPaged.value && !moved) nextPage()
-  } else if (e.key === 'Backspace') {
-    e.preventDefault()
-    if (e.shiftKey) goForward()
-    else goBack()
-  }
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  dispatchPdfReaderShortcut(e, isMacPlatform, {
+    state: {
+      isPaper: isPaper.value,
+      pdfLayout: pdfLayout.value,
+    },
+    isEditableTarget: () => isEditableShortcutTarget(e.target),
+    canHandleCommand: command => command !== 'copy'
+      || Boolean(selection.value?.text) && !window.getSelection()?.toString(),
+    runCommand: runPdfShortcutCommand,
+  })
 }
 
 onMounted(async () => {
