@@ -23,6 +23,7 @@ export type PdfReaderShortcutCommandId =
   | 'copy'
   | 'print'
   | 'saveAs'
+  | 'open'
   | 'search'
   | 'findNext'
   | 'findPrevious'
@@ -124,7 +125,8 @@ const altChord = (key: string, display: string): PdfShortcutChord => ({
 export const PDF_READER_SHORTCUTS: readonly PdfReaderShortcutDefinition[] = [
   { id: 'copy', chords: [primaryChord('c', 'C')], helpGroup: 'copy', helpLabelKey: 'paper.copy', isAvailable: alwaysAvailable },
   { id: 'print', chords: [primaryChord('p', 'P')], helpGroup: 'print', helpLabelKey: 'reader.print', isAvailable: alwaysAvailable },
-  { id: 'saveAs', chords: [primaryChord('s', 'S', { shift: true })], helpGroup: 'save', helpLabelKey: 'reader.saveAs', isAvailable: alwaysAvailable },
+  { id: 'saveAs', chords: [primaryChord('s', 'S'), primaryChord('s', 'S', { shift: true })], helpGroup: 'save', helpLabelKey: 'reader.saveAs', isAvailable: alwaysAvailable },
+  { id: 'open', chords: [primaryChord('o', 'O')], helpGroup: 'open', helpLabelKey: 'reader.openPdf', isAvailable: alwaysAvailable },
   { id: 'search', chords: [primaryChord('f', 'F'), plainChord('/', '/')], helpGroup: 'search', helpLabelKey: 'reader.searchInBook', isAvailable: alwaysAvailable },
   { id: 'findNext', chords: [plainChord('F3', 'F3')], helpGroup: 'find-results', helpLabelKey: 'reader.shortcutFindResults', isAvailable: alwaysAvailable },
   { id: 'findPrevious', chords: [plainChord('F3', ['⇧', 'F3'], { shift: true })], helpGroup: 'find-results', helpLabelKey: 'reader.shortcutFindResults', isAvailable: alwaysAvailable },

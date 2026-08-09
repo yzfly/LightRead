@@ -205,3 +205,20 @@ test('projects every runtime command into capability-aware help', () => {
   assert.equal(reflowRows.some(row => row.commandIds.includes('actualSize')), false)
   assert.equal(reflowRows.some(row => row.commandIds.includes('zoomReset')), true)
 })
+
+test('maps standard and compatibility Save chords to one command', () => {
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 's', ctrlKey: true }), false, readerState), 'saveAs')
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 's', ctrlKey: true, shiftKey: true }), false, readerState), 'saveAs')
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 's', metaKey: true }), true, readerState), 'saveAs')
+  assert.equal(resolvePdfReaderShortcut(keyEvent({ key: 's', metaKey: true, shiftKey: true }), true, readerState), 'saveAs')
+})
+
+test('dispatches Open once while suppressing held-key repeats', () => {
+  const initial = dispatchReaderCommand({ key: 'o' })
+  assert.deepEqual(initial.calls.actions, ['open'])
+  assert.equal(initial.calls.prevented, 1)
+
+  const repeated = dispatchReaderCommand({ key: 'o', repeat: true })
+  assert.deepEqual(repeated.calls.actions, [])
+  assert.equal(repeated.calls.prevented, 1)
+})

@@ -19,6 +19,8 @@ import {
   textRuns,
 } from '../services/pdfium'
 import { initMupdf } from '../services/mupdf'
+import { importFile } from '../services/importer'
+import { detectFormat } from '../services/format'
 import {
   TEN_QUESTIONS,
   SUMMARY_PROMPT,
@@ -100,6 +102,7 @@ const scroller = ref<HTMLElement>()
 const pagedBox = ref<HTMLElement>()
 const rightPane = ref<HTMLElement>()
 const thumbnailScroller = ref<HTMLElement>()
+const pdfOpenInput = ref<HTMLInputElement>()
 
 /** PDFium 交互引擎：几何选择、链接、目录、文本与段落提取。 */
 let pdm: PdfiumDoc | null = null
@@ -724,6 +727,32 @@ async function saveDocumentAs() {
     if (saved) toast(t('reader.savedAs'), 'success')
   } catch (error: any) {
     toast(t('reader.saveFailed', { msg: error?.message ?? error }), 'error', 5000)
+  }
+}
+
+function choosePdfToOpen() {
+  pdfOpenInput.value?.click()
+}
+
+async function onPdfOpenPicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (detectFormat(file.name) !== 'pdf') {
+    toast(t('reader.openPdfOnly'), 'error', 5000)
+    return
+  }
+  try {
+    const result = await importFile(file, '本地导入', {
+      kind: isPaper.value ? 'paper' : 'book',
+    })
+    if (!result.ok || !result.bookId) throw new Error(result.error || t('reader.openPdfFailed'))
+    await library.refresh()
+    await router.replace(backTarget.value)
+    await router.push(`/read-paper/${result.bookId}`)
+  } catch (error: any) {
+    toast(t('reader.openPdfFailedWithMessage', { msg: error?.message ?? error }), 'error', 5000)
   }
 }
 
@@ -3226,6 +3255,9 @@ function runPdfShortcutCommand(command: PdfReaderShortcutCommandId) {
     case 'saveAs':
       void saveDocumentAs()
       break
+    case 'open':
+      choosePdfToOpen()
+      break
     case 'search':
       openPdfSearch()
       break
@@ -3506,6 +3538,14 @@ onBeforeUnmount(() => {
     class="paper"
     :class="{ 'is-fullscreen': isFullscreen, 'is-presentation': presentationMode }"
   >
+    <input
+      ref="pdfOpenInput"
+      data-reader-pdf-open
+      type="file"
+      accept=".pdf,application/pdf"
+      hidden
+      @change="onPdfOpenPicked"
+    />
     <header class="paper-header">
       <div class="paper-bar">
         <div class="paper-document">

@@ -45,6 +45,8 @@ trailer << /Root 1 0 R /Size 15 >>
 %%EOF`
 const pdfPath = join(TMP, 'test-doc.pdf')
 writeFileSync(pdfPath, pdfContent)
+const shortcutPdfPath = join(TMP, 'shortcut-open.pdf')
+writeFileSync(shortcutPdfPath, pdfContent)
 
 const browserType = process.env.ENGINE === 'webkit' ? webkit : chromium
 const browser = await browserType.launch()
@@ -393,6 +395,38 @@ await step('PDF 网页版可另存为原文件', async () => {
   if (download.suggestedFilename() !== 'test-doc.pdf') {
     throw new Error(`另存文件名异常: ${download.suggestedFilename()}`)
   }
+})
+
+await step('PDF 标准保存快捷键沿用另存为流程', async () => {
+  const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+  const downloadPromise = page.waitForEvent('download')
+  await page.keyboard.press(`${primaryKey}+s`)
+  const download = await downloadPromise
+  if (download.suggestedFilename() !== 'test-doc.pdf') {
+    throw new Error(`快捷键另存文件名异常: ${download.suggestedFilename()}`)
+  }
+})
+
+await step('PDF 标准打开快捷键导入同类藏书并重建阅读器', async () => {
+  const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
+  const previousUrl = page.url()
+  const invalidChooserPromise = page.waitForEvent('filechooser')
+  await page.keyboard.press(`${primaryKey}+o`)
+  const invalidChooser = await invalidChooserPromise
+  await invalidChooser.setFiles(txtPath)
+  await page.waitForSelector('.toast.error:has-text("请选择 PDF 文件")')
+  if (page.url() !== previousUrl) throw new Error('选择非 PDF 后阅读器发生跳转')
+
+  const chooserPromise = page.waitForEvent('filechooser')
+  await page.keyboard.press(`${primaryKey}+o`)
+  const chooser = await chooserPromise
+  await chooser.setFiles(shortcutPdfPath)
+  await page.waitForFunction(() =>
+    document.querySelector('.paper-title strong')?.textContent?.trim() === 'shortcut-open',
+  null, { timeout: 15000 })
+  if (page.url() === previousUrl) throw new Error('打开新 PDF 后阅读器路由未变化')
+  const backTitle = await page.locator('.document-back').getAttribute('title')
+  if (!backTitle?.includes('藏书')) throw new Error(`新 PDF 未保留藏书归属: ${backTitle || 'missing'}`)
 })
 
 await step('PDF 全屏支持目录侧栏与跳转', async () => {
