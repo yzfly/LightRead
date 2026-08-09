@@ -52,6 +52,10 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # sherpa-onnx-sys stores downloaded native libraries beside Cargo's
+          # target output, but Rust cache pruning can restore only the build
+          # metadata and leave those libraries missing at the final link step.
+          cache-targets: false
 
       - run: npm ci
 
