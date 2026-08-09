@@ -6,7 +6,7 @@ authors = ["云中江树"]
 license = "AGPL-3.0-or-later"
 repository = ""
 edition = "2021"
-rust-version = "1.85.0"
+rust-version = "1.87.0"
 
 [lib]
 name = "lightread_lib"
