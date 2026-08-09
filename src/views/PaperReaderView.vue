@@ -104,6 +104,7 @@ const rightPane = ref<HTMLElement>()
 const thumbnailScroller = ref<HTMLElement>()
 const pdfOpenInput = ref<HTMLInputElement>()
 let openingPdf = false
+let readerAlive = true
 
 /** PDFium 交互引擎：几何选择、链接、目录、文本与段落提取。 */
 let pdm: PdfiumDoc | null = null
@@ -627,6 +628,7 @@ const isMacPlatform = typeof navigator !== 'undefined'
   && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
 const primaryShortcutLabel = isMacPlatform ? '⌘' : 'Ctrl'
 const shortcutsOpen = ref(false)
+const shortcutMenu = ref<HTMLElement>()
 const shortcutRows = computed(() => getPdfShortcutHelpRows({
   isPaper: isPaper.value,
   pdfLayout: pdfLayout.value,
@@ -647,10 +649,22 @@ function resetReaderZoom() {
   else void applyZoom('fit-page')
 }
 
-function toggleShortcutGuide() {
+async function toggleShortcutGuide() {
   shortcutsOpen.value = !shortcutsOpen.value
   zoomMenu.value = false
   typographyOpen.value = false
+  if (shortcutsOpen.value) {
+    await nextTick()
+    shortcutMenu.value?.focus()
+  }
+}
+
+function onShortcutGuideKeydown(event: KeyboardEvent) {
+  event.stopPropagation()
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    shortcutsOpen.value = false
+  }
 }
 
 /* ---- 文件操作 / 属性 / 全屏 / 幻灯片 ---- */
@@ -735,6 +749,10 @@ function choosePdfToOpen() {
   if (!openingPdf) pdfOpenInput.value?.click()
 }
 
+function isCurrentReaderRequest(initiatingRoute: string): boolean {
+  return readerAlive && router.currentRoute.value.fullPath === initiatingRoute
+}
+
 async function onPdfOpenPicked(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -746,16 +764,33 @@ async function onPdfOpenPicked(event: Event) {
   }
   if (openingPdf) return
   openingPdf = true
+  const initiatingRoute = router.currentRoute.value.fullPath
+  const collectionRoute = backTarget.value
+  const collectionFullPath = router.resolve(collectionRoute).fullPath
+  const kind = isPaper.value ? 'paper' : 'book'
   try {
+    let probe: PdfiumDoc | null = null
+    try {
+      probe = await PdfiumDoc.open(await file.arrayBuffer())
+    } finally {
+      probe?.close()
+    }
+    if (!isCurrentReaderRequest(initiatingRoute)) return
+
     const result = await importFile(file, '本地导入', {
-      kind: isPaper.value ? 'paper' : 'book',
+      kind,
     })
+    if (!isCurrentReaderRequest(initiatingRoute)) return
     if (!result.ok || !result.bookId) throw new Error(result.error || t('reader.openPdfFailed'))
     await library.refresh()
-    await router.replace(backTarget.value)
+    if (!isCurrentReaderRequest(initiatingRoute)) return
+    await router.replace(collectionRoute)
+    if (router.currentRoute.value.fullPath !== collectionFullPath) return
     await router.push(`/read-paper/${result.bookId}`)
   } catch (error: any) {
-    toast(t('reader.openPdfFailedWithMessage', { msg: error?.message ?? error }), 'error', 5000)
+    if (isCurrentReaderRequest(initiatingRoute)) {
+      toast(t('reader.openPdfFailedWithMessage', { msg: error?.message ?? error }), 'error', 5000)
+    }
   } finally {
     openingPdf = false
   }
@@ -3238,9 +3273,9 @@ function cycleFitMode() {
 }
 
 function isEditableShortcutTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && Boolean(target.closest(
-    'input, textarea, select, [contenteditable="true"], [role="textbox"]',
-  ))
+  if (!(target instanceof Element)) return false
+  if (target.closest('input, textarea, select, [role="textbox"]')) return true
+  return target instanceof HTMLElement && target.isContentEditable
 }
 
 function focusPageInput() {
@@ -3496,6 +3531,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  readerAlive = false
   reflowSession++
   invalidateBdContextGeneration()
   window.removeEventListener('keydown', handleKeydown)
@@ -4230,10 +4266,12 @@ onBeforeUnmount(() => {
         <div v-if="shortcutsOpen" class="zoom-backdrop" @click="shortcutsOpen = false" />
         <section
           v-if="shortcutsOpen"
+          ref="shortcutMenu"
           class="shortcut-menu card"
           role="dialog"
           tabindex="0"
           :aria-label="t('reader.keyboardShortcuts')"
+          @keydown="onShortcutGuideKeydown"
         >
           <header class="shortcut-head">
             <strong>{{ t('reader.keyboardShortcuts') }}</strong>

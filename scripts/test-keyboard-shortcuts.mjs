@@ -49,6 +49,21 @@ test('filters commands by PDF reader capability', () => {
   assert.equal(resolvePdfReaderShortcut(keyEvent({ key: '0', ctrlKey: true }), false, { ...readerState, pdfLayout: 'reflow' }), 'zoomReset')
 })
 
+test('prefers localized key meaning over physical-code zoom fallbacks', () => {
+  assert.equal(
+    resolvePdfReaderShortcut(keyEvent({ key: '?', code: 'Minus', shiftKey: true }), false, readerState),
+    'toggleHelp',
+  )
+  assert.equal(
+    resolvePdfReaderShortcut(keyEvent({ key: 'ß', code: 'Minus' }), false, readerState),
+    'zoomOut',
+  )
+  assert.equal(
+    resolvePdfReaderShortcut(keyEvent({ key: '§', code: 'Slash', shiftKey: true }), false, readerState),
+    'toggleHelp',
+  )
+})
+
 const dispatchReaderCommand = (eventOverrides = {}, contextOverrides = {}) => {
   const calls = { actions: [], canHandleChecks: 0, editableChecks: 0, prevented: 0 }
   const event = keyEvent({

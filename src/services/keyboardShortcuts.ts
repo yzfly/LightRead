@@ -152,7 +152,7 @@ export const PDF_READER_SHORTCUTS: readonly PdfReaderShortcutDefinition[] = [
   { id: 'closePanels', chords: [plainChord('Escape', 'Esc')], helpGroup: 'close', helpLabelKey: 'reader.shortcutClose', isAvailable: alwaysAvailable },
   {
     id: 'toggleHelp',
-    chords: [plainChord('?', '?', { shift: 'any' }), plainChord('/', '?', { shift: true })],
+    chords: [plainChord('?', '?', { shift: 'any' }), plainChord('/', '?', { codes: ['Slash'], shift: true })],
     helpGroup: 'help',
     helpLabelKey: 'reader.shortcutHelp',
     isAvailable: alwaysAvailable,
@@ -185,6 +185,7 @@ function matchesChord(
   event: KeyboardShortcutEvent,
   chord: PdfShortcutChord,
   isMacPlatform: boolean,
+  matchBy: 'key' | 'code',
 ): boolean {
   if (chord.primary) {
     if (!hasPlatformPrimaryModifier(event, isMacPlatform)) return false
@@ -193,9 +194,10 @@ function matchesChord(
   }
   if (Boolean(chord.alt) !== event.altKey) return false
   if (chord.shift !== 'any' && Boolean(chord.shift) !== event.shiftKey) return false
-  const keyMatches = chord.keys.some(key => key.toLowerCase() === event.key.toLowerCase())
-  const codeMatches = Boolean(event.code && chord.codes?.includes(event.code))
-  return keyMatches || codeMatches
+  if (matchBy === 'key') {
+    return chord.keys.some(key => key.toLowerCase() === event.key.toLowerCase())
+  }
+  return Boolean(event.code && chord.codes?.includes(event.code))
 }
 
 export function resolvePdfReaderShortcut(
@@ -203,9 +205,13 @@ export function resolvePdfReaderShortcut(
   isMacPlatform: boolean,
   state: PdfReaderShortcutState,
 ): PdfReaderShortcutCommandId | null {
-  for (const command of PDF_READER_SHORTCUTS) {
-    if (!command.isAvailable(state)) continue
-    if (command.chords.some(chord => matchesChord(event, chord, isMacPlatform))) return command.id
+  // Prefer the character produced by the active keyboard layout. Physical-code
+  // fallbacks are only consulted when no exact key chord matches anywhere.
+  for (const matchBy of ['key', 'code'] as const) {
+    for (const command of PDF_READER_SHORTCUTS) {
+      if (!command.isAvailable(state)) continue
+      if (command.chords.some(chord => matchesChord(event, chord, isMacPlatform, matchBy))) return command.id
+    }
   }
   return null
 }

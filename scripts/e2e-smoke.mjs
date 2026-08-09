@@ -47,6 +47,10 @@ const pdfPath = join(TMP, 'test-doc.pdf')
 writeFileSync(pdfPath, pdfContent)
 const shortcutPdfPath = join(TMP, 'shortcut-open.pdf')
 writeFileSync(shortcutPdfPath, pdfContent)
+const stalePdfPath = join(TMP, 'stale-open.pdf')
+writeFileSync(stalePdfPath, pdfContent)
+const corruptPdfPath = join(TMP, 'corrupt.pdf')
+writeFileSync(corruptPdfPath, 'This file only has a PDF extension.', 'utf-8')
 
 const browserType = process.env.ENGINE === 'webkit' ? webkit : chromium
 const browser = await browserType.launch()
@@ -410,12 +414,46 @@ await step('PDF 标准保存快捷键沿用另存为流程', async () => {
 await step('PDF 标准打开快捷键导入同类藏书并重建阅读器', async () => {
   const primaryKey = process.platform === 'darwin' ? 'Meta' : 'Control'
   const previousUrl = page.url()
+
+  await page.evaluate(() => {
+    const originalArrayBuffer = File.prototype.arrayBuffer
+    File.prototype.arrayBuffer = function (...args) {
+      if (this.name !== 'stale-open.pdf') return originalArrayBuffer.apply(this, args)
+      File.prototype.arrayBuffer = originalArrayBuffer
+      return new Promise((resolve, reject) => {
+        setTimeout(() => originalArrayBuffer.apply(this, args).then(resolve, reject), 500)
+      })
+    }
+  })
+  const staleChooserPromise = page.waitForEvent('filechooser')
+  await page.keyboard.press(`${primaryKey}+o`)
+  const staleChooser = await staleChooserPromise
+  await staleChooser.setFiles(stalePdfPath)
+  await page.locator('.document-back').click()
+  await page.waitForTimeout(800)
+  if (!page.url().endsWith('#/library')) throw new Error(`失效导入抢占了后续导航: ${page.url()}`)
+  if (await page.locator('.toast.error:has-text("无法打开 PDF")').count()) {
+    throw new Error('阅读器失效后仍显示 PDF 打开失败提示')
+  }
+  if (await page.locator('.book-card:has-text("stale-open")').count()) {
+    throw new Error('阅读器失效后仍导入了 PDF')
+  }
+  await page.click('.book-card:has-text("test-doc")')
+  await page.waitForSelector('.p-holder canvas', { timeout: 15000 })
+
   const invalidChooserPromise = page.waitForEvent('filechooser')
   await page.keyboard.press(`${primaryKey}+o`)
   const invalidChooser = await invalidChooserPromise
   await invalidChooser.setFiles(txtPath)
   await page.waitForSelector('.toast.error:has-text("请选择 PDF 文件")')
   if (page.url() !== previousUrl) throw new Error('选择非 PDF 后阅读器发生跳转')
+
+  const corruptChooserPromise = page.waitForEvent('filechooser')
+  await page.keyboard.press(`${primaryKey}+o`)
+  const corruptChooser = await corruptChooserPromise
+  await corruptChooser.setFiles(corruptPdfPath)
+  await page.waitForSelector('.toast.error:has-text("无法打开 PDF")')
+  if (page.url() !== previousUrl) throw new Error('选择损坏 PDF 后阅读器发生跳转')
 
   const chooserPromise = page.waitForEvent('filechooser')
   await page.keyboard.press(`${primaryKey}+o`)
@@ -429,10 +467,42 @@ await step('PDF 标准打开快捷键导入同类藏书并重建阅读器', asyn
   if (!backTitle?.includes('藏书')) throw new Error(`新 PDF 未保留藏书归属: ${backTitle || 'missing'}`)
 })
 
+await step('PDF 可编辑区域保留原生快捷键', async () => {
+  const results = await page.evaluate(() => {
+    const fixtures = [
+      { name: 'empty', html: '<div contenteditable=""></div>', selector: 'div' },
+      { name: 'plaintext', html: '<div contenteditable="plaintext-only"></div>', selector: 'div' },
+      { name: 'inherited', html: '<div contenteditable="true"><span></span></div>', selector: 'span' },
+    ]
+    return fixtures.map(fixture => {
+      const host = document.createElement('div')
+      host.innerHTML = fixture.html
+      document.body.append(host)
+      const target = host.querySelector(fixture.selector)
+      const event = new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true })
+      const dispatched = target?.dispatchEvent(event) ?? false
+      const result = {
+        name: fixture.name,
+        editable: target instanceof HTMLElement && target.isContentEditable,
+        prevented: !dispatched || event.defaultPrevented,
+      }
+      host.remove()
+      return result
+    })
+  })
+  for (const result of results) {
+    if (!result.editable || result.prevented) {
+      throw new Error(`contenteditable ${result.name} 未保留原生按键: ${JSON.stringify(result)}`)
+    }
+  }
+})
+
 await step('PDF 快捷键面板展示完整操作并适配短视口', async () => {
-  await page.setViewportSize({ width: 900, height: 420 })
+  await page.setViewportSize({ width: 520, height: 420 })
   await page.keyboard.press('Shift+/')
   await page.waitForSelector('.shortcut-menu')
+  const focused = await page.locator('.shortcut-menu').evaluate(element => document.activeElement === element)
+  if (!focused) throw new Error('快捷键面板打开后未获得焦点')
   const guideText = await page.locator('.shortcut-menu').innerText()
   for (const label of ['打开 PDF', '下一个 / 上一个搜索结果', '阅读历史后退 / 前进', '开始幻灯片放映', '打开 / 关闭目录']) {
     if (!guideText.includes(label)) throw new Error(`快捷键面板缺少: ${label}`)
@@ -444,6 +514,23 @@ await step('PDF 快捷键面板展示完整操作并适配短视口', async () =
   }))
   if (scrollState.scrollHeight <= scrollState.clientHeight || scrollState.overflowY !== 'auto') {
     throw new Error(`短视口面板不可滚动: ${JSON.stringify(scrollState)}`)
+  }
+  const firstRowLayout = await page.locator('.shortcut-row').first().evaluate(row => {
+    const [keys, label] = [...row.children].map(child => child.getBoundingClientRect())
+    return { keysTop: keys?.top, labelTop: label?.top }
+  })
+  if (!(firstRowLayout.labelTop > firstRowLayout.keysTop)) {
+    throw new Error(`移动窄屏快捷键行未切换为单列: ${JSON.stringify(firstRowLayout)}`)
+  }
+  const pageBefore = await page.locator('.page-input').inputValue()
+  const readerScrollBefore = await page.locator('.pane-left, .paged-box, .reflow-scroll').first().evaluate(element => element.scrollTop)
+  await page.keyboard.press('PageDown')
+  await page.waitForFunction(() => (document.querySelector('.shortcut-menu')?.scrollTop ?? 0) > 0)
+  const panelScrollAfter = await page.locator('.shortcut-menu').evaluate(element => element.scrollTop)
+  const readerScrollAfter = await page.locator('.pane-left, .paged-box, .reflow-scroll').first().evaluate(element => element.scrollTop)
+  const pageAfter = await page.locator('.page-input').inputValue()
+  if (panelScrollAfter <= 0 || readerScrollAfter !== readerScrollBefore || pageAfter !== pageBefore) {
+    throw new Error(`键盘滚动未由快捷键面板接管: ${JSON.stringify({ panelScrollAfter, readerScrollBefore, readerScrollAfter, pageBefore, pageAfter })}`)
   }
   await page.keyboard.press('Escape')
   await page.waitForSelector('.shortcut-menu', { state: 'detached' })
