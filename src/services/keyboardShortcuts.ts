@@ -7,18 +7,6 @@ export interface KeyboardShortcutEvent {
   shiftKey: boolean
 }
 
-interface ReaderCopyShortcutEvent extends KeyboardShortcutEvent {
-  repeat?: boolean
-  preventDefault: () => void
-}
-
-interface ReaderCopyShortcutContext {
-  hasCustomSelection: boolean
-  isEditableTarget: () => boolean
-  hasNativeSelection: () => boolean
-  copySelection: () => void
-}
-
 export type PdfReaderShortcutCommandId =
   | 'copy'
   | 'print'
@@ -193,10 +181,6 @@ function hasPlatformPrimaryModifier(event: KeyboardShortcutEvent, isMacPlatform:
     : event.ctrlKey && !event.metaKey
 }
 
-function normalizedKey(key: string): string {
-  return key.length === 1 ? key.toLowerCase() : key.toLowerCase()
-}
-
 function matchesChord(
   event: KeyboardShortcutEvent,
   chord: PdfShortcutChord,
@@ -209,7 +193,7 @@ function matchesChord(
   }
   if (Boolean(chord.alt) !== event.altKey) return false
   if (chord.shift !== 'any' && Boolean(chord.shift) !== event.shiftKey) return false
-  const keyMatches = chord.keys.some(key => normalizedKey(key) === normalizedKey(event.key))
+  const keyMatches = chord.keys.some(key => key.toLowerCase() === event.key.toLowerCase())
   const codeMatches = Boolean(event.code && chord.codes?.includes(event.code))
   return keyMatches || codeMatches
 }
@@ -276,29 +260,6 @@ export function dispatchPdfReaderShortcut(
   if (context.canHandleCommand && !context.canHandleCommand(command)) return false
   event.preventDefault()
   if (!event.repeat) context.runCommand(command)
-  return true
-}
-
-export function isPlatformCopyShortcut(
-  event: KeyboardShortcutEvent,
-  isMacPlatform: boolean,
-): boolean {
-  return hasPlatformPrimaryModifier(event, isMacPlatform)
-    && !event.altKey
-    && !event.shiftKey
-    && event.key.toLowerCase() === 'c'
-}
-
-/** Handles the reader's custom Copy path while preserving browser-native copy targets. */
-export function handleReaderCopyShortcut(
-  event: ReaderCopyShortcutEvent,
-  isMacPlatform: boolean,
-  context: ReaderCopyShortcutContext,
-): boolean {
-  if (!context.hasCustomSelection || !isPlatformCopyShortcut(event, isMacPlatform)) return false
-  if (context.isEditableTarget() || context.hasNativeSelection()) return false
-  event.preventDefault()
-  if (!event.repeat) context.copySelection()
   return true
 }
 

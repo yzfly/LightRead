@@ -103,6 +103,7 @@ const pagedBox = ref<HTMLElement>()
 const rightPane = ref<HTMLElement>()
 const thumbnailScroller = ref<HTMLElement>()
 const pdfOpenInput = ref<HTMLInputElement>()
+let openingPdf = false
 
 /** PDFium 交互引擎：几何选择、链接、目录、文本与段落提取。 */
 let pdm: PdfiumDoc | null = null
@@ -731,7 +732,7 @@ async function saveDocumentAs() {
 }
 
 function choosePdfToOpen() {
-  pdfOpenInput.value?.click()
+  if (!openingPdf) pdfOpenInput.value?.click()
 }
 
 async function onPdfOpenPicked(event: Event) {
@@ -743,6 +744,8 @@ async function onPdfOpenPicked(event: Event) {
     toast(t('reader.openPdfOnly'), 'error', 5000)
     return
   }
+  if (openingPdf) return
+  openingPdf = true
   try {
     const result = await importFile(file, '本地导入', {
       kind: isPaper.value ? 'paper' : 'book',
@@ -753,6 +756,8 @@ async function onPdfOpenPicked(event: Event) {
     await router.push(`/read-paper/${result.bookId}`)
   } catch (error: any) {
     toast(t('reader.openPdfFailedWithMessage', { msg: error?.message ?? error }), 'error', 5000)
+  } finally {
+    openingPdf = false
   }
 }
 
