@@ -376,12 +376,17 @@ await step('键盘缩放、复位与快捷键面板', async () => {
 await step('目录抽屉与跳转', async () => {
   await pg.click('button[title="目录"]')
   await pg.waitForSelector('.toc-item:has-text("Results")', { timeout: 5000 })
+  const initialActiveToc = await pg.locator('.toc-item.active').allTextContents()
+  if (!initialActiveToc.some(text => text.trim() === 'Introduction')) {
+    throw new Error(`当前阅读小节未高亮: ${initialActiveToc.join(', ') || '无'}`)
+  }
   await pg.click('.toc-item:has-text("Results")')
   await pg.waitForFunction(() => document.querySelector('.page-input')?.value === '3', null, { timeout: 5000 })
   if (!(await pg.locator('.side-drawer').isVisible())) throw new Error('目录跳转后侧栏被自动关闭')
   if (await pg.locator('.drawer-tabs button:has-text("目录")').getAttribute('aria-selected') !== 'true') {
     throw new Error('目录跳转后当前侧栏标签发生变化')
   }
+  await pg.waitForSelector('.toc-item.active:has-text("Results")', { timeout: 3000 })
 })
 await pg.screenshot({ path: join(TMP, 'shots', '02-toc-jump.png') })
 
@@ -389,6 +394,7 @@ await step('目录跳转后出现返回按钮并可返回', async () => {
   await pg.waitForSelector('.back-pill', { timeout: 3000 })
   await pg.click('.back-pill')
   await pg.waitForFunction(() => document.querySelector('.page-input')?.value === '1', null, { timeout: 5000 })
+  await pg.waitForSelector('.toc-item.active:has-text("Introduction")', { timeout: 3000 })
 })
 
 await step('页内链接跳转', async () => {

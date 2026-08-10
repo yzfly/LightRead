@@ -24,6 +24,7 @@ defineEmits<{
       <button
         class="toc-item"
         :class="{ active: item.href && item.href === currentHref, disabled: !item.href }"
+        :aria-current="item.href && item.href === currentHref ? 'location' : undefined"
         @click="item.href && $emit('navigate', item.href)"
       >
         {{ item.label?.trim() || t('reader.untitled') }}

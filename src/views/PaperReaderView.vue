@@ -125,6 +125,7 @@ let settleTimer: ReturnType<typeof setTimeout> | undefined
 let resizeTimer: ReturnType<typeof setTimeout> | undefined
 let resizeObserver: ResizeObserver | undefined
 let scrollScheduled = false
+let tocPositionScheduled = false
 
 useReadingTimer(bookId)
 
@@ -551,6 +552,7 @@ function onScroll() {
   requestAnimationFrame(() => {
     scrollScheduled = false
     updateViewport()
+    updateCurrentTocPosition()
   })
 }
 
@@ -1012,7 +1014,79 @@ const tocOpen = ref(false)
 const thumbnailOpen = ref(false)
 const annoOpen = ref(false)
 const tocItems = ref<TocItem[]>([])
+const currentTocOffsetPt = ref(0)
 const drawerOpen = computed(() => tocOpen.value || thumbnailOpen.value || annoOpen.value)
+
+interface TocDestination {
+  href: string
+  page: number
+  y: number
+}
+
+function tocDestinationOf(href: string): TocDestination | null {
+  const [pageText, yText] = href.split('|')
+  const page = Number.parseInt(pageText, 10)
+  if (!Number.isFinite(page)) return null
+  const parsedY = Number.parseFloat(yText ?? '')
+  return { href, page, y: Number.isFinite(parsedY) ? Math.max(0, parsedY) : 0 }
+}
+
+function flattenTocDestinations(items: TocItem[]): TocDestination[] {
+  const destinations: TocDestination[] = []
+  for (const item of items) {
+    if (item.href) {
+      const destination = tocDestinationOf(item.href)
+      if (destination) destinations.push(destination)
+    }
+    if (item.subitems?.length) destinations.push(...flattenTocDestinations(item.subitems))
+  }
+  return destinations
+}
+
+const tocDestinations = computed(() => flattenTocDestinations(tocItems.value))
+const currentTocHref = computed(() => {
+  const currentPosition = { page: currentPage.value, y: currentTocOffsetPt.value }
+  let active: TocDestination | undefined
+  for (const destination of tocDestinations.value) {
+    const isReached = destination.page < currentPosition.page
+      || (destination.page === currentPosition.page && destination.y <= currentPosition.y)
+    if (!isReached) continue
+    if (
+      !active
+      || destination.page > active.page
+      || (destination.page === active.page && destination.y >= active.y)
+    ) active = destination
+  }
+  return active?.href
+})
+
+function updateCurrentTocPosition() {
+  if (!tocOpen.value) return
+  if (pdfLayout.value === 'reflow') {
+    currentTocOffsetPt.value = 0
+    return
+  }
+  const viewport = bookPaged.value ? pagedBox.value : scroller.value
+  const holder = holderOf(currentPage.value)
+  if (!viewport || !holder) {
+    currentTocOffsetPt.value = 0
+    return
+  }
+  const viewportRect = viewport.getBoundingClientRect()
+  const holderRect = holder.getBoundingClientRect()
+  const focusY = viewportRect.top + viewportRect.height / 2
+  const offsetPx = Math.min(Math.max(0, focusY - holderRect.top), holderRect.height)
+  currentTocOffsetPt.value = offsetPx / displaySizeOf(currentPage.value).sy
+}
+
+function scheduleCurrentTocPositionUpdate() {
+  if (tocPositionScheduled) return
+  tocPositionScheduled = true
+  requestAnimationFrame(() => {
+    tocPositionScheduled = false
+    updateCurrentTocPosition()
+  })
+}
 
 type DrawerTab = 'toc' | 'thumbnails' | 'annotations'
 
@@ -1186,6 +1260,11 @@ watch(thumbnailOpen, open => {
 
 watch(currentPage, () => {
   if (thumbnailOpen.value) void nextTick(scrollActiveThumbnailIntoView)
+  void nextTick(updateCurrentTocPosition)
+})
+
+watch(tocOpen, open => {
+  if (open) void nextTick(updateCurrentTocPosition)
 })
 
 /** href 格式: "页码|页内纵向偏移(pt, 左上原点)" */
@@ -1205,10 +1284,11 @@ function buildOutline() {
 }
 
 function tocNavigate(href: string) {
-  const [p, y] = href.split('|')
+  const destination = tocDestinationOf(href)
+  if (!destination) return
   pushBack()
-  const yOffset = y ? Math.max(0, parseFloat(y) * displaySizeOf(parseInt(p, 10)).sy - 60) : 0
-  gotoPage(parseInt(p, 10), false, yOffset)
+  const yOffset = Math.max(0, destination.y * displaySizeOf(destination.page).sy - 60)
+  gotoPage(destination.page, false, yOffset)
 }
 
 /* ================= 划词: 高亮 / 想法 / 复制 / AI 翻译 ================= */
@@ -3847,7 +3927,12 @@ onBeforeUnmount(() => {
           <button class="icon-btn" :title="t('common.close')" @click="closeDrawer">✕</button>
         </div>
         <div v-show="tocOpen" class="drawer-body">
-          <TocList v-if="tocItems.length" :items="tocItems" @navigate="tocNavigate" />
+          <TocList
+            v-if="tocItems.length"
+            :items="tocItems"
+            :current-href="currentTocHref"
+            @navigate="tocNavigate"
+          />
           <p v-else class="drawer-empty">{{ t('paper.noOutline') }}</p>
         </div>
         <div
@@ -3981,6 +4066,7 @@ onBeforeUnmount(() => {
           @touchstart="onPdfTouchStart"
           @touchmove="onPdfTouchMove"
           @touchend="onPdfTouchEnd"
+          @scroll.passive="scheduleCurrentTocPositionUpdate"
           @contextmenu.prevent
         >
           <div class="spread-host">
