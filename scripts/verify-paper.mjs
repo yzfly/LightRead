@@ -34,7 +34,7 @@ mockAi.listen(9876)
 const TMP = '/tmp/lightread-paper-verify'
 mkdirSync(join(TMP, 'shots'), { recursive: true })
 
-// 4 页 PDF: 每页有文本; 第 1 页有跳到第 3 页的链接注解; 带 2 项大纲
+// 4 页 PDF: 每页有文本; 第 1 页有跳到第 3 页的链接注解; 第 3 页有两个页内大纲目标
 function page(n, contents, extra = '') {
   return `${n} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contents} 0 R /Resources << /Font << /F1 30 0 R >> >>${extra} >> endobj`
 }
@@ -54,9 +54,10 @@ ${stream(8, [[72, 700, 'Method Page Two'], [72, 660, 'We propose a novel archite
 ${stream(9, [[72, 700, 'Results Page Three'], [72, 660, 'Accuracy improves by twenty percent']])}
 ${stream(10, [[72, 700, 'Conclusion Page Four'], [72, 660, 'Future work remains open']])}
 11 0 obj << /Type /Annot /Subtype /Link /Rect [70 650 320 675] /Border [0 0 0] /Dest [5 0 R /XYZ 0 792 null] >> endobj
-20 0 obj << /Type /Outlines /First 21 0 R /Last 22 0 R /Count 2 >> endobj
+20 0 obj << /Type /Outlines /First 21 0 R /Last 23 0 R /Count 3 >> endobj
 21 0 obj << /Title (Introduction) /Parent 20 0 R /Dest [3 0 R /XYZ 0 792 null] /Next 22 0 R >> endobj
-22 0 obj << /Title (Results) /Parent 20 0 R /Dest [5 0 R /XYZ 0 792 null] /Prev 21 0 R >> endobj
+22 0 obj << /Title (Results) /Parent 20 0 R /Dest [5 0 R /XYZ 0 792 null] /Prev 21 0 R /Next 23 0 R >> endobj
+23 0 obj << /Title (Details) /Parent 20 0 R /Dest [5 0 R /XYZ 0 678 null] /Prev 22 0 R >> endobj
 30 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
 trailer << /Root 1 0 R /Size 31 >>
 %%EOF`
@@ -387,6 +388,15 @@ await step('目录抽屉与跳转', async () => {
     throw new Error('目录跳转后当前侧栏标签发生变化')
   }
   await pg.waitForSelector('.toc-item.active:has-text("Results")', { timeout: 3000 })
+  await pg.locator('.pane-left').evaluate(el => {
+    const holder = el.querySelector('[data-page="3"]')
+    if (!holder) throw new Error('第 3 页容器不存在')
+    const paneRect = el.getBoundingClientRect()
+    const holderRect = holder.getBoundingClientRect()
+    const holderTop = el.scrollTop + holderRect.top - paneRect.top
+    el.scrollTo({ top: holderTop + 160 })
+  })
+  await pg.waitForSelector('.toc-item.active:has-text("Details")', { timeout: 3000 })
 })
 await pg.screenshot({ path: join(TMP, 'shots', '02-toc-jump.png') })
 

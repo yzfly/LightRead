@@ -1074,7 +1074,7 @@ function updateCurrentTocPosition() {
   }
   const viewportRect = viewport.getBoundingClientRect()
   const holderRect = holder.getBoundingClientRect()
-  const focusY = viewportRect.top + viewportRect.height / 2
+  const focusY = viewportRect.top + Math.min(60, viewportRect.height / 2)
   const offsetPx = Math.min(Math.max(0, focusY - holderRect.top), holderRect.height)
   currentTocOffsetPt.value = offsetPx / displaySizeOf(currentPage.value).sy
 }
