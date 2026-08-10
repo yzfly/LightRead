@@ -518,20 +518,24 @@ function evictFarPages(center: number) {
   }
 }
 
-function pageAtCenter(): number {
+function pageAtScrollOffset(viewportOffset: number): number {
   const el = scroller.value
   const layout = scrollGroupLayout.value
   if (!el || !layout.length) return 1
-  const center = el.scrollTop + el.clientHeight / 2
+  const anchor = el.scrollTop + viewportOffset
   let lo = 0
   let hi = layout.length - 1
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2)
     const group = layout[mid]
-    if (center > group.top + group.height) lo = mid + 1
+    if (anchor > group.top + group.height) lo = mid + 1
     else hi = mid
   }
   return layout[lo]?.pages[0] ?? 1
+}
+
+function pageAtCenter(): number {
+  return pageAtScrollOffset((scroller.value?.clientHeight ?? 0) / 2)
 }
 
 function updateViewport() {
@@ -1014,6 +1018,7 @@ const tocOpen = ref(false)
 const thumbnailOpen = ref(false)
 const annoOpen = ref(false)
 const tocItems = ref<TocItem[]>([])
+const currentTocPage = ref(1)
 const currentTocOffsetPt = ref(0)
 const drawerOpen = computed(() => tocOpen.value || thumbnailOpen.value || annoOpen.value)
 
@@ -1045,7 +1050,7 @@ function flattenTocDestinations(items: TocItem[]): TocDestination[] {
 
 const tocDestinations = computed(() => flattenTocDestinations(tocItems.value))
 const currentTocHref = computed(() => {
-  const currentPosition = { page: currentPage.value, y: currentTocOffsetPt.value }
+  const currentPosition = { page: currentTocPage.value, y: currentTocOffsetPt.value }
   let active: TocDestination | undefined
   for (const destination of tocDestinations.value) {
     const isReached = destination.page < currentPosition.page
@@ -1063,20 +1068,28 @@ const currentTocHref = computed(() => {
 function updateCurrentTocPosition() {
   if (!tocOpen.value) return
   if (pdfLayout.value === 'reflow') {
+    currentTocPage.value = currentPage.value
     currentTocOffsetPt.value = 0
     return
   }
   const viewport = bookPaged.value ? pagedBox.value : scroller.value
-  const holder = holderOf(currentPage.value)
-  if (!viewport || !holder) {
+  if (!viewport) {
+    currentTocPage.value = currentPage.value
     currentTocOffsetPt.value = 0
     return
   }
   const viewportRect = viewport.getBoundingClientRect()
-  const holderRect = holder.getBoundingClientRect()
   const focusY = viewportRect.top + Math.min(60, viewportRect.height / 2)
+  const page = bookPaged.value ? currentPage.value : pageAtScrollOffset(focusY - viewportRect.top)
+  const holder = holderOf(page)
+  currentTocPage.value = page
+  if (!holder) {
+    currentTocOffsetPt.value = 0
+    return
+  }
+  const holderRect = holder.getBoundingClientRect()
   const offsetPx = Math.min(Math.max(0, focusY - holderRect.top), holderRect.height)
-  currentTocOffsetPt.value = offsetPx / displaySizeOf(currentPage.value).sy
+  currentTocOffsetPt.value = offsetPx / displaySizeOf(page).sy
 }
 
 function scheduleCurrentTocPositionUpdate() {
