@@ -351,6 +351,12 @@ async function doImport(e: Event) {
     busy.value = ''
   }
 }
+
+const APPEARANCE_OPTIONS = [
+  { value: 'system', labelKey: 'settings.appearanceSystem', icon: 'M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5zm4 16h8m-4-5v5' },
+  { value: 'light', labelKey: 'settings.appearanceLight', icon: 'M12 3v2m0 14v2M5.6 5.6l1.4 1.4m10 10 1.4 1.4M3 12h2m14 0h2M5.6 18.4l1.4-1.4m10-10 1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z' },
+  { value: 'dark', labelKey: 'settings.appearanceDark', icon: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z' },
+] as const
 </script>
 
 <template>
@@ -363,9 +369,27 @@ async function doImport(e: Event) {
         <div>
           <div class="row-title">{{ t('settings.language') }}</div>
         </div>
-        <div class="seg">
-          <button :class="{ active: settings.language === 'zh' }" @click="settings.language = 'zh'">中文</button>
-          <button :class="{ active: settings.language === 'en' }" @click="settings.language = 'en'">English</button>
+        <div class="segmented" role="group" :aria-label="t('settings.language')">
+          <button :aria-pressed="settings.language === 'zh'" :class="{ active: settings.language === 'zh' }" @click="settings.language = 'zh'">中文</button>
+          <button :aria-pressed="settings.language === 'en'" :class="{ active: settings.language === 'en' }" @click="settings.language = 'en'">English</button>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <div class="row-title">{{ t('settings.appearance') }}</div>
+          <div class="row-desc">{{ t('settings.appearanceDesc') }}</div>
+        </div>
+        <div class="segmented" role="group" :aria-label="t('settings.appearance')">
+          <button
+            v-for="opt in APPEARANCE_OPTIONS"
+            :key="opt.value"
+            :aria-pressed="settings.appearance === opt.value"
+            :class="{ active: settings.appearance === opt.value }"
+            @click="settings.appearance = opt.value"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="opt.icon" /></svg>
+            {{ t(opt.labelKey) }}
+          </button>
         </div>
       </div>
     </section>
@@ -413,9 +437,9 @@ async function doImport(e: Event) {
         </div>
       </div>
       <div class="webdav-grid">
-        <input v-model="settings.webdavUrl" class="input" placeholder="https://dav.jianguoyun.com/dav/" />
-        <input v-model="settings.webdavUser" class="input" :placeholder="t('settings.account')" autocomplete="off" />
-        <input v-model="settings.webdavPass" class="input" type="password" :placeholder="t('settings.password')" autocomplete="new-password" />
+        <input v-model="settings.webdavUrl" class="input" type="url" inputmode="url" placeholder="https://dav.jianguoyun.com/dav/" :aria-label="t('settings.webdavTitle')" />
+        <input v-model="settings.webdavUser" class="input" :placeholder="t('settings.account')" :aria-label="t('settings.account')" autocomplete="off" />
+        <input v-model="settings.webdavPass" class="input" type="password" :placeholder="t('settings.password')" :aria-label="t('settings.password')" autocomplete="new-password" />
       </div>
       <div class="webdav-actions">
         <button class="btn btn-sm" :disabled="!!busy || !settings.webdavUrl" @click="davTest">{{ t('settings.testConnection') }}</button>
@@ -442,12 +466,12 @@ async function doImport(e: Event) {
           <select v-model="proxy.scheme" class="input">
             <option v-for="s in PROXY_SCHEMES" :key="s.value" :value="s.value">{{ s.labelKey ? t(s.labelKey) : s.label }}</option>
           </select>
-          <input v-model="proxy.host" class="input" :placeholder="t('settings.proxyHostPlaceholder')" :disabled="!proxy.scheme" />
-          <input v-model="proxy.port" class="input port" :placeholder="t('settings.proxyPort')" :disabled="!proxy.scheme" />
+          <input v-model="proxy.host" class="input" :placeholder="t('settings.proxyHostPlaceholder')" :aria-label="t('settings.proxyHostPlaceholder')" :disabled="!proxy.scheme" />
+          <input v-model="proxy.port" class="input port" inputmode="numeric" :placeholder="t('settings.proxyPort')" :aria-label="t('settings.proxyPort')" :disabled="!proxy.scheme" />
         </div>
         <div v-if="proxy.scheme" class="proxy-grid">
-          <input v-model="proxy.username" class="input" :placeholder="t('common.usernameOptional')" autocomplete="off" />
-          <input v-model="proxy.password" class="input" type="password" :placeholder="t('common.passwordOptional')" autocomplete="new-password" />
+          <input v-model="proxy.username" class="input" :placeholder="t('common.usernameOptional')" :aria-label="t('common.usernameOptional')" autocomplete="off" />
+          <input v-model="proxy.password" class="input" type="password" :placeholder="t('common.passwordOptional')" :aria-label="t('common.passwordOptional')" autocomplete="new-password" />
           <button class="btn port" :disabled="testing" @click="testProxy">
             {{ testing ? t('settings.testingProxy') : t('settings.testConnection') }}
           </button>
@@ -468,7 +492,9 @@ async function doImport(e: Event) {
         <input
           v-model="settings.corsProxy"
           class="input proxy-input"
+          type="url"
           placeholder="https://your-proxy.example.com/?url={url}"
+          :aria-label="t('settings.corsTitle')"
         />
       </template>
     </section>
@@ -486,7 +512,7 @@ async function doImport(e: Event) {
       </div>
       <div class="agent-default-row">
         <span>{{ t('settings.paperAgentsDefault') }}</span>
-        <select v-model="settings.paperAgentEngine" class="input">
+        <select v-model="settings.paperAgentEngine" class="input" :aria-label="t('settings.paperAgentsDefault')">
           <option v-for="engine in paperAgentEngines" :key="engine.id" :value="engine.id">{{ engine.label }}</option>
         </select>
       </div>
@@ -505,6 +531,7 @@ async function doImport(e: Event) {
             v-model="settings.paperAgentExecutables[engine.id]"
             class="input"
             :placeholder="t('settings.paperAgentsPathPlaceholder')"
+            :aria-label="`${engine.label} · ${t('settings.paperAgentsPathPlaceholder')}`"
             @change="refreshPaperAgentStatuses"
           />
           <button type="button" class="btn btn-sm" @click="choosePaperAgentExecutable(engine.id)">
@@ -527,16 +554,16 @@ async function doImport(e: Event) {
         </div>
       </div>
       <div class="ai-grid">
-        <select v-model="settings.aiProvider" class="input" @change="onAiProviderChange">
+        <select v-model="settings.aiProvider" class="input" :aria-label="t('settings.aiProvider')" @change="onAiProviderChange">
           <option v-for="p in AI_PROVIDERS" :key="p.id" :value="p.id">
             {{ p.label }}{{ p.id === 'trial' ? t('settings.aiTrialTag') : p.id === 'siliconflow' || p.id === 'zhipu' ? t('settings.aiFreeTag') : '' }}
           </option>
         </select>
-        <input v-model="settings.aiModel" class="input" :placeholder="t('settings.aiModelPh')" />
+        <input v-model="settings.aiModel" class="input" :placeholder="t('settings.aiModelPh')" :aria-label="t('settings.aiModelPh')" />
       </div>
       <div class="ai-grid">
-        <input v-model="settings.aiBaseUrl" class="input" placeholder="https://api.siliconflow.cn/v1" />
-        <input v-model="settings.aiApiKey" class="input" type="password" :placeholder="t('settings.aiKeyPh')" autocomplete="new-password" />
+        <input v-model="settings.aiBaseUrl" class="input" type="url" placeholder="https://api.siliconflow.cn/v1" aria-label="Base URL" />
+        <input v-model="settings.aiApiKey" class="input" type="password" :placeholder="t('settings.aiKeyPh')" :aria-label="t('settings.aiKeyPh')" autocomplete="new-password" />
       </div>
       <div class="webdav-actions">
         <button class="btn btn-sm btn-primary" :disabled="aiTesting || !settings.aiBaseUrl || !settings.aiModel" @click="testAi">
@@ -554,9 +581,9 @@ async function doImport(e: Event) {
           <div class="row-title">{{ t('settings.pdfRenderer') }}</div>
           <div class="row-desc">{{ t('settings.pdfRendererDesc') }}</div>
         </div>
-        <div class="seg">
-          <button :class="{ active: settings.pdf.renderer === 'mupdf' }" @click="settings.pdf.renderer = 'mupdf'">MuPDF</button>
-          <button :class="{ active: settings.pdf.renderer === 'pdfium' }" @click="settings.pdf.renderer = 'pdfium'">PDFium</button>
+        <div class="segmented" role="group" :aria-label="t('settings.pdfRenderer')">
+          <button :aria-pressed="settings.pdf.renderer === 'mupdf'" :class="{ active: settings.pdf.renderer === 'mupdf' }" @click="settings.pdf.renderer = 'mupdf'">MuPDF</button>
+          <button :aria-pressed="settings.pdf.renderer === 'pdfium'" :class="{ active: settings.pdf.renderer === 'pdfium' }" @click="settings.pdf.renderer = 'pdfium'">PDFium</button>
         </div>
       </div>
       <div class="row">
@@ -587,9 +614,13 @@ async function doImport(e: Event) {
       </div>
 
       <!-- 检查结果 -->
-      <div v-if="checkError" class="update-state error">❌ {{ checkError }}</div>
-      <div v-else-if="checkedManually && !checking && updateInfo && !updateInfo.hasUpdate" class="update-state ok">
-        ✅ {{ t('update.latest') }}
+      <div v-if="checkError" class="update-state error" role="alert">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 3a1 1 0 0 1 1 1v5a1 1 0 1 1-2 0V8a1 1 0 0 1 1-1zm0 8.5a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5z"/></svg>
+        {{ checkError }}
+      </div>
+      <div v-else-if="checkedManually && !checking && updateInfo && !updateInfo.hasUpdate" class="update-state ok" role="status">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm4.2 5.3a1 1 0 0 1 0 1.4l-4.9 4.9a1 1 0 0 1-1.4 0l-2.1-2.1a1 1 0 1 1 1.4-1.4l1.4 1.4 4.2-4.2a1 1 0 0 1 1.4 0z"/></svg>
+        {{ t('update.latest') }}
       </div>
 
       <!-- 新版本卡片 -->
@@ -608,7 +639,8 @@ async function doImport(e: Event) {
               :disabled="!!installing"
               @click="downloadOption(d)"
             >
-              ⬇ {{ d.label }} · {{ fmtSize(d.size) }}
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
+              {{ d.label }} · {{ fmtSize(d.size) }}
             </button>
             <button class="copy-link-btn" :title="t('update.copyLinkTitle')" @click="doCopyLink(d.url)">
               <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M8 5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-2v-2h2a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-8a1 1 0 0 0-1 1v2H8V5zM2 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3v-8zm3-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H5z"/></svg>
@@ -623,7 +655,8 @@ async function doImport(e: Event) {
           <span v-if="settings.httpProxy" class="install-hint">{{ t('update.viaProxy', { proxy: settings.httpProxy }) }}</span>
         </div>
         <div v-else-if="installedPath" class="install-done">
-          ✅ {{ t('update.downloadedTo') }} <code>{{ installedPath }}</code>
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm4.2 5.3a1 1 0 0 1 0 1.4l-4.9 4.9a1 1 0 0 1-1.4 0l-2.1-2.1a1 1 0 1 1 1.4-1.4l1.4 1.4 4.2-4.2a1 1 0 0 1 1.4 0z"/></svg>
+          {{ t('update.downloadedTo') }} <code>{{ installedPath }}</code>
           <button class="btn btn-sm" @click="openInstaller(installedPath)">{{ t('update.openInstaller') }}</button>
         </div>
         <p v-else-if="canInAppInstall()" class="install-tip">
@@ -632,7 +665,9 @@ async function doImport(e: Event) {
       </div>
 
       <div class="star-callout">
-        <div class="star-mark" aria-hidden="true">⭐</div>
+        <div class="star-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2.5a1 1 0 0 1 .9.56l2.44 4.95 5.46.8a1 1 0 0 1 .56 1.7l-3.95 3.85.93 5.44a1 1 0 0 1-1.45 1.05L12 18.28l-4.89 2.57a1 1 0 0 1-1.45-1.05l.93-5.44-3.95-3.85a1 1 0 0 1 .56-1.7l5.46-.8 2.44-4.95A1 1 0 0 1 12 2.5z"/></svg>
+        </div>
         <div class="star-copy">
           <div class="star-title">{{ t('settings.starTitle') }}</div>
           <div class="star-desc">{{ t('settings.starDesc') }}</div>
@@ -661,12 +696,14 @@ async function doImport(e: Event) {
 
 <style scoped>
 .settings {
-  padding: 24px 28px 40px;
+  padding: 24px 28px calc(40px + env(safe-area-inset-bottom));
   max-width: 820px;
   margin: 0 auto;
 }
 h1 {
   font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   margin-bottom: 18px;
 }
 .section {
@@ -674,29 +711,39 @@ h1 {
   margin-bottom: 14px;
 }
 h2 {
-  font-size: 14px;
-  color: var(--text-2);
-  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 8px;
 }
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 0;
+  padding: 10px 0;
+}
+.row + .row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 .row-title {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 550;
 }
 .row-desc {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-3);
-  margin-top: 4px;
-  line-height: 1.7;
+  margin-top: 3px;
+  line-height: 1.65;
 }
-.row-desc code {
-  background: var(--bg);
+.row-desc code,
+.proxy-current code,
+.install-done code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface-2);
   padding: 1px 5px;
   border-radius: 4px;
 }
@@ -704,27 +751,8 @@ h2 {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
-}
-/* 语言切换按钮组 (与阅读器工具栏 seg 同款) */
-.seg {
-  display: flex;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.seg button {
-  height: 30px;
-  padding: 0 14px;
-  border: none;
-  background: var(--card);
-  color: var(--text-2);
-  font-size: 13px;
-}
-.seg button.active {
-  background: var(--brand-light);
-  color: var(--brand);
-  font-weight: 500;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .busy {
   font-size: 12px;
@@ -805,11 +833,6 @@ h2 {
   font-size: 12px;
   color: var(--text-3);
 }
-.proxy-current code {
-  background: var(--bg);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
 .proxy-result {
   margin-top: 6px;
   font-size: 13px;
@@ -862,9 +885,15 @@ h2 {
 .update-state {
   font-size: 13px;
   padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .update-state.error {
-  color: #d54941;
+  color: var(--danger);
+}
+.update-state.ok {
+  color: var(--success);
 }
 .update-card {
   border: 1px solid var(--brand-light);
@@ -951,9 +980,6 @@ h2 {
   flex-wrap: wrap;
 }
 .install-done code {
-  background: var(--bg);
-  padding: 1px 6px;
-  border-radius: 4px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -983,8 +1009,8 @@ h2 {
   place-items: center;
   border-radius: 10px;
   background: var(--card);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
-  font-size: 18px;
+  color: var(--warning);
+  box-shadow: var(--shadow);
 }
 .star-copy {
   flex: 1;
@@ -1027,6 +1053,49 @@ h2 {
   font-size: 12px;
 }
 @media (max-width: 600px) {
+  .settings {
+    padding: 16px 14px calc(28px + env(safe-area-inset-bottom));
+  }
+  .section {
+    padding: 14px 14px;
+  }
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .row-actions {
+    justify-content: flex-start;
+  }
+  .row .segmented {
+    align-self: flex-start;
+  }
+  .webdav-grid,
+  .ai-grid,
+  .proxy-grid {
+    flex-direction: column;
+  }
+  .webdav-grid .input,
+  .ai-grid .input,
+  .proxy-grid .input,
+  .proxy-grid .btn {
+    flex: none;
+    width: 100%;
+  }
+  .proxy-grid .input:first-child,
+  .proxy-grid select,
+  .proxy-grid .port,
+  .agent-default-row .input {
+    width: 100%;
+  }
+  .agent-default-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .app-identity {
+    flex-wrap: wrap;
+  }
   .star-callout {
     align-items: flex-start;
     flex-wrap: wrap;

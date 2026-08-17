@@ -432,19 +432,37 @@ async function removeSource(s: CatalogSourceRec) {
       <header class="toolbar">
         <h1>{{ t('catalog.title') }}</h1>
         <div class="spacer" />
-        <button class="btn btn-primary" @click="showAdd = true">{{ t('catalog.add') }}</button>
+        <button class="btn btn-primary" @click="showAdd = true">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 13H5a1 1 0 1 1 0-2h6V5a1 1 0 1 1 2 0v6h6a1 1 0 1 1 0 2h-6v6a1 1 0 1 1-2 0v-6z"/></svg>
+          {{ t('catalog.add') }}
+        </button>
       </header>
       <p class="intro">
         {{ t('catalog.intro') }}
       </p>
       <div class="source-grid">
-        <div v-for="s in sources" :key="s.id" class="source-card card" @click="openSource(s)">
-          <div class="source-title">{{ s.title }}</div>
-          <div class="source-url">{{ s.url }}</div>
-          <div class="source-foot">
-            <span v-if="s.builtin" class="tag">{{ t('catalog.builtin') }}</span>
-            <button v-else class="btn btn-sm btn-danger" @click.stop="removeSource(s)">{{ t('common.delete') }}</button>
+        <div
+          v-for="s in sources"
+          :key="s.id"
+          class="source-card card"
+          role="button"
+          tabindex="0"
+          @click="openSource(s)"
+          @keydown.enter.prevent="openSource(s)"
+          @keydown.space.prevent="openSource(s)"
+        >
+          <div class="source-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg>
           </div>
+          <div class="source-body">
+            <div class="source-title">{{ s.title }}</div>
+            <div class="source-url">{{ s.url }}</div>
+            <div class="source-foot">
+              <span v-if="s.builtin" class="tag">{{ t('catalog.builtin') }}</span>
+              <button v-else class="btn btn-sm btn-danger" @click.stop="removeSource(s)" @keydown.stop>{{ t('common.delete') }}</button>
+            </div>
+          </div>
+          <svg class="source-chevron" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9.3 6.3a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 0 1-1.4-1.4L13.58 12 9.3 7.7a1 1 0 0 1 0-1.4z"/></svg>
         </div>
       </div>
 
@@ -455,7 +473,9 @@ async function removeSource(s: CatalogSourceRec) {
           <input
             v-model="uniQuery"
             class="input"
+            type="search"
             :placeholder="t('catalog.uniPlaceholder')"
+            :aria-label="t('catalog.uniTitle')"
             @keyup.enter="uniSearch"
           />
           <button class="btn btn-primary" :disabled="uniSearching" @click="uniSearch">
@@ -463,17 +483,20 @@ async function removeSource(s: CatalogSourceRec) {
           </button>
         </div>
         <div class="uni-scopes">
-          <label><input v-model="uniScopes.github" type="checkbox" /> GitHub</label>
-          <label><input v-model="uniScopes.gutenberg" type="checkbox" /> {{ t('catalog.gutenberg') }}</label>
-          <label><input v-model="uniScopes.arxiv" type="checkbox" /> arXiv</label>
+          <label class="check-chip" :class="{ on: uniScopes.github }"><input v-model="uniScopes.github" type="checkbox" /> GitHub</label>
+          <label class="check-chip" :class="{ on: uniScopes.gutenberg }"><input v-model="uniScopes.gutenberg" type="checkbox" /> {{ t('catalog.gutenberg') }}</label>
+          <label class="check-chip" :class="{ on: uniScopes.arxiv }"><input v-model="uniScopes.arxiv" type="checkbox" /> arXiv</label>
         </div>
-        <div v-if="uniErrors.length" class="gh-notice">⚠️ {{ uniErrors.join('; ') }}</div>
-        <div v-if="ghProgress" class="gh-progress">{{ ghProgress }}</div>
+        <div v-if="uniErrors.length" class="gh-notice" role="alert">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M10.3 3.9a2 2 0 0 1 3.4 0l8 13.6A2 2 0 0 1 20 20.5H4a2 2 0 0 1-1.7-3l8-13.6zM12 9a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0v-4a1 1 0 0 0-1-1zm0 9.2a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z"/></svg>
+          {{ uniErrors.join('; ') }}
+        </div>
+        <div v-if="ghProgress" class="gh-progress" role="status">{{ ghProgress }}</div>
 
         <template v-if="uniSearched">
           <div v-if="uniScopes.github" class="uni-group">
             <div class="uni-group-head">GitHub · {{ t('reader.resultCount', { n: uniGithub.length }) }}</div>
-            <div v-for="hit in uniGithub.slice(0, 60)" :key="hit.url" class="gh-item" :class="{ busy: ghImporting === hit.url }" @click="importGhBook(hit)">
+            <div v-for="hit in uniGithub.slice(0, 60)" :key="hit.url" class="gh-item" :class="{ busy: ghImporting === hit.url }" role="button" tabindex="0" @click="importGhBook(hit)" @keydown.enter.prevent="importGhBook(hit)">
               <span class="gh-name">{{ hit.name }}</span>
               <span class="gh-meta">{{ hit.repo }}<template v-if="hit.size"> · {{ fmtBytes(hit.size) }}</template></span>
             </div>
@@ -531,12 +554,15 @@ async function removeSource(s: CatalogSourceRec) {
         <div class="gh-repos">
           <span v-for="repo in settings.githubBookRepos" :key="repo" class="gh-repo-chip">
             {{ repo }}
-            <button class="gh-repo-del" :title="t('common.delete')" @click="removeGhRepo(repo)">✕</button>
+            <button class="gh-repo-del" :title="t('common.delete')" :aria-label="`${t('common.delete')} ${repo}`" @click="removeGhRepo(repo)">
+              <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M6.7 5.3a1 1 0 0 0-1.4 1.4L10.6 12l-5.3 5.3a1 1 0 1 0 1.4 1.4l5.3-5.3 5.3 5.3a1 1 0 0 0 1.4-1.4L13.4 12l5.3-5.3a1 1 0 0 0-1.4-1.4L12 10.6 6.7 5.3z"/></svg>
+            </button>
           </span>
           <input
             v-model="ghRepoDraft"
             class="input gh-repo-add"
             :placeholder="t('library.ghAddRepo')"
+            :aria-label="t('library.ghAddRepo')"
             @keyup.enter="addGhRepo"
           />
         </div>
@@ -564,7 +590,9 @@ async function removeSource(s: CatalogSourceRec) {
         <div v-else-if="settings.calibrePath && calibreBooks.length" class="calibre-grid">
           <div v-for="book in calibreBooks" :key="book.id" class="calibre-card card">
             <img v-if="calibreCovers[book.id]" class="calibre-cover" :src="calibreCovers[book.id]" loading="lazy" decoding="async" alt="" />
-            <div v-else class="calibre-cover placeholder">📕</div>
+            <div v-else class="calibre-cover placeholder" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            </div>
             <div class="calibre-info">
               <div class="calibre-title" :title="book.title">{{ book.title }}</div>
               <div class="calibre-authors">{{ book.authors || t('common.anonymous') }}</div>
@@ -594,28 +622,38 @@ async function removeSource(s: CatalogSourceRec) {
     <template v-else>
       <header class="toolbar">
         <button class="btn btn-sm" @click="breadcrumbs.length > 1 ? gotoCrumb(breadcrumbs.length - 2) : backToSources()">
-          ← {{ t('common.back') }}
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M14.7 6.3a1 1 0 0 1 0 1.4L10.42 12l4.3 4.3a1 1 0 0 1-1.42 1.4l-5-5a1 1 0 0 1 0-1.4l5-5a1 1 0 0 1 1.42 0z"/></svg>
+          {{ t('common.back') }}
         </button>
-        <nav class="crumbs">
+        <nav class="crumbs" aria-label="Breadcrumb">
           <button class="crumb" @click="backToSources">{{ t('catalog.title') }}</button>
           <template v-for="(c, i) in breadcrumbs" :key="i">
             <span class="crumb-sep">/</span>
-            <button class="crumb" :class="{ current: i === breadcrumbs.length - 1 }" @click="gotoCrumb(i)">
+            <button class="crumb" :class="{ current: i === breadcrumbs.length - 1 }" :aria-current="i === breadcrumbs.length - 1 ? 'page' : undefined" @click="gotoCrumb(i)">
               {{ c.title }}
             </button>
           </template>
         </nav>
         <div class="spacer" />
         <form v-if="page?.searchUrl" @submit.prevent="runSearch">
-          <input v-model="searchQuery" class="input" type="search" :placeholder="t('catalog.searchThisSource')" />
+          <input v-model="searchQuery" class="input" type="search" :placeholder="t('catalog.searchThisSource')" :aria-label="t('catalog.searchThisSource')" />
         </form>
       </header>
 
-      <div v-if="loading" class="empty">{{ t('common.loading') }}</div>
+      <div v-if="loading" class="empty" role="status" aria-busy="true">
+        <div class="empty-icon spinner" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9" /></svg>
+        </div>
+        <p class="hint">{{ t('common.loading') }}</p>
+      </div>
       <div v-else-if="loadError" class="empty">
-        <div class="empty-icon">⚠️</div>
-        <p style="max-width: 480px; text-align: center; line-height: 1.8">{{ loadError }}</p>
-        <button class="btn" @click="backToSources">{{ t('catalog.backToSources') }}</button>
+        <div class="empty-icon danger" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9a2 2 0 0 1 3.4 0l8 13.6A2 2 0 0 1 20 20.5H4a2 2 0 0 1-1.7-3l8-13.6z"/><path d="M12 9v5m0 3.5h.01"/></svg>
+        </div>
+        <p class="hint" style="max-width: 480px">{{ loadError }}</p>
+        <div class="empty-actions">
+          <button class="btn" @click="backToSources">{{ t('catalog.backToSources') }}</button>
+        </div>
       </div>
 
       <template v-else-if="page">
@@ -636,7 +674,9 @@ async function removeSource(s: CatalogSourceRec) {
         <div v-if="page.publications.length" class="pub-list">
           <div v-for="(pub, i) in page.publications" :key="i" class="pub card">
             <img v-if="pub.coverUrl" class="pub-cover" :src="pub.coverUrl" loading="lazy" alt="" />
-            <div v-else class="pub-cover placeholder">📖</div>
+            <div v-else class="pub-cover placeholder" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2V4zm20 0h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7V4z"/></svg>
+            </div>
             <div class="pub-info">
               <div class="pub-title">{{ pub.title }}</div>
               <div class="pub-author">{{ pub.author || t('common.anonymous') }}</div>
@@ -670,25 +710,25 @@ async function removeSource(s: CatalogSourceRec) {
     </template>
 
     <!-- 添加书源弹窗 -->
-    <div v-if="showAdd" class="modal-mask" @click.self="showAdd = false">
-      <div class="modal">
-        <h3>{{ t('catalog.addModalTitle') }}</h3>
+    <div v-if="showAdd" class="modal-mask" @click.self="showAdd = false" @keydown.esc="showAdd = false">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="add-source-title">
+        <h3 id="add-source-title">{{ t('catalog.addModalTitle') }}</h3>
         <div class="form-row">
-          <label>{{ t('catalog.name') }}</label>
-          <input v-model="newTitle" class="input" :placeholder="t('catalog.namePlaceholder')" />
+          <label for="src-name">{{ t('catalog.name') }}</label>
+          <input id="src-name" v-model="newTitle" class="input" :placeholder="t('catalog.namePlaceholder')" autofocus />
         </div>
         <div class="form-row">
-          <label>{{ t('catalog.opdsUrl') }}</label>
-          <input v-model="newUrl" class="input" placeholder="https://example.com/opds" />
+          <label for="src-url">{{ t('catalog.opdsUrl') }}</label>
+          <input id="src-url" v-model="newUrl" class="input" type="url" inputmode="url" placeholder="https://example.com/opds" />
         </div>
         <div class="form-row-pair">
           <div class="form-row">
-            <label>{{ t('common.usernameOptional') }}</label>
-            <input v-model="newUsername" class="input" autocomplete="off" />
+            <label for="src-user">{{ t('common.usernameOptional') }}</label>
+            <input id="src-user" v-model="newUsername" class="input" autocomplete="off" />
           </div>
           <div class="form-row">
-            <label>{{ t('common.passwordOptional') }}</label>
-            <input v-model="newPassword" class="input" type="password" autocomplete="new-password" />
+            <label for="src-pass">{{ t('common.passwordOptional') }}</label>
+            <input id="src-pass" v-model="newPassword" class="input" type="password" autocomplete="new-password" />
           </div>
         </div>
         <p class="form-hint">
@@ -706,7 +746,7 @@ async function removeSource(s: CatalogSourceRec) {
 
 <style scoped>
 .catalog {
-  padding: 24px 28px 40px;
+  padding: 24px 28px calc(40px + env(safe-area-inset-bottom));
   min-height: 100%;
 }
 .toolbar {
@@ -718,6 +758,13 @@ async function removeSource(s: CatalogSourceRec) {
 }
 .toolbar h1 {
   font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.toolbar h2,
+.uni-section h2 {
+  font-size: 15px;
+  font-weight: 650;
 }
 .spacer {
   flex: 1;
@@ -735,16 +782,52 @@ async function removeSource(s: CatalogSourceRec) {
   gap: 14px;
 }
 .source-card {
-  padding: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 14px 14px 16px;
   cursor: pointer;
-  transition: box-shadow 0.15s;
+  transition:
+    box-shadow var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 .source-card:hover {
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--border));
+  transform: translateY(-1px);
+}
+.source-card:focus-visible {
+  outline: none;
+  box-shadow: var(--ring), var(--shadow-md);
+}
+.source-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--brand-light);
+  color: var(--brand);
+}
+.source-body {
+  flex: 1;
+  min-width: 0;
+}
+.source-chevron {
+  color: var(--text-3);
+  flex-shrink: 0;
+  margin-top: 9px;
+  transition: transform var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.source-card:hover .source-chevron {
+  color: var(--brand);
+  transform: translateX(2px);
 }
 .source-title {
-  font-weight: 500;
-  margin-bottom: 6px;
+  font-weight: 600;
+  margin-bottom: 3px;
 }
 .source-url {
   font-size: 12px;
@@ -772,8 +855,12 @@ async function removeSource(s: CatalogSourceRec) {
   background: none;
   color: var(--brand);
   font-size: 13px;
-  padding: 2px 4px;
+  padding: 4px 6px;
   border-radius: 4px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .crumb:hover {
   background: var(--brand-light);
@@ -794,15 +881,22 @@ async function removeSource(s: CatalogSourceRec) {
 }
 .nav-card {
   padding: 12px 14px;
-  border: none;
   text-align: left;
   display: flex;
   flex-direction: column;
   gap: 4px;
   cursor: pointer;
+  transition:
+    box-shadow var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 .nav-card:hover {
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--border));
+}
+.nav-card:focus-visible {
+  outline: none;
+  box-shadow: var(--ring), var(--shadow-md);
 }
 .nav-title {
   font-size: 14px;
@@ -833,13 +927,13 @@ async function removeSource(s: CatalogSourceRec) {
   object-fit: cover;
   border-radius: 6px;
   flex-shrink: 0;
-  background: var(--bg);
+  background: var(--surface-2);
 }
 .pub-cover.placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 30px;
+  color: var(--text-3);
 }
 .pub-info {
   min-width: 0;
@@ -902,7 +996,9 @@ async function removeSource(s: CatalogSourceRec) {
   margin-bottom: 16px;
 }
 .form-hint code {
-  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface-2);
   padding: 1px 5px;
   border-radius: 4px;
 }
@@ -943,13 +1039,13 @@ async function removeSource(s: CatalogSourceRec) {
   object-fit: cover;
   border-radius: 4px;
   flex-shrink: 0;
-  background: var(--bg);
+  background: var(--surface-2);
 }
 .calibre-cover.placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 26px;
+  color: var(--text-3);
 }
 .calibre-info {
   min-width: 0;
@@ -1008,10 +1104,10 @@ async function removeSource(s: CatalogSourceRec) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 26px;
+  height: 28px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 13px;
+  border-radius: 14px;
   font-size: 12px;
   color: var(--text-2);
   background: var(--card);
@@ -1020,21 +1116,31 @@ async function removeSource(s: CatalogSourceRec) {
   border: none;
   background: none;
   color: var(--text-3);
-  font-size: 10px;
+  width: 20px;
+  height: 20px;
+  margin-right: -6px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
   padding: 0;
 }
 .gh-repo-del:hover {
   color: var(--danger);
+  background: var(--danger-soft);
 }
 .gh-repo-add {
-  height: 26px;
+  height: 28px;
   width: 210px;
   font-size: 12px;
+  border-radius: 14px;
 }
 .gh-notice {
   margin-top: 8px;
   font-size: 12px;
-  color: var(--text-3);
+  color: var(--warning);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .gh-progress {
   margin-top: 8px;
@@ -1057,7 +1163,11 @@ async function removeSource(s: CatalogSourceRec) {
   gap: 2px;
 }
 .gh-item:hover {
-  background: var(--bg);
+  background: var(--surface-2);
+}
+.gh-item:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 .gh-item.busy {
   opacity: 0.5;
@@ -1097,18 +1207,41 @@ async function removeSource(s: CatalogSourceRec) {
 }
 .uni-scopes {
   display: flex;
-  gap: 16px;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-top: 10px;
   font-size: 13px;
   color: var(--text-2);
 }
-.uni-scopes label {
+.check-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
-.uni-scopes input {
-  accent-color: var(--brand);
+.check-chip:hover {
+  border-color: var(--border-strong);
+}
+.check-chip.on {
+  background: var(--brand-light);
+  border-color: color-mix(in srgb, var(--brand) 50%, var(--border));
+  color: var(--brand);
+}
+.check-chip:focus-within {
+  box-shadow: var(--ring);
+}
+.check-chip input {
+  width: 14px;
+  height: 14px;
 }
 .uni-group {
   margin-top: 12px;
@@ -1142,5 +1275,51 @@ async function removeSource(s: CatalogSourceRec) {
   background: var(--brand-light);
   border-color: transparent;
   color: var(--brand);
+}
+.empty-icon.spinner svg {
+  animation: spin 0.9s linear infinite;
+}
+.empty-icon.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.hint {
+  font-size: 13px;
+  line-height: 1.8;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .catalog {
+    padding: 16px 16px calc(28px + env(safe-area-inset-bottom));
+  }
+  .source-grid {
+    grid-template-columns: 1fr;
+  }
+  .toolbar {
+    gap: 8px;
+  }
+  .gh-search-row {
+    max-width: none;
+  }
+  .calibre-path {
+    display: none;
+  }
+  .form-row-pair {
+    flex-direction: column;
+    gap: 0;
+  }
+  .pub {
+    gap: 12px;
+    padding: 12px;
+  }
+  .pub-cover {
+    width: 64px;
+    height: 90px;
+  }
 }
 </style>

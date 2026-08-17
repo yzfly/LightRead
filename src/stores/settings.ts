@@ -48,6 +48,8 @@ interface SettingsState {
   version?: number
   /** 界面语言 */
   language: 'zh' | 'en'
+  /** 界面外观: 跟随系统 / 浅色 / 深色 (阅读正文主题另由 reader.theme 控制) */
+  appearance: 'system' | 'light' | 'dark'
   reader: ReaderPrefs
   pdf: PdfPrefs
   /** 导入的自定义字体 (桌面端) */
@@ -93,6 +95,7 @@ const STORAGE_KEY = 'lightread-settings'
 const defaults: SettingsState = {
   version: SETTINGS_VERSION,
   language: 'zh',
+  appearance: 'light',
   customFonts: [],
   githubBookRepos: [],
   reader: {
@@ -151,6 +154,7 @@ function load(): SettingsState {
       paperAgentExecutables: { ...defaults.paperAgentExecutables, ...savedAgentExecutables },
     }
     if (!['codex', 'claude', 'pi'].includes(merged.paperAgentEngine)) merged.paperAgentEngine = 'pi'
+    if (!['system', 'light', 'dark'].includes(merged.appearance)) merged.appearance = 'light'
     for (const engine of ['codex', 'claude', 'pi'] as const) {
       if (typeof merged.paperAgentExecutables[engine] !== 'string') merged.paperAgentExecutables[engine] = ''
     }

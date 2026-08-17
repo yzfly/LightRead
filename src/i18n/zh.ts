@@ -138,6 +138,18 @@ export default {
   'catalog.deleteSourceConfirm': '删除书源「{title}」？',
 
   // ---- 设置 ----
+  'nav.mainAria': '主导航',
+  'common.search': '搜索',
+  'common.clear': '清除',
+  'common.sortBy': '排序方式',
+  'common.moreActions': '更多操作',
+  'library.loading': '正在读取书架…',
+  'library.browseCatalogs': '去书源找书',
+  'settings.appearance': '外观',
+  'settings.appearanceDesc': '界面配色。阅读正文的主题在阅读器内单独设置。',
+  'settings.appearanceSystem': '跟随系统',
+  'settings.appearanceLight': '浅色',
+  'settings.appearanceDark': '深色',
   'settings.title': '设置',
   'settings.general': '通用',
   'settings.language': '界面语言 / Language',

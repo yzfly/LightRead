@@ -138,6 +138,18 @@ export default {
   'catalog.deleteSourceConfirm': 'Delete catalog "{title}"?',
 
   // ---- 设置 ----
+  'nav.mainAria': 'Main navigation',
+  'common.search': 'Search',
+  'common.clear': 'Clear',
+  'common.sortBy': 'Sort by',
+  'common.moreActions': 'More actions',
+  'library.loading': 'Loading your shelf…',
+  'library.browseCatalogs': 'Browse catalogs',
+  'settings.appearance': 'Appearance',
+  'settings.appearanceDesc': 'Interface colors. The reading theme is set separately inside the reader.',
+  'settings.appearanceSystem': 'System',
+  'settings.appearanceLight': 'Light',
+  'settings.appearanceDark': 'Dark',
   'settings.title': 'Settings',
   'settings.general': 'General',
   'settings.language': 'Language / 界面语言',

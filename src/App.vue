@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ToastHost from './components/ToastHost.vue'
 import BabeldocTaskStatus from './components/BabeldocTaskStatus.vue'
 import { useSettings } from './stores/settings'
+import { useAppearance } from './services/appearance'
 import { t } from './i18n'
 import { isTauri } from './storage'
 import { startExternalOpen } from './services/externalOpen'
@@ -19,6 +20,7 @@ import {
 } from './services/updater'
 
 useSettings().persistOnChange()
+useAppearance()
 const route = useRoute()
 const router = useRouter()
 let stopExternalOpen: (() => void) | undefined
@@ -115,7 +117,7 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M10.83
 <template>
   <div class="shell" :class="{ immersive }">
     <aside v-if="!immersive" class="sidebar">
-      <div class="logo">
+      <div class="logo" aria-hidden="true">
         <svg viewBox="0 0 48 48" width="30" height="30">
           <rect width="48" height="48" rx="10" fill="#1664FF" />
           <path d="M14 12h9c2.2 0 4 1.8 4 4v20c0-1.7-1.3-3-3-3H14V12z" fill="#fff" opacity=".95" />
@@ -123,20 +125,26 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M10.83
         </svg>
         <span class="logo-text">{{ t('app.name') }}</span>
       </div>
-      <nav>
-        <router-link v-for="n in navs" :key="n.path" :to="n.path" class="nav-item">
-          <svg viewBox="0 0 24 24" width="18" height="18">
+      <nav class="nav" :aria-label="t('nav.mainAria')">
+        <router-link
+          v-for="n in navs"
+          :key="n.path"
+          :to="n.path"
+          class="nav-item"
+          :title="t(n.labelKey)"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
             <path :d="n.icon" fill="currentColor" />
           </svg>
-          {{ t(n.labelKey) }}
+          <span class="nav-label">{{ t(n.labelKey) }}</span>
         </router-link>
       </nav>
       <div class="sidebar-bottom">
-        <router-link :to="settingsNav.path" class="nav-item sidebar-settings">
-          <svg viewBox="0 0 24 24" width="18" height="18">
+        <router-link :to="settingsNav.path" class="nav-item sidebar-settings" :title="t(settingsNav.labelKey)">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
             <path :d="settingsNav.icon" fill="currentColor" />
           </svg>
-          {{ t(settingsNav.labelKey) }}
+          <span class="nav-label">{{ t(settingsNav.labelKey) }}</span>
         </router-link>
         <button
           v-if="showSidebarUpdate"
@@ -171,7 +179,7 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M10.83
   height: 100%;
 }
 .sidebar {
-  width: 200px;
+  width: 208px;
   flex-shrink: 0;
   position: relative;
   z-index: 2;
@@ -179,42 +187,81 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M10.83
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 20px 12px;
+  padding: 18px 12px calc(16px + env(safe-area-inset-bottom));
+  transition: width var(--dur) var(--ease);
 }
 .logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 10px 20px;
+  height: 40px;
+  padding: 0 8px;
+  margin-bottom: 14px;
+}
+.logo svg {
+  flex-shrink: 0;
 }
 .logo-text {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
-nav {
+.nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   flex: 1;
 }
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  height: 40px;
+  padding: 0 10px;
   border-radius: var(--radius);
   color: var(--text-2);
   font-size: 14px;
-  transition: all 0.15s;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 .nav-item:hover {
-  background: var(--bg);
+  background: var(--surface-2);
   color: var(--text);
+  text-decoration: none;
+}
+.nav-item:active {
+  background: var(--surface-3);
+}
+.nav-item:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 .nav-item.router-link-active {
   background: var(--brand-light);
   color: var(--brand);
-  font-weight: 500;
+  font-weight: 600;
+}
+.nav-item.router-link-active::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand);
+}
+.nav-item svg {
+  flex-shrink: 0;
+}
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sidebar-bottom {
   position: relative;
@@ -226,7 +273,6 @@ nav {
   width: 100%;
   height: 40px;
   padding-right: 56px;
-  white-space: nowrap;
   overflow: hidden;
 }
 .sidebar-update {
@@ -242,7 +288,7 @@ nav {
   border: 0;
   border-radius: 999px;
   background: var(--brand);
-  color: #fff;
+  color: var(--on-brand);
   box-shadow: 0 5px 16px color-mix(in srgb, var(--brand) 30%, transparent);
   cursor: pointer;
   font: inherit;
@@ -287,11 +333,61 @@ nav {
   flex: 1;
   min-width: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .immersive .main {
   overflow: hidden;
 }
 
+/* 平板 / 窄窗口: 收成图标栏, 悬停显示 title */
+@media (min-width: 721px) and (max-width: 1023px) {
+  .sidebar {
+    width: 68px;
+    padding-inline: 10px;
+    align-items: stretch;
+  }
+  .logo {
+    justify-content: center;
+    padding: 0;
+  }
+  .logo-text,
+  .nav-label {
+    display: none;
+  }
+  .nav-item {
+    justify-content: center;
+    padding: 0;
+    height: 44px;
+  }
+  .nav-item.router-link-active::before {
+    left: -10px;
+  }
+  .sidebar-settings {
+    padding-right: 0;
+  }
+  .sidebar-bottom {
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sidebar-update {
+    position: static;
+    width: 100%;
+    height: 40px;
+    justify-content: center;
+    border-radius: var(--radius);
+  }
+  .sidebar-update:hover,
+  .sidebar-update:focus-visible {
+    width: 100%;
+  }
+  .sidebar-update-label {
+    display: none;
+  }
+}
+
+/* 手机: 底部标签栏, 图标在上文字在下, 预留手势区安全边距 */
 @media (max-width: 720px) {
   .shell:not(.immersive) {
     flex-direction: column-reverse;
@@ -299,29 +395,57 @@ nav {
   .sidebar {
     width: 100%;
     flex-direction: row;
-    align-items: center;
-    padding: 6px 12px;
+    align-items: stretch;
+    padding: 4px 6px calc(4px + env(safe-area-inset-bottom));
     border-right: none;
     border-top: 1px solid var(--border);
+    box-shadow: 0 -1px 0 color-mix(in srgb, var(--border) 50%, transparent);
   }
   .logo {
     display: none;
   }
-  nav {
+  .nav {
     flex-direction: row;
-    justify-content: space-around;
+    flex: 3;
+    gap: 2px;
   }
-  /* 移动端底栏: 设置回到同一行 */
-  .sidebar-bottom {
-    flex-direction: row;
+  .nav-item {
     flex: 1;
-    justify-content: space-around;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    height: 52px;
+    min-width: 0;
+    padding: 0 4px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: var(--radius);
+  }
+  .nav-item svg {
+    width: 22px;
+    height: 22px;
+  }
+  .nav-item.router-link-active {
+    background: transparent;
+  }
+  .nav-item.router-link-active::before {
+    left: 50%;
+    top: -4px;
+    bottom: auto;
+    width: 24px;
+    height: 3px;
+    transform: translateX(-50%);
+    border-radius: 0 0 3px 3px;
+  }
+  .sidebar-bottom {
+    flex: 1;
     height: auto;
+    display: flex;
   }
   .sidebar-settings {
-    width: auto;
-    height: auto;
-    padding-right: 12px;
+    width: 100%;
+    height: 52px;
+    padding-right: 4px;
     overflow: visible;
   }
   .sidebar-update {
@@ -330,6 +454,7 @@ nav {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .sidebar,
   .sidebar-update {
     transition: none;
   }
