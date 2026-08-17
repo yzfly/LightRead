@@ -25,6 +25,7 @@ npm run tauri dev|build     # 桌面 (需要 Rust 工具链)
 # 端到端冒烟 (Playwright): 先构建并起预览, 再跑脚本 (脚本写死 http://localhost:4173)
 npm run build && npx vite preview --port 4173 --strictPort &
 npm run e2e                 # scripts/e2e-smoke.mjs, ~35 步: 导入 → 书单 → 阅读器 → PDF → 持久化
+BIG_TXT=… PDF_FIXTURE=… node scripts/perf.mjs   # 性能基准 (打开/翻页/PDF + 长任务), 账本见 docs/perf-ledger.md
 ```
 
 - 每次 `vite build` 后要**重启** `vite preview`（Cloudflare 插件会缓存资源清单，否则页面空白报 MIME 错误）。

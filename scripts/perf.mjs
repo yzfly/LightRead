@@ -67,6 +67,9 @@ await page.waitForTimeout(500)
 console.log(`20 次翻页: 总 ${Date.now() - t0 - 2100}ms (净耗时)`, '长任务:', JSON.stringify(await longtasks()))
 
 // 4. 排版调整 (字号连续变化 8 档, 模拟拖动滑条)
+// 工具栏在阅读时自动隐藏, 先把鼠标移到顶部边缘呼出
+await page.mouse.move(640, 2)
+await page.locator('.bar.top:not(.hidden)').waitFor({ timeout: 5000 })
 await page.click('button[title="排版设置"]')
 await longtasks()
 t0 = Date.now()
@@ -89,7 +92,7 @@ await page.waitForFunction(() => document.querySelectorAll('.book-card').length 
 await longtasks()
 t0 = Date.now()
 await page.click('.book-card:not(:has-text("大部头"))')
-await page.waitForSelector('.spread-host canvas', { timeout: 30000 })
+await page.waitForSelector('.p-holder canvas', { timeout: 30000 })
 console.log(`打开 PDF (点击→首页渲染): ${Date.now() - t0}ms`, '长任务:', JSON.stringify(await longtasks()))
 
 await page.waitForTimeout(1200)

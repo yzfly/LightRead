@@ -323,51 +323,43 @@ async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLC
   if (settings.pdf.renderer === 'mupdf' && !mupdfRenderFailed) {
     let page: any = null
     let pixmap: any = null
+    let device: any = null
     try {
       const mupdf = await initMupdf()
       page = (await mupdfDoc()).loadPage(pageNum - 1)
-      pixmap = page.toPixmap(
-        // 用两个方向的精确目标比例，确保 Pixmap 与 CSS×DPR 一一对应。
-        mupdf.Matrix.scale(targetW / dims.w, targetH / dims.h),
-        mupdf.ColorSpace.DeviceRGB,
-        false,
-        true,
+      // 用两个方向的精确目标比例，确保位图与 CSS×DPR 一一对应；页面原点非零时
+      // 先平移到 (0,0)，位图 bbox 固定为目标尺寸，多出的亚像素直接被裁掉。
+      const bounds: number[] = page.getBounds()
+      const scaleX = targetW / dims.w
+      const scaleY = targetH / dims.h
+      const ctm = mupdf.Matrix.concat(
+        mupdf.Matrix.translate(-bounds[0], -bounds[1]),
+        mupdf.Matrix.scale(scaleX, scaleY),
       )
-      const sourceWidth = Math.max(1, pixmap.getWidth())
-      const sourceHeight = Math.max(1, pixmap.getHeight())
-      canvas.width = targetW
-      canvas.height = targetH
+      // 直接栅格化成不透明白底的 RGBA 位图，像素即可零拷贝喂给 ImageData，
+      // 省掉逐字节 RGB→RGBA 的 JS 循环 (DPR 2 整页 ≈ 20MB)。
+      pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, targetW, targetH], true)
+      pixmap.clear(255)
+      device = new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap)
+      page.run(device, ctm)
+      device.close()
+      const stride: number = pixmap.getStride()
+      const width: number = pixmap.getWidth()
+      const height: number = pixmap.getHeight()
+      if (stride !== width * 4) throw new Error(`unexpected pixmap stride ${stride} for width ${width}`)
+      canvas.width = width
+      canvas.height = height
       const context = canvas.getContext('2d', { alpha: false })!
-      const source: Uint8ClampedArray = pixmap.getPixels()
-      const sourceStride: number = pixmap.getStride()
-      const rgba = new Uint8ClampedArray(canvas.width * canvas.height * 4)
-      rgba.fill(255)
-      // 非零页面原点会让 MuPDF 的整数 bbox 偶尔多出 1px；居中裁掉这圈
-      // bbox 留白，始终保持目标位图尺寸，不让浏览器承担缩放。
-      const copyWidth = Math.min(sourceWidth, canvas.width)
-      const copyHeight = Math.min(sourceHeight, canvas.height)
-      const sourceX = Math.max(0, Math.floor((sourceWidth - copyWidth) / 2))
-      const sourceY = Math.max(0, Math.floor((sourceHeight - copyHeight) / 2))
-      const targetX = Math.max(0, Math.floor((canvas.width - copyWidth) / 2))
-      const targetY = Math.max(0, Math.floor((canvas.height - copyHeight) / 2))
-      for (let y = 0; y < copyHeight; y++) {
-        let src = (sourceY + y) * sourceStride + sourceX * 4
-        let dst = (targetY + y) * canvas.width * 4 + targetX * 4
-        const rowEnd = dst + copyWidth * 4
-        while (dst < rowEnd) {
-          rgba[dst++] = source[src++]
-          rgba[dst++] = source[src++]
-          rgba[dst++] = source[src++]
-          rgba[dst++] = 255
-        }
-      }
-      context.putImageData(new ImageData(rgba, canvas.width, canvas.height), 0, 0)
+      // getPixels() 是 wasm 堆上的视图 (非共享内存)；putImageData 同步拷贝完成后再释放 pixmap。
+      const pixels = pixmap.getPixels() as Uint8ClampedArray<ArrayBuffer>
+      context.putImageData(new ImageData(pixels, width, height), 0, 0)
       canvas.dataset.renderer = 'mupdf'
       return canvas
     } catch (e) {
       mupdfRenderFailed = true
       console.warn('MuPDF render failed; falling back to PDFium', e)
     } finally {
+      device?.destroy?.()
       pixmap?.destroy?.()
       page?.destroy?.()
     }
@@ -546,8 +538,37 @@ function updateViewport() {
     Math.max(0, activeGroup - 1),
     Math.min(scrollGroupLayout.value.length, activeGroup + 3),
   )
-  for (const group of nearby) for (const page of group.pages) renderScrollPage(page)
+  // 当前页组立即渲染；相邻页组的预载放到后续宏任务里逐页进行，
+  // 否则所有页面会挤在同一条微任务链里, 首页要等预载页全部栅格化后才能上屏。
+  const active = scrollGroupLayout.value[activeGroup]
+  if (active) for (const page of active.pages) renderScrollPage(page)
+  schedulePrefetchRender(nearby.filter(group => group !== active).flatMap(group => group.pages))
   evictFarPages(cur)
+}
+
+const prefetchQueue: number[] = []
+let prefetchDraining = false
+function schedulePrefetchRender(pages: number[]) {
+  for (const page of pages) if (!prefetchQueue.includes(page)) prefetchQueue.push(page)
+  if (prefetchDraining || prefetchQueue.length === 0) return
+  prefetchDraining = true
+  const drain = () => {
+    if (!readerAlive || prefetchQueue.length === 0) {
+      prefetchDraining = false
+      return
+    }
+    const page = prefetchQueue.shift()!
+    // 用户已经滚远的页面不再预载, 交给下一次 updateViewport 决定。
+    if (Math.abs(page - currentPage.value) > 8) {
+      drain()
+      return
+    }
+    // 每页之间让出主线程, 让首屏 paint / 滚动事件先执行。
+    renderScrollPage(page)
+      .catch(e => console.warn('prefetch render failed', e))
+      .then(() => setTimeout(drain, 0))
+  }
+  setTimeout(drain, 0)
 }
 
 function onScroll() {
