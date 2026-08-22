@@ -58,16 +58,29 @@ function activate() {
 
 /* 触屏设备: 封面操作收进「更多」按钮, 点一下展开, 点别处收起 */
 const menuOpen = ref(false)
+const actionsEl = ref<HTMLElement | null>(null)
 function closeMenu() {
   menuOpen.value = false
-  document.removeEventListener('pointerdown', closeMenu, true)
+  document.removeEventListener('pointerdown', onOutsidePointerDown, true)
+}
+function onOutsidePointerDown(e: PointerEvent) {
+  // 按下点在菜单内部时不能收起: 收起会让按钮瞬间 pointer-events:none,
+  // 随后的 click 命中测试会落到卡片上, 变成打开书籍 (触屏专属问题)
+  if (actionsEl.value && e.target instanceof Node && actionsEl.value.contains(e.target)) return
+  closeMenu()
 }
 function toggleMenu() {
   if (menuOpen.value) return closeMenu()
   menuOpen.value = true
-  setTimeout(() => document.addEventListener('pointerdown', closeMenu, true))
+  setTimeout(() => document.addEventListener('pointerdown', onOutsidePointerDown, true))
 }
-onBeforeUnmount(() => document.removeEventListener('pointerdown', closeMenu, true))
+function menuAction(event: 'remove' | 'togglePin' | 'addToBooklist') {
+  closeMenu()
+  if (event === 'remove') emit('remove')
+  else if (event === 'togglePin') emit('togglePin')
+  else emit('addToBooklist')
+}
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutsidePointerDown, true))
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' || e.key === ' ') {
@@ -111,7 +124,7 @@ function onKeydown(e: KeyboardEvent) {
         <span class="progress-fill" :style="{ width: `${progress}%` }" />
       </span>
 
-      <div v-if="!selectable" class="actions" :class="{ open: menuOpen }">
+      <div v-if="!selectable" ref="actionsEl" class="actions" :class="{ open: menuOpen }">
         <button
           type="button"
           class="action more"
@@ -130,7 +143,7 @@ function onKeydown(e: KeyboardEvent) {
           :title="book.pinnedAt ? t('library.unpin') : t('library.pin')"
           :aria-label="book.pinnedAt ? t('library.unpin') : t('library.pin')"
           :aria-pressed="!!book.pinnedAt"
-          @click.stop="$emit('togglePin')"
+          @click.stop="menuAction('togglePin')"
           @keydown.stop
         >
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M14.6 2.6a2 2 0 0 1 2.83 0l4 4a2 2 0 0 1 0 2.82l-3.18 3.18.35 2.47a2 2 0 0 1-.56 1.7l-1.1 1.1a1 1 0 0 1-1.42 0L11.6 13.9l-5.9 5.9a1 1 0 0 1-1.4-1.42l5.88-5.89-3.95-3.95a1 1 0 0 1 0-1.41l1.1-1.1a2 2 0 0 1 1.7-.57l2.47.35 3.1-3.2z"/></svg>
@@ -141,7 +154,7 @@ function onKeydown(e: KeyboardEvent) {
           class="action booklist-action"
           :title="t('library.addToBooklist')"
           :aria-label="t('library.addToBooklist')"
-          @click.stop="$emit('addToBooklist')"
+          @click.stop="menuAction('addToBooklist')"
           @keydown.stop
         >
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M5 4a2 2 0 0 1 2-2h9a3 3 0 0 1 3 3v6a1 1 0 1 1-2 0V5a1 1 0 0 0-1-1H7v14.38l4.55-2.28a1 1 0 0 1 .9 0l1.1.55a1 1 0 1 1-.9 1.79L12 18.12 6.45 20.9A1 1 0 0 1 5 20V4zm14 10a1 1 0 0 1 1 1v2h2a1 1 0 1 1 0 2h-2v2a1 1 0 1 1-2 0v-2h-2a1 1 0 1 1 0-2h2v-2a1 1 0 0 1 1-1z"/></svg>
@@ -151,7 +164,7 @@ function onKeydown(e: KeyboardEvent) {
           class="action remove"
           :title="t('book.removeFromLibrary')"
           :aria-label="t('book.removeFromLibrary')"
-          @click.stop="$emit('remove')"
+          @click.stop="menuAction('remove')"
           @keydown.stop
         >
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1v12a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1zm1 6a1 1 0 0 1 2 0v8a1 1 0 1 1-2 0V9zm4 0a1 1 0 0 1 2 0v8a1 1 0 1 1-2 0V9z"/></svg>
