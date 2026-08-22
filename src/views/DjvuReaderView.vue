@@ -210,7 +210,7 @@ onBeforeUnmount(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #e2e5ea;
+  background: var(--surface-3);
   position: relative;
 }
 .bar {

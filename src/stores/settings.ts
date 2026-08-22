@@ -6,8 +6,8 @@ export interface ReaderPrefs {
   lineHeight: number
   /** 页边距百分比 */
   gap: number
-  /** 阅读主题 */
-  theme: 'light' | 'sepia' | 'green' | 'dark'
+  /** 阅读主题; auto 跟随界面外观在浅色/夜间间切换 */
+  theme: 'auto' | 'light' | 'sepia' | 'green' | 'dark'
   flow: 'paginated' | 'scrolled'
   maxColumnCount: 1 | 2
   fontFamily: string
@@ -28,7 +28,7 @@ export interface PdfPrefs {
 }
 
 /** 结构版本: 修正历史默认值时递增 */
-const SETTINGS_VERSION = 8
+const SETTINGS_VERSION = 9
 
 /** v3 时代曾并入用户设置的内置书库 (v4 起社区清单独立远程拉取, 此表仅供迁移清理) */
 const BUILTIN_BOOK_REPOS = [
@@ -102,7 +102,7 @@ const defaults: SettingsState = {
     fontSize: 18,
     lineHeight: 1.8,
     gap: 6,
-    theme: 'light',
+    theme: 'auto',
     flow: 'paginated',
     maxColumnCount: 2,
     fontFamily: '',
@@ -180,6 +180,10 @@ function load(): SettingsState {
       merged.pdf.layout = 'original'
       merged.pdf.mode = 'scroll'
       merged.pdf.fit = 'fitW'
+    }
+    // v9: 阅读主题默认改为跟随界面外观; 旧默认 light 视为未显式选择, 一并迁入 auto。
+    if ((saved.version ?? 1) < 9 && (saved.reader?.theme ?? 'light') === 'light') {
+      merged.reader.theme = 'auto'
     }
     merged.version = SETTINGS_VERSION
     return merged

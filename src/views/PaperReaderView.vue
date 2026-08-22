@@ -21,7 +21,8 @@ import {
 import { initMupdf } from '../services/mupdf'
 import { importFile } from '../services/importer'
 import { detectFormat } from '../services/format'
-import { FONT_FAMILIES, HIGHLIGHT_COLORS, READER_THEMES } from '../services/readerTheme'
+import { FONT_FAMILIES, HIGHLIGHT_COLORS, READER_THEME_CHOICES, resolveReaderColors } from '../services/readerTheme'
+import { resolvedTheme } from '../services/appearance'
 import { injectFontIntoDoc, resolveFontFamily } from '../services/fonts'
 import {
   INSTALL_CMD,
@@ -2318,7 +2319,7 @@ let reflowSession = 0
 let reflowScrollScheduled = false
 
 const reflowStyle = computed<Record<string, string>>(() => {
-  const colors = READER_THEMES[settings.reader.theme]
+  const colors = resolveReaderColors(settings.reader.theme, resolvedTheme.value === 'dark')
   return {
     '--reflow-bg': colors.bg,
     '--reflow-fg': colors.fg,
@@ -4259,12 +4260,12 @@ onBeforeUnmount(() => {
           <div class="reflow-theme-row">
             <span>{{ t('reader.theme') }}</span>
             <button
-              v-for="(colors, name) in READER_THEMES"
-              :key="name"
-              :class="{ active: settings.reader.theme === name }"
-              :style="{ background: colors.bg, color: colors.fg }"
-              :title="String(name)"
-              @click="settings.reader.theme = name as any"
+              v-for="choice in READER_THEME_CHOICES"
+              :key="choice.name"
+              :class="{ active: settings.reader.theme === choice.name }"
+              :style="{ background: choice.bg, color: choice.fg }"
+              :title="choice.name === 'auto' ? t('reader.themeAuto') : choice.name"
+              @click="settings.reader.theme = choice.name"
             >Aa</button>
           </div>
         </div>
@@ -4853,8 +4854,8 @@ onBeforeUnmount(() => {
   height: 36px;
   padding: 3px;
   border-radius: 9px;
-  background: #f2f4f7;
-  box-shadow: inset 0 0 0 1px rgba(29, 33, 41, 0.045);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 4%, transparent);
 }
 .reader-segment button {
   min-width: 46px;
@@ -4872,7 +4873,7 @@ onBeforeUnmount(() => {
 }
 .reader-segment button:hover:not(.active) {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.62);
+  background: color-mix(in srgb, var(--card) 62%, transparent);
 }
 .reader-segment button.active {
   color: var(--brand);
@@ -4910,8 +4911,8 @@ onBeforeUnmount(() => {
 }
 .reader-tool:hover {
   color: var(--brand);
-  border-color: rgba(22, 100, 255, 0.25);
-  background: #f8faff;
+  border-color: color-mix(in srgb, var(--brand) 25%, transparent);
+  background: var(--brand-soft);
 }
 .reader-tool.active {
   color: var(--brand);
@@ -5050,7 +5051,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   padding: 28px 20px;
-  background: #eef1f5;
+  background: var(--surface-2);
   touch-action: pan-x pan-y;
 }
 .reflow-scroll {
@@ -5150,7 +5151,7 @@ onBeforeUnmount(() => {
   overflow: auto;
   display: flex;
   padding: 28px 20px;
-  background: #eef1f5;
+  background: var(--surface-2);
   touch-action: pan-x pan-y;
 }
 .pane-left:is(.is-fit-width, .is-fit-height),
@@ -5678,8 +5679,8 @@ onBeforeUnmount(() => {
 }
 .thumbnail-skeleton {
   background:
-    linear-gradient(90deg, transparent 25%, rgba(255, 255, 255, 0.72) 50%, transparent 75%),
-    #eef1f5;
+    linear-gradient(90deg, transparent 25%, var(--skeleton-shine) 50%, transparent 75%),
+    var(--skeleton);
   background-size: 220% 100%, 100% 100%;
   animation: thumbnail-shimmer 1.35s ease-in-out infinite;
 }
@@ -5693,7 +5694,7 @@ onBeforeUnmount(() => {
 }
 .thumbnail-failed .thumbnail-skeleton {
   animation: none;
-  background: repeating-linear-gradient(135deg, #f3f4f6, #f3f4f6 8px, #e9edf1 8px, #e9edf1 16px);
+  background: repeating-linear-gradient(135deg, var(--skeleton), var(--skeleton) 8px, var(--surface-3) 8px, var(--surface-3) 16px);
 }
 .thumbnail-number {
   min-width: 28px;
@@ -6261,7 +6262,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  background: #f2f3f5;
+  background: var(--surface-2);
   padding: 12px;
   border-top: 1px solid var(--border);
 }

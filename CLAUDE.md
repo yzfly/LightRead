@@ -62,7 +62,7 @@ src-tauri/src/         Rust 命令: agent/ babeldoc calibre edge_tts local_tts f
 - **e2e 依赖的选择器别改语义**：`getByRole('button', { name })`（分段控件按钮不要改成 `role="radio"`），`button[title="目录"]` 等 title 文案，`.book-card` `.booklist-action` `.booklist-chip` `.sidebar-update`（收起 ≤42px、悬停 ≥108px）、`text=书架还是空的` / `这个书单还是空的` 等文案 key。改动后跑一遍 `npm run e2e`。
 - `PaperReaderView.vue` 里仍有约 70 处硬编码浅色面板；深色主题下它不是完全适配的，改动前先看那一段样式。
 - 不做 zlib 类站点直连、不支持 KFX（见产品设计文档），不引入组件库 / Tailwind。
-- 阅读正文主题 (`settings.reader.theme`) 与应用外观 (`settings.appearance`) 是两回事，别互相绑定。
+- 阅读正文主题 (`settings.reader.theme`) 与应用外观 (`settings.appearance`) 是两个设置项，不要把显式选择的正文主题绑到外观上；默认值 `auto` 例外，它经 `resolveReaderTheme()` 跟随外观在浅色/夜间间切换。
 - 不要提交 `.env*`、`.corpus`、`dist`、`src-tauri/target`。
 
 ## 发版流程

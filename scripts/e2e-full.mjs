@@ -104,7 +104,7 @@ check('键盘翻页', (await page.textContent('.percent')) !== pctBefore)
 
 // 排版设置
 await page.click('button[title="排版设置"]')
-check('主题数量', await page.locator('.theme-btn').count() === 4, '白/米黄/护眼绿/夜间')
+check('主题数量', await page.locator('.theme-btn').count() === 5, '白/米黄/护眼绿/夜间/跟随外观')
 await page.click('.theme-btn:nth-child(3)')
 await page.waitForTimeout(400)
 const bg = await page.evaluate(() => document.querySelector('.reader')?.getAttribute('style') ?? '')

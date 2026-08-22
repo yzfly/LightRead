@@ -336,6 +336,7 @@ export default {
   'reader.fontImportFailed': '字体导入失败: {msg}',
   'reader.theme': '主题',
   'reader.themeSample': '文',
+  'reader.themeAuto': '跟随外观',
   'reader.mode': '模式',
   'reader.pdfLayout': 'PDF 阅读方式',
   'reader.originalPdf': '原版',

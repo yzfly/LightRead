@@ -336,6 +336,7 @@ export default {
   'reader.fontImportFailed': 'Font import failed: {msg}',
   'reader.theme': 'Theme',
   'reader.themeSample': 'A',
+  'reader.themeAuto': 'Follow appearance',
   'reader.mode': 'Mode',
   'reader.pdfLayout': 'PDF reading layout',
   'reader.originalPdf': 'Original',

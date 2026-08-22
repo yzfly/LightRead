@@ -6,12 +6,30 @@ export interface ReaderThemeColors {
   link: string
 }
 
-export const READER_THEMES: Record<ReaderPrefs['theme'], ReaderThemeColors> = {
+export type ReaderThemeName = Exclude<ReaderPrefs['theme'], 'auto'>
+
+export const READER_THEMES: Record<ReaderThemeName, ReaderThemeColors> = {
   light: { bg: '#ffffff', fg: '#1d2129', link: '#1664ff' },
   sepia: { bg: '#faf3e7', fg: '#453c2c', link: '#8f6c2e' },
   green: { bg: '#c7edcc', fg: '#243528', link: '#1e6b4a' },
   dark: { bg: '#17181a', fg: '#c5c8ce', link: '#6a9bff' },
 }
+
+/** auto 跟随界面外观: 浅色外观读白底, 深色外观读夜间 */
+export function resolveReaderTheme(theme: ReaderPrefs['theme'], appDark: boolean): ReaderThemeName {
+  return theme === 'auto' ? (appDark ? 'dark' : 'light') : theme
+}
+
+export function resolveReaderColors(theme: ReaderPrefs['theme'], appDark: boolean): ReaderThemeColors {
+  return READER_THEMES[resolveReaderTheme(theme, appDark)]
+}
+
+/** 主题选择按钮 (含 auto), 顺序固定; auto 的色板用斜切双色示意跟随外观 */
+export const READER_THEME_CHOICES: Array<{ name: ReaderPrefs['theme']; bg: string; fg: string }> = [
+  ...(Object.entries(READER_THEMES) as Array<[ReaderThemeName, ReaderThemeColors]>)
+    .map(([name, c]) => ({ name: name as ReaderPrefs['theme'], bg: c.bg, fg: c.fg })),
+  { name: 'auto', bg: 'linear-gradient(135deg, #ffffff 50%, #17181a 50%)', fg: '#8a919c' },
+]
 
 export const FONT_FAMILIES = [
   { labelKey: 'reader.fontDefault', value: '' },
@@ -21,12 +39,13 @@ export const FONT_FAMILIES = [
 ]
 
 /** 注入到 foliate 渲染 iframe 的样式 */
-export function getReaderCSS(prefs: ReaderPrefs): string {
-  const colors = READER_THEMES[prefs.theme]
+export function getReaderCSS(prefs: ReaderPrefs, appDark: boolean): string {
+  const theme = resolveReaderTheme(prefs.theme, appDark)
+  const colors = READER_THEMES[theme]
   return `
     @namespace epub "http://www.idpf.org/2007/ops";
     html {
-      color-scheme: ${prefs.theme === 'dark' ? 'dark' : 'light'};
+      color-scheme: ${theme === 'dark' ? 'dark' : 'light'};
       color: ${colors.fg};
       font-size: ${prefs.fontSize}px;
       ${prefs.fontFamily ? `font-family: ${prefs.fontFamily};` : ''}

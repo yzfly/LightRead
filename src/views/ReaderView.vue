@@ -6,7 +6,8 @@ import { useSettings } from '../stores/settings'
 import { useLibrary } from '../stores/library'
 import { isTextLike } from '../services/format'
 import { convertToEpub } from '../services/textToEpub'
-import { getReaderCSS, READER_THEMES, FONT_FAMILIES, HIGHLIGHT_COLORS } from '../services/readerTheme'
+import { getReaderCSS, resolveReaderColors, READER_THEME_CHOICES, FONT_FAMILIES, HIGHLIGHT_COLORS } from '../services/readerTheme'
+import { resolvedTheme } from '../services/appearance'
 import { listSystemFonts, importFontFile, injectFontIntoDoc, resolveFontFamily } from '../services/fonts'
 import { isTauri } from '../storage/types'
 import { listVoicesSorted, speakText, ssmlToText, stopSpeech, pauseSpeech, resumeSpeech, resetEdgeFailure } from '../services/tts'
@@ -213,7 +214,8 @@ let view: any = null
 let Overlayer: any = null
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 
-const themeColors = computed(() => READER_THEMES[settings.reader.theme])
+const appDark = computed(() => resolvedTheme.value === 'dark')
+const themeColors = computed(() => resolveReaderColors(settings.reader.theme, appDark.value))
 
 /** 当前选中的自定义字体 (settings.reader.fontFamily 为 custom:Name 时) */
 function selectedCustomFont() {
@@ -229,7 +231,7 @@ function applyPrefs() {
     view.renderer.setAttribute('flow', prefs.flow)
     view.renderer.setAttribute('gap', `${prefs.gap}%`)
     view.renderer.setAttribute('max-column-count', String(prefs.maxColumnCount))
-    view.renderer.setStyles?.(getReaderCSS({ ...prefs, fontFamily: resolveFontFamily(prefs.fontFamily) }))
+    view.renderer.setStyles?.(getReaderCSS({ ...prefs, fontFamily: resolveFontFamily(prefs.fontFamily) }, appDark.value))
     const custom = selectedCustomFont()
     if (custom) {
       for (const content of view.renderer.getContents?.() ?? []) {
@@ -272,7 +274,7 @@ async function importFont() {
 }
 
 let prefsTimer: ReturnType<typeof setTimeout> | undefined
-watch(() => settings.reader, () => {
+watch([() => settings.reader, appDark], () => {
   clearTimeout(prefsTimer)
   prefsTimer = setTimeout(applyPrefs, 120)
 }, { deep: true })
@@ -1216,12 +1218,13 @@ onBeforeUnmount(() => {
         <label>{{ t('reader.theme') }}</label>
         <div class="theme-btns">
           <button
-            v-for="(colors, name) in READER_THEMES"
-            :key="name"
+            v-for="choice in READER_THEME_CHOICES"
+            :key="choice.name"
             class="theme-btn"
-            :class="{ active: settings.reader.theme === name }"
-            :style="{ background: colors.bg, color: colors.fg }"
-            @click="settings.reader.theme = name as any"
+            :class="{ active: settings.reader.theme === choice.name }"
+            :style="{ background: choice.bg, color: choice.fg }"
+            :title="choice.name === 'auto' ? t('reader.themeAuto') : undefined"
+            @click="settings.reader.theme = choice.name"
           >{{ t('reader.themeSample') }}</button>
         </div>
       </div>
