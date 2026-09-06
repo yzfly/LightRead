@@ -312,6 +312,7 @@ export default {
   'reader.cantOpenPdf': 'Cannot open this PDF',
   'reader.cantOpenDjvu': 'Cannot open this DjVu file',
   'reader.noToc': 'This book has no table of contents',
+  'reader.tocAuto': 'No built-in contents; chapters below were detected from the text',
   'reader.untitled': '(untitled)',
   'reader.highlightsTab': 'Highlights',
   'reader.bookmarksTab': 'Bookmarks',

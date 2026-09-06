@@ -312,6 +312,7 @@ export default {
   'reader.cantOpenPdf': '无法打开 PDF',
   'reader.cantOpenDjvu': '无法打开 DjVu 文件',
   'reader.noToc': '此书没有目录',
+  'reader.tocAuto': '此书未自带目录, 以下章节由正文自动识别',
   'reader.untitled': '(未命名)',
   'reader.highlightsTab': '划线想法',
   'reader.bookmarksTab': '书签',

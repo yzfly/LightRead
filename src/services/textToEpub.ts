@@ -4,10 +4,7 @@
  */
 import { zipSync, strToU8 } from 'fflate'
 import { marked } from 'marked'
-
-/** 中文网络小说与常见英文书的章节标题模式 */
-const CHAPTER_RE =
-  /^\s*(?:第\s*[0-9一二三四五六七八九十百千万零两〇]+\s*[章节卷回部集话]|(?:Chapter|CHAPTER|Part|PART)\s+[0-9IVXLC]+|序章|序言|楔子|前言|引子|后记|尾声|终章|番外(?:篇)?[0-9一二三四五六七八九十]*).{0,40}$/
+import { CHAPTER_RE } from './smartToc'
 
 /** TXT 常见 GBK 编码, 优先严格 UTF-8, 失败回退 GB18030 */
 export async function decodeText(blob: Blob): Promise<string> {

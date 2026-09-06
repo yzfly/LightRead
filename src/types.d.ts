@@ -32,3 +32,10 @@ declare module '*.vue' {
   const component: DefineComponent<{}, {}, any>
   export default component
 }
+
+declare module 'foliate-js/epubcfi.js' {
+  export function compare(a: string | unknown, b: string | unknown): number
+  export function parse(cfi: string): unknown
+  export function collapse(cfi: string, toEnd?: boolean): string
+  export const isCFI: RegExp
+}

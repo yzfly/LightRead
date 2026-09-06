@@ -19,6 +19,7 @@ import { t } from '../i18n'
 import { searchBook, type SearchHit } from '../services/bookSearch'
 import { chatStream, aiConfigured, readerSystemPrompt, explainPrompt, type AiMessage } from '../services/ai'
 import TocList, { type TocItem } from '../components/TocList.vue'
+import { buildSmartToc, findCurrentSmartItem, flattenToc } from '../services/smartToc'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,6 +32,9 @@ const meta = ref<BookMeta>()
 const loading = ref(true)
 const error = ref('')
 const toc = ref<TocItem[]>([])
+/** 书本身无目录时由正文识别生成 (见 services/smartToc); 章节定位改按 CFI 判定 */
+const tocAuto = ref(false)
+let smartTocFlat: Array<{ label: string; href: string }> = []
 const currentTocHref = ref<string>()
 const fraction = ref(0)
 const chapterLabel = ref('')
@@ -285,10 +289,33 @@ function onRelocate(e: CustomEvent) {
   chapterLabel.value = tocItem?.label?.trim() ?? ''
   currentTocHref.value = tocItem?.href
   currentCfi.value = cfi ?? ''
+  if (tocAuto.value) syncSmartTocPosition()
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
     if (cfi) library.saveProgress(bookId, cfi, frac ?? 0)
   }, 600)
+}
+
+/** 智能目录不经 foliate 的 TOC 进度, 按当前 CFI 自行判定所在章节 */
+function syncSmartTocPosition() {
+  const item = findCurrentSmartItem(smartTocFlat, currentCfi.value)
+  chapterLabel.value = item?.label ?? ''
+  currentTocHref.value = item?.href
+}
+
+/** 书没有目录 (或只有一项) 时, 扫描正文识别章节; 失败静默, 不影响阅读 */
+async function applySmartToc() {
+  const v = view
+  try {
+    const { items, flat } = await buildSmartToc(v)
+    if (v !== view || !items.length) return
+    smartTocFlat = flat
+    toc.value = items
+    tocAuto.value = true
+    syncSmartTocPosition()
+  } catch (e) {
+    console.warn('smart toc failed', e)
+  }
 }
 
 /**
@@ -824,6 +851,7 @@ onMounted(async () => {
     applyPrefs()
     await view.init({ lastLocation: meta.value.location })
     loading.value = false
+    if (flattenToc(toc.value).length <= 1) void applySmartToc()
   } catch (e: any) {
     console.error(e)
     error.value = e?.message ?? t('reader.cantOpenBook')
@@ -1069,6 +1097,7 @@ onBeforeUnmount(() => {
       <template v-if="panel === 'toc'">
         <h3>{{ t('reader.toc') }}</h3>
         <div class="panel-body">
+          <p v-if="tocAuto" class="panel-tip">{{ t('reader.tocAuto') }}</p>
           <TocList :items="toc" :current-href="currentTocHref" @navigate="navigateToc" />
           <p v-if="!toc.length" class="panel-empty">{{ t('reader.noToc') }}</p>
         </div>
