@@ -1656,11 +1656,17 @@ let panDrag: {
 let wheelPageDelta = 0
 let wheelPageReset: ReturnType<typeof setTimeout> | undefined
 let wheelPageLockedUntil = 0
+let wheelLastTs = 0
+/** 页内可滚动时, 只有停在边缘后新起的滚动才允许翻页 */
+let wheelEdgeArmed = false
 let touchGesture: {
   x: number
   y: number
   lastDistance: number
   pinching: boolean
+  /** 触摸开始时视口是否已在页首 / 页尾 (翻页模式上下滑动翻页用) */
+  atStart: boolean
+  atEnd: boolean
 } | null = null
 
 const liveRects = computed(() => {
@@ -1752,19 +1758,66 @@ function onPdfWheel(e: WheelEvent) {
   } else if (e.altKey) {
     e.preventDefault()
     viewport.scrollTop += e.deltaY * 4
-  } else if (bookPaged.value && zoom.value === 'fit-page' && Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+  } else if (bookPaged.value && Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+    const now = performance.now()
+    const dir: 1 | -1 = e.deltaY > 0 ? 1 : -1
+    if (viewport.scrollHeight - viewport.clientHeight > 1) {
+      // 单页上下滑动阅读: 页面高于视口时先交给原生滚动；停在页首/页尾后
+      // 重新发起的一段滚动才翻页，避免触控板惯性把整页直接带过去。
+      const fresh = now - wheelLastTs > 120
+      wheelLastTs = now
+      if (!atPagedEdge(viewport, dir)) {
+        wheelEdgeArmed = false
+        wheelPageDelta = 0
+        return
+      }
+      if (fresh) wheelEdgeArmed = true
+      if (!wheelEdgeArmed) return
+      e.preventDefault()
+      wheelPageDelta += e.deltaY
+      if (now >= wheelPageLockedUntil && Math.abs(wheelPageDelta) >= 72) {
+        wheelPageLockedUntil = now + 420
+        wheelEdgeArmed = false
+        wheelPageDelta = 0
+        void pagedTurnFromEdge(dir)
+      }
+      return
+    }
     // 整页/书籍视图中把触控板与滚轮的纵向意图转换为一次翻页，避免轻触连跳。
     e.preventDefault()
     clearTimeout(wheelPageReset)
     wheelPageDelta += e.deltaY
     wheelPageReset = setTimeout(() => { wheelPageDelta = 0 }, 180)
-    if (performance.now() >= wheelPageLockedUntil && Math.abs(wheelPageDelta) >= 72) {
-      wheelPageLockedUntil = performance.now() + 420
+    if (now >= wheelPageLockedUntil && Math.abs(wheelPageDelta) >= 72) {
+      wheelPageLockedUntil = now + 420
       if (wheelPageDelta > 0) nextPage()
       else prevPage()
       wheelPageDelta = 0
     }
   }
+}
+
+/** 翻页模式下视口是否已停在页首 (dir < 0) / 页尾 (dir > 0) */
+function atPagedEdge(viewport: HTMLElement, dir: 1 | -1): boolean {
+  return dir > 0
+    ? viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 1
+    : viewport.scrollTop <= 0
+}
+
+/** 从页面边缘继续滑动时翻页: 往后落到下一页页首，往前落到上一页页尾，保持上下滑动阅读连贯 */
+async function pagedTurnFromEdge(dir: 1 | -1) {
+  if (!bookPaged.value) return
+  if (dir > 0) {
+    const next = (pagedPages.value.at(-1) ?? currentPage.value) + 1
+    if (next > pageCount.value) return
+    await pagedGoto(next)
+    return
+  }
+  const prev = pagedPages.value[0] - 1
+  if (prev < 1) return
+  await pagedGoto(prev)
+  const box = pagedBox.value
+  if (box) box.scrollTo({ top: box.scrollHeight - box.clientHeight })
 }
 
 function touchDistance(touches: TouchList): number {
@@ -1782,16 +1835,21 @@ function onPdfTouchStart(e: TouchEvent) {
       y: 0,
       lastDistance: touchDistance(e.touches),
       pinching: true,
+      atStart: false,
+      atEnd: false,
     }
     return
   }
   const touch = e.touches[0]
   if (!touch) return
+  const viewport = e.currentTarget as HTMLElement | null
   touchGesture = {
     x: touch.clientX,
     y: touch.clientY,
     lastDistance: 0,
     pinching: false,
+    atStart: !!viewport && atPagedEdge(viewport, -1),
+    atEnd: !!viewport && atPagedEdge(viewport, 1),
   }
 }
 
@@ -1826,12 +1884,21 @@ function onPdfTouchEnd(e: TouchEvent) {
   if (!touch) return
   const dx = touch.clientX - gesture.x
   const dy = touch.clientY - gesture.y
-  if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.2) return
+  const horizontal = Math.abs(dx) >= 56 && Math.abs(dx) >= Math.abs(dy) * 1.2
+  // 上下滑动: 触摸开始时已停在页尾再上滑翻到下一页，停在页首再下滑回上一页；
+  // 页内还能滚动时交给原生滚动，不抢手势。
+  const vertical = !horizontal && Math.abs(dy) >= 56 && Math.abs(dy) >= Math.abs(dx) * 1.2
+  const verticalDir: 1 | -1 | 0 = !vertical ? 0
+    : dy < 0 && gesture.atEnd ? 1
+    : dy > 0 && gesture.atStart ? -1
+    : 0
+  if (!horizontal && !verticalDir) return
   liveSel.value = null
   selection.value = null
   dragSel = null
   suppressClick = true
-  if (dx < 0) nextPage()
+  if (verticalDir) void pagedTurnFromEdge(verticalDir)
+  else if (dx < 0) nextPage()
   else prevPage()
 }
 
@@ -3204,10 +3271,7 @@ function scrollByScreen(dir: 1 | -1) {
   const viewport = pdfLayout.value === 'reflow' ? reflowScroller.value : originalViewport()
   if (!viewport) return
   const moved = scrollViewportBy(0, dir * Math.max(80, viewport.clientHeight * 0.88))
-  if (bookPaged.value && !moved) {
-    if (dir > 0) nextPage()
-    else prevPage()
-  }
+  if (bookPaged.value && !moved) void pagedTurnFromEdge(dir)
 }
 
 function cycleFitMode() {
@@ -3350,12 +3414,12 @@ function runPdfShortcutCommand(command: PdfReaderShortcutCommandId) {
       break
     case 'lineUp': {
       const moved = scrollViewportBy(0, -48)
-      if (bookPaged.value && !moved) prevPage()
+      if (bookPaged.value && !moved) void pagedTurnFromEdge(-1)
       break
     }
     case 'lineDown': {
       const moved = scrollViewportBy(0, 48)
-      if (bookPaged.value && !moved) nextPage()
+      if (bookPaged.value && !moved) void pagedTurnFromEdge(1)
       break
     }
     case 'lineLeft': {

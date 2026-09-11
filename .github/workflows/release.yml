@@ -131,6 +131,15 @@ jobs:
           NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.3.11579264
         run: npx tauri android init
 
+      # `tauri android init` 生成的工程带的是 Tauri 默认图标; `tauri icon` 产出的
+      # Android 图标在 src-tauri/icons/android, 需要覆盖进工程, 否则 APK 显示默认图标 (#5)
+      - name: 写入应用图标
+        run: |
+          RES=src-tauri/gen/android/app/src/main/res
+          test -d "$RES"
+          cp -r src-tauri/icons/android/. "$RES/"
+          ls "$RES"/mipmap-xxxhdpi
+
       - name: 构建 APK (debug 签名, 可直接安装)
         env:
           NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/26.3.11579264

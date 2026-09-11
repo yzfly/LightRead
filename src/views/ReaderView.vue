@@ -585,8 +585,21 @@ function onSectionLoad(e: CustomEvent) {
     const st = touchStart
     touchStart = null
     if (!st || !t0) return
+    const dx = t0.clientX - st.x
+    const dy = t0.clientY - st.y
+    // 翻页模式下明显的上下滑动也翻页 (上滑下一页 / 下滑上一页), 单手竖向阅读更顺手;
+    // 正在选字 (长按后拖动) 不算。foliate 对竖向滑动本无动作, 但其 touchend 会做
+    // 吸附动画, 与翻页动画抢滚动位置, 先拦掉
+    if (settings.reader.flow === 'paginated' && Math.abs(dy) >= 60 && Math.abs(dy) >= Math.abs(dx) * 1.5) {
+      const sel = doc.getSelection()
+      if (sel && !sel.isCollapsed) return
+      e.stopImmediatePropagation()
+      suppressClickUntil = Date.now() + 700
+      turnPage(dy < 0 ? 'right' : 'left')
+      return
+    }
     // 有位移是滑动, 长按是选字, 都交给原有流程
-    if (Math.abs(t0.clientX - st.x) > 10 || Math.abs(t0.clientY - st.y) > 10) return
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) return
     if (Date.now() - st.t > 350) return
     e.stopImmediatePropagation()
     if (panel.value !== 'none' || settingsOpen.value || activeAnnotation.value) {
