@@ -140,6 +140,9 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 @media (prefers-color-scheme: dark) { .ambient i { opacity: .38; } .ambient::after { mix-blend-mode: screen; opacity: .12; } }
 @keyframes drift { to { transform: translate3d(6vw, 4vh, 0) scale(1.08); } }
 
+/* 中文标题只在标点、空格处换行; 一段放不下时才在字间断开 */
+h1, h2, h3 { word-break: keep-all; overflow-wrap: anywhere; }
+
 /* 磨砂玻璃 */
 .glass { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5); border: 1px solid var(--glass-line); box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow); border-radius: var(--r-lg); }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .glass { background: var(--glass-strong); } }

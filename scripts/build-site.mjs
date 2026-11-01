@@ -138,6 +138,7 @@ a { color:var(--brand); text-decoration:none; } a:hover { text-decoration:underl
 .doc h1 { font-family:var(--serif); font-size:clamp(30px,4.6vw,46px); line-height:1.25; letter-spacing:.01em; margin:0 0 20px; text-wrap:balance; }
 .doc h2 { font-family:var(--serif); font-size:clamp(22px,3vw,29px); line-height:1.35; margin:52px 0 14px; padding-top:24px; border-top:1px solid var(--rule); text-wrap:balance; }
 .doc hr + h2 { border-top:0; padding-top:0; }
+.doc h1, .doc h2, .doc h3 { word-break:keep-all; overflow-wrap:anywhere; }
 .doc h3 { font-family:var(--serif); font-size:20px; margin:34px 0 10px; } .doc h4 { font-size:17px; margin:24px 0 8px; }
 .doc p, .doc li { color:var(--ink-2); } .doc strong { color:var(--ink); } .doc li + li { margin-top:4px; }
 .doc blockquote { margin:22px 0; padding:6px 20px; border-left:2px solid var(--gold); background:var(--code); border-radius:0 12px 12px 0; }
