@@ -23,7 +23,7 @@
     "test:opds-library": "node --experimental-strip-types --test scripts/test-opds-library.mjs",
     "test:native-drop": "node --experimental-strip-types --test scripts/test-native-drop.mjs",
     "e2e:native-drop": "node scripts/e2e-native-drop.mjs",
-    "test:folder-pick": "node --experimental-strip-types --test scripts/test-folder-pick.mjs",
+    "test:folder-pick": "node --experimental-strip-types --test scripts/test-folder-pick.mjs scripts/test-folder-booklists.mjs",
     "test:library-upload": "node --experimental-strip-types --test scripts/test-library-upload.mjs scripts/test-library-upload-task.mjs scripts/test-opds-library.mjs",
     "e2e:library-upload": "node scripts/e2e-library-upload.mjs",
     "e2e:folder-pick": "node scripts/e2e-folder-pick.mjs",

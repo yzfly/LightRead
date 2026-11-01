@@ -9,13 +9,15 @@ import { t } from '../i18n'
 
 const props = defineProps<{
   action: 'import' | 'upload'
+  allowBooklists?: boolean
   scanning?: boolean
   scan?: FolderScan
   plan?: FolderPlan<FolderFile>
   /** 上传的单本上限 (MB), 用于「超过 N MB」 */
   maxMb?: number
 }>()
-const emit = defineEmits<{ confirm: []; cancel: [] }>()
+const emit = defineEmits<{ confirm: [createBooklists: boolean]; cancel: [] }>()
+const createBooklists = ref(true)
 const panel = ref<HTMLElement>()
 const confirmBtn = ref<HTMLButtonElement>()
 let previousFocus: HTMLElement | null = null
@@ -61,6 +63,10 @@ onBeforeUnmount(() => previousFocus?.focus?.())
           <p v-if="scan?.depthLimited" class="folder-warn">{{ t('folder.depthLimited') }}</p>
           <p v-if="!count" class="folder-muted">{{ t('folder.empty') }}</p>
           <p v-if="droppedCount" class="folder-muted">{{ t('folder.rule') }}</p>
+          <label v-if="action === 'import' && allowBooklists && count" class="folder-booklists">
+            <input v-model="createBooklists" type="checkbox" aria-describedby="folder-booklists-hint">
+            <span>{{ t('folder.createBooklists') }}<small id="folder-booklists-hint">{{ t('folder.booklistsHint') }}</small></span>
+          </label>
           <details v-if="count" class="folder-list folder-selected">
             <summary><svg class="folder-chevron" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M9.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 1 1-1.4-1.4l5.29-5.3-5.3-5.3a1 1 0 0 1 0-1.4z"/></svg>{{ t('folder.listSelected', { n: count }) }}</summary>
             <ul>
@@ -86,7 +92,7 @@ onBeforeUnmount(() => previousFocus?.focus?.())
         </template>
         <div class="folder-actions">
           <button class="btn btn-sm" @click="emit('cancel')">{{ t('common.cancel') }}</button>
-          <button ref="confirmBtn" class="btn btn-sm btn-primary folder-confirm" :disabled="scanning || !count" @click="emit('confirm')">
+          <button ref="confirmBtn" class="btn btn-sm btn-primary folder-confirm" :disabled="scanning || !count" @click="emit('confirm', action === 'import' && !!allowBooklists && createBooklists)">
             {{ t(action === 'upload' ? 'folder.upload' : 'folder.import', { n: count }) }}
           </button>
         </div>
@@ -114,6 +120,9 @@ onBeforeUnmount(() => previousFocus?.focus?.())
 .folder-path strong { display: block; font-weight: 500; }
 .folder-path small, .folder-list li > small { display: block; margin-top: 2px; color: var(--text-3); font-size: 12px; }
 .folder-list li > small { margin: 0; flex-shrink: 0; }
+.folder-booklists { display: flex; align-items: flex-start; gap: var(--space-2); color: var(--text); cursor: pointer; }
+.folder-booklists small { display: block; color: var(--text-2); }
+.folder-booklists input { accent-color: var(--brand); }
 .folder-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 @media (max-width: 600px) {
   .folder-actions .btn { flex: 1; min-height: 44px; }

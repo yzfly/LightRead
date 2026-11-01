@@ -90,6 +90,7 @@ try {
   await folderDialog.getByText('跳过的重复格式（2）').click()
   assert.equal(await folderDialog.locator('.folder-duplicates strong').innerText(), 'book.epub')
   assert.equal(await folderDialog.locator('.folder-duplicates small').innerText(), '跳过：book.mobi、sub/book.pdf')
+  assert.equal(await folderDialog.getByRole('checkbox', { name: '按文件夹建立书单' }).isChecked(), true)
   await page.screenshot({ path: `${tmp}/import-summary.png` })
   await folderDialog.getByRole('button', { name: '添加 5 本', exact: true }).click()
   await page.waitForFunction(() => document.querySelectorAll('.book-card').length === 5, null, { timeout: 45_000 })
@@ -97,6 +98,18 @@ try {
   for (const title of ['目录书 EPUB', '另一本书', '分卷 卷1', '分卷 卷2']) assert.ok(titles.includes(title), `missing ${title}`)
   assert.ok(!titles.includes('隐藏的书'), 'hidden files must not be imported')
   console.log('PASS folder import: format dedupe, hidden/unsupported filtering, volumes kept, 5 books imported')
+  const nestedList = page.locator('.booklist-chip').filter({ hasText: '我的书/分卷' })
+  await nestedList.waitFor()
+  await nestedList.click()
+  await page.waitForFunction(() => document.querySelectorAll('.book-card').length === 2)
+  assert.match((await page.locator('.book-card').allInnerTexts()).join(' '), /分卷 卷1/)
+  await page.locator('.booklist-chip').filter({ hasText: /^全部藏书/ }).click()
+  await page.waitForFunction(() => document.querySelectorAll('.book-card').length === 5)
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.locator('.booklist-chip').filter({ hasText: '我的书/分卷' }).waitFor()
+  assert.equal(await page.locator('.booklist-chip').filter({ hasText: '我的书' }).count(), 2)
+  console.log('PASS folder paths become persistent, filterable booklists')
+
 
   // 再选一次同一个文件夹: 已在藏书里的不重复导入
   await page.locator('header input[data-folder-input]').setInputFiles(importDir)
@@ -107,6 +120,18 @@ try {
   await folderDialog.waitFor({ state: 'detached' })
   assert.equal(await page.locator('.book-card').count(), 5)
   console.log('PASS re-picking the same folder skips books already in the library')
+
+  // 取消分类仍能导入书籍, 不额外创建书单。
+  const flatDir = join(tmp, '不分类')
+  writeTree(flatDir, { 'extra.epub': epub('取消分类的书') })
+  await page.locator('header input[data-folder-input]').setInputFiles(flatDir)
+  await folderDialog.waitFor()
+  await folderDialog.getByRole('checkbox', { name: '按文件夹建立书单' }).uncheck()
+  await folderDialog.getByRole('button', { name: '添加 1 本', exact: true }).click()
+  await page.waitForFunction(() => document.querySelectorAll('.book-card').length === 6)
+  await page.locator('.import-bar').waitFor({ state: 'detached' })
+  assert.equal(await page.locator('.booklist-chip').filter({ hasText: '不分类' }).count(), 0)
+  console.log('PASS folder booklists can be disabled')
 
   // 上传到私人书库
   await page.goto(`${base}/#/catalogs`, { waitUntil: 'networkidle' })
@@ -129,6 +154,7 @@ try {
   await page.locator('.upload-overlay > input[data-folder-input]').setInputFiles(uploadDir)
   await folderDialog.waitFor()
   assert.equal(await folderDialog.locator('.folder-summary').innerText(), '找到 2 本书（另有 1 个重复格式已跳过、1 个不支持的文件、1 个超过 1 MB）')
+  assert.equal(await folderDialog.getByRole('checkbox', { name: '按文件夹建立书单' }).count(), 0)
   await folderDialog.getByText('超过大小上限（1）').click()
   assert.match(await folderDialog.locator('.folder-oversize li').innerText(), /big\.pdf\s+2\.0 MB/)
   await page.screenshot({ path: `${tmp}/upload-summary.png` })

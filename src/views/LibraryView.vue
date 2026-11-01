@@ -24,6 +24,7 @@ import { weekStartOf } from '../services/readingStats'
 import BookCard from '../components/BookCard.vue'
 import LibraryUploadDialog from '../components/LibraryUploadDialog.vue'
 import FolderPickDialog from '../components/FolderPickDialog.vue'
+import { addFolderBooklists } from '../services/folderBooklists'
 import BooklistWantedPanel from '../components/BooklistWantedPanel.vue'
 import BooklistShareDialog from '../components/BooklistShareDialog.vue'
 import BooklistImportDialog from '../components/BooklistImportDialog.vue'
@@ -268,7 +269,7 @@ const filtered = computed(() => {
   ]
 })
 
-async function handleFiles(files: FileList | Array<File | LazyImportFile | NativeImportFile>) {
+async function handleFiles(files: FileList | Array<File | LazyImportFile | NativeImportFile>, folder?: { name: string; entries: FolderFile[] }) {
   if (!files.length || importing.value) return
   const kind = pageKind.value
   const booklistId = kind === 'book' ? activeBooklistId.value : ''
@@ -280,6 +281,7 @@ async function handleFiles(files: FileList | Array<File | LazyImportFile | Nativ
     await library.refresh()
     const ids = results.filter(r => r.ok && r.bookId).map(r => r.bookId!)
     if (booklistId && ids.length) await library.addBooksToBooklist(booklistId, ids)
+    if (kind === 'book' && folder) await addFolderBooklists(library, folder.name, folder.entries, results)
     if (ids.length) toast(t(kind === 'paper' ? 'library.importPapersSuccess' : 'library.importSuccess', { count: ids.length }), 'success')
     for (const f of results.filter(r => !r.ok)) toast(`${f.fileName}: ${f.error}`, 'error', 5000)
   } catch (e: any) {
@@ -343,10 +345,11 @@ function showFolderPlan(scan: FolderScan) {
   folderPick.value = { scanning: false, scan, plan: planFolderPick(scan.entries, { formats: IMPORT_FORMATS, existingFileNames: existing }) }
 }
 
-function confirmFolderImport() {
+function confirmFolderImport(createBooklists: boolean) {
   const selected = folderPick.value?.plan?.selected ?? []
+  const name = folderPick.value?.scan?.name ?? ''
   folderPick.value = null
-  if (selected.length) void handleFiles(selected.map(importEntry))
+  if (selected.length) void handleFiles(selected.map(importEntry), createBooklists ? { name, entries: selected } : undefined)
 }
 
 function importEntry(entry: FolderFile): File | LazyImportFile | NativeImportFile {
@@ -1475,6 +1478,7 @@ async function batchClearTags() {
       :scanning="folderPick.scanning"
       :scan="folderPick.scan"
       :plan="folderPick.plan"
+      :allow-booklists="!paperMode"
       @confirm="confirmFolderImport"
       @cancel="folderPick = null"
     />
