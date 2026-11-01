@@ -66,6 +66,7 @@
     "test:display-title": "node --experimental-strip-types --test scripts/test-display-title.mjs",
     "test:cover-repair": "node --experimental-strip-types --test scripts/test-cover-repair.mjs",
     "test:about-links": "node --experimental-strip-types --test scripts/test-about-links.mjs",
+    "test:site-links": "node --test scripts/test-site-links.mjs",
     "check:style-tokens": "node scripts/check-style-tokens.mjs",
     "e2e:cover-repair": "node scripts/e2e-cover-repair.mjs",
     "test:key-words": "node --experimental-strip-types --test scripts/test-key-words.mjs",

@@ -8,6 +8,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { marked, type Tokens } from 'marked'
 import { t } from '../i18n'
+import { siteUrlForRepoPath } from '../services/siteLinks'
 
 const route = useRoute()
 const router = useRouter()
@@ -82,6 +83,11 @@ onMounted(async () => {
   }
 })
 
+/** 在官网打开当前这一章 (网页版与应用内同一份 docs/manual) */
+function openOnWeb() {
+  void openExternal(siteUrlForRepoPath(`docs/manual/${current.value}`))
+}
+
 const chapters = computed(() => files.map(f => ({ file: f, title: titles.value[f] ?? f.replace(/\.md$/, '') })))
 
 async function openExternal(url: string) {
@@ -118,9 +124,10 @@ function onClick(e: MouseEvent) {
     }
     return
   }
-  // 仓库里的其他文件 (../paper-reading.md 等) 去 GitHub 看
-  const resolved = new URL(href, `${REPO}docs/manual/`).href
-  void openExternal(resolved)
+  // 仓库里的其他文件 (../paper-reading.md 等) 去官网看, 官网没有的去 GitHub
+  let repoPath = new URL(href, `${REPO}docs/manual/`).href.slice(REPO.length)
+  try { repoPath = decodeURIComponent(repoPath) } catch { /* 保持原样 */ }
+  void openExternal(siteUrlForRepoPath(repoPath))
 }
 </script>
 
@@ -131,6 +138,9 @@ function onClick(e: MouseEvent) {
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M14.7 5.3a1 1 0 0 1 0 1.4L9.42 12l5.3 5.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.42 0z"/></svg>
       </button>
       <h1>{{ t('manual.title') }}</h1>
+      <button class="icon-btn web-btn" :title="t('manual.openOnWeb')" :aria-label="t('manual.openOnWeb')" @click="openOnWeb">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>
+      </button>
     </header>
 
     <div class="manual-body">
@@ -170,6 +180,9 @@ function onClick(e: MouseEvent) {
   align-items: center;
   gap: 8px;
   padding: calc(12px + var(--lr-safe-top)) var(--page-x) 12px;
+}
+.web-btn {
+  margin-left: auto;
 }
 .page-head h1 {
   margin: 0;

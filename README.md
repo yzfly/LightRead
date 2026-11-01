@@ -14,7 +14,7 @@ EPUB / PDF / MOBI / AZW3 / TXT 全格式 · 点睛阅读 · 多种阅读模式 �
 [![Downloads](https://img.shields.io/github/downloads/yzfly/LightRead/total)](https://github.com/yzfly/LightRead/releases)
 [![License: AGPL v3+](https://img.shields.io/badge/License-AGPL_v3%2B-blue.svg)](LICENSE)
 
-**[下载桌面版](https://github.com/yzfly/LightRead/releases/latest)** · **[下载安卓 App](https://github.com/yzfly/LightRead/releases?q=app-v&expanded=true)** · [国内镜像（GitCode）](https://gitcode.com/langgpt/LightRead/releases) · [使用手册](docs/manual/README.md) · [反馈建议](https://github.com/yzfly/LightRead/issues)
+**[官网](https://code.jiangshu.ai/LightRead/)** · **[下载桌面版](https://code.jiangshu.ai/LightRead/#download)** · **[下载安卓 App](https://code.jiangshu.ai/LightRead/download/android)** · [国内镜像（GitCode）](https://gitcode.com/langgpt/LightRead/releases) · [使用手册](https://code.jiangshu.ai/LightRead/manual/) · [反馈建议](https://github.com/yzfly/LightRead/issues)
 
 Windows · macOS · Linux · Android · 网页 PWA
 
@@ -130,6 +130,7 @@ Windows · macOS · Linux · Android · 网页 PWA
 
 | 渠道 | 地址 | 适合 |
 | --- | --- | --- |
+| 官网固定链接 | `https://code.jiangshu.ai/LightRead/download/<平台>`：[windows](https://code.jiangshu.ai/LightRead/download/windows) · [mac](https://code.jiangshu.ai/LightRead/download/mac) · [mac-intel](https://code.jiangshu.ai/LightRead/download/mac-intel) · [linux](https://code.jiangshu.ai/LightRead/download/linux) · [linux-deb](https://code.jiangshu.ai/LightRead/download/linux-deb) · [linux-rpm](https://code.jiangshu.ai/LightRead/download/linux-rpm) · [android](https://code.jiangshu.ai/LightRead/download/android) | 链接不变，始终下载最新版；加 `?mirror=gitcode` 走国内镜像 |
 | GitHub Releases · 桌面版 | [github.com/yzfly/LightRead/releases/latest](https://github.com/yzfly/LightRead/releases/latest) | Windows、macOS、Linux |
 | GitHub Releases · 安卓 App | [以 `app-v` 开头的版本](https://github.com/yzfly/LightRead/releases?q=app-v&expanded=true) | Android 手机、平板 |
 | GitCode 国内镜像 | [gitcode.com/langgpt/LightRead/releases](https://gitcode.com/langgpt/LightRead/releases) | 访问 GitHub 慢时使用，桌面版与 App 均有 |

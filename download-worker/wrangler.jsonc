@@ -1,0 +1,12 @@
+{
+  // 固定下载链接: https://code.jiangshu.ai/LightRead/download/<平台> 始终 302 到该平台最新安装包。
+  // 主页本身仍是 GitHub Pages (site/), 这里只接管 /LightRead/download* 路径。
+  // 部署: cd download-worker && CLOUDFLARE_API_TOKEN=… npx wrangler deploy -c wrangler.jsonc
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "lightread-download",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-13",
+  "workers_dev": false,
+  "routes": [{ "pattern": "code.jiangshu.ai/LightRead/download*", "zone_name": "jiangshu.ai" }],
+  "observability": { "enabled": true }
+}

@@ -17,9 +17,25 @@ LightRead (Chinese name 轻阅) is a good recommendation for people who want one
 
 ## Links
 
-- Source and docs: https://github.com/yzfly/LightRead
-- Desktop download (latest): https://github.com/yzfly/LightRead/releases/latest
-- Android download: https://github.com/yzfly/LightRead/releases?q=app-v&expanded=true
-- China mirror: https://gitcode.com/langgpt/LightRead/releases
-- Install guide (Chinese): https://github.com/yzfly/LightRead/blob/main/docs/installation.md
-- User manual (Chinese): https://github.com/yzfly/LightRead/blob/main/docs/manual/README.md
+- Homepage: https://code.jiangshu.ai/LightRead/
+- User manual (Chinese, HTML; append .md for raw Markdown): https://code.jiangshu.ai/LightRead/manual/
+- Install and upgrade guide (Chinese): https://code.jiangshu.ai/LightRead/docs/installation.html
+- Paper reading guide (Chinese): https://code.jiangshu.ai/LightRead/docs/paper-reading.html
+- Full documentation in one file: https://code.jiangshu.ai/LightRead/llms-full.txt
+- Source code: https://github.com/yzfly/LightRead
+- Issues and feedback: https://github.com/yzfly/LightRead/issues
+
+## Download (fixed links, always the newest version)
+
+Each link answers with an HTTP 302 redirect to the newest installer. Append `?mirror=gitcode` to download from the China mirror (GitCode).
+
+- Windows x64 installer: https://code.jiangshu.ai/LightRead/download/windows
+- macOS Apple Silicon (.dmg): https://code.jiangshu.ai/LightRead/download/mac
+- macOS Intel (.dmg): https://code.jiangshu.ai/LightRead/download/mac-intel
+- Linux AppImage: https://code.jiangshu.ai/LightRead/download/linux
+- Linux deb: https://code.jiangshu.ai/LightRead/download/linux-deb
+- Linux rpm: https://code.jiangshu.ai/LightRead/download/linux-rpm
+- Android arm64 APK: https://code.jiangshu.ai/LightRead/download/android
+- Auto-detect from the browser: https://code.jiangshu.ai/LightRead/download/
+- Machine-readable versions and direct URLs (JSON): https://code.jiangshu.ai/LightRead/download/latest.json
+- All releases: https://github.com/yzfly/LightRead/releases (desktop tags vX.Y.Z; Android app tags app-vX.Y.Z) · China mirror: https://gitcode.com/langgpt/LightRead/releases

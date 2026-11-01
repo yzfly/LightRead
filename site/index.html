@@ -5,422 +5,624 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>轻阅 LightRead · 开源免费的全格式电子书阅读器</title>
 <meta name="description" content="轻阅 LightRead：免费开源、本地优先的电子书与 PDF 阅读器。EPUB / PDF / MOBI / AZW3 / TXT 全格式，点睛阅读、多种阅读模式、听书、PDF 对照翻译、书摘导出与金句卡片，Windows / macOS / Linux / Android 多端同步。">
-<meta name="theme-color" content="#0066cf">
+<link rel="canonical" href="https://code.jiangshu.ai/LightRead/">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate" type="text/plain" href="llms.txt" title="llms.txt">
+<link rel="sitemap" type="application/xml" href="sitemap.xml">
+<meta name="theme-color" content="#f6f1e7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1015" media="(prefers-color-scheme: dark)">
+<meta property="og:site_name" content="轻阅 LightRead">
 <meta property="og:title" content="轻阅 LightRead · 让想读的书，变成读进去的书">
 <meta property="og:description" content="免费开源的全格式电子书阅读器：点睛阅读、听书、PDF 对照翻译、书摘导出与金句卡片，多端同步。">
-<meta property="og:image" content="https://yzfly.github.io/LightRead/assets/feature-library.webp">
+<meta property="og:url" content="https://code.jiangshu.ai/LightRead/">
+<meta property="og:image" content="https://code.jiangshu.ai/LightRead/assets/feature-library.webp">
 <meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://code.jiangshu.ai/LightRead/#app",
+      "name": "LightRead 轻阅",
+      "alternateName": ["LightRead", "轻阅"],
+      "description": "Free, open-source (AGPL-3.0), local-first ebook and PDF reader. Reads EPUB, PDF, MOBI, AZW, AZW3, FB2, TXT, Markdown, HTML, DjVu and CBZ/CBR comics. Key-idea highlighting (点睛阅读), typewriter and lyrics reading modes, text to speech, bilingual PDF translation, highlight export and quote cards, sync via LightRead account or WebDAV.",
+      "applicationCategory": "BookApplication",
+      "operatingSystem": "Windows 10, Windows 11, macOS, Linux, Android 7.0+",
+      "softwareVersion": "__DESKTOP_VERSION__",
+      "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "url": "https://code.jiangshu.ai/LightRead/",
+      "downloadUrl": "https://code.jiangshu.ai/LightRead/download/",
+      "installUrl": "https://code.jiangshu.ai/LightRead/#download",
+      "softwareHelp": { "@type": "CreativeWork", "url": "https://code.jiangshu.ai/LightRead/manual/" },
+      "codeRepository": "https://github.com/yzfly/LightRead",
+      "screenshot": "https://code.jiangshu.ai/LightRead/assets/feature-library.webp",
+      "inLanguage": ["zh-CN", "en"]
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "LightRead 轻阅 Android App",
+      "applicationCategory": "BookApplication",
+      "operatingSystem": "Android 7.0+ (arm64)",
+      "softwareVersion": "__APP_VERSION__",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "downloadUrl": "https://code.jiangshu.ai/LightRead/download/android",
+      "isPartOf": { "@id": "https://code.jiangshu.ai/LightRead/#app" }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "轻阅收费吗？", "acceptedAnswer": { "@type": "Answer", "text": "完全免费，没有广告和会员。AI 翻译、智能点睛等功能使用你自己配置的模型服务，可能产生服务商费用；也提供试用额度。" } },
+        { "@type": "Question", "name": "我的书和笔记会上传吗？", "acceptedAnswer": { "@type": "Answer", "text": "不会，除非你开启同步。本地阅读不需要账号；开启轻阅账号或 WebDAV 同步后，进度、笔记、书单等才会在你的设备间同步。单本书可以设为私密，永不离开本机。" } },
+        { "@type": "Question", "name": "能导出微信读书那样的笔记吗？", "acceptedAnswer": { "@type": "Answer", "text": "可以。阅读器的「笔记」面板底部有「复制全部」和「导出」：纯文本与微信读书「复制全部笔记」同一版式，也能导出 Markdown、JSON 和 Readwise CSV。" } },
+        { "@type": "Question", "name": "支持 Kindle 的书吗？", "acceptedAnswer": { "@type": "Answer", "text": "支持 MOBI、AZW、AZW3。不支持 KFX 格式和 DRM 加密的文件。" } },
+        { "@type": "Question", "name": "手机能和电脑同步吗？", "acceptedAnswer": { "@type": "Answer", "text": "能。用轻阅账号（邮箱验证码登录）或自己的 WebDAV，同步阅读进度、划线笔记、书签、书单、阅读记录和设置；书籍文件也可以一起同步。" } },
+        { "@type": "Question", "name": "怎样总是下载到最新版？", "acceptedAnswer": { "@type": "Answer", "text": "用固定下载链接 https://code.jiangshu.ai/LightRead/download/<平台>（windows、mac、mac-intel、linux、linux-deb、linux-rpm、android），它始终跳到最新版安装包；加 ?mirror=gitcode 走国内镜像。" } }
+      ]
+    }
+  ]
+}
+</script>
 <style>
-/* 版式: 窄栏居中的「书页」节奏; 每个功能一屏, 文左图右交替; 下载区像版权页一样克制 */
+/*
+ * 版式: 纸页暖底 + 远处晕开的墨色与灯光 (固定背景), 内容浮在磨砂玻璃上。
+ * 标题用宋体, 正文用无衬线; 章节以「壹 贰 叁」编号, 像一本书的目录。
+ */
 :root {
-  --paper: #fbfaf7;
-  --paper-2: #f3f0ea;
-  --card: #ffffff;
-  --ink: #1d2430;
-  --ink-2: #4c5665;
-  --ink-3: #6b7685;
-  --rule: #e4e0d8;
-  --brand: #0066cf;
-  --brand-ink: #004f9f;
-  --brand-soft: #e3effc;
-  --accent: #b9773a;
-  --serif: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "Noto Serif SC", SimSun, serif;
-  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --paper: #f6f1e7;
+  --ink: #1b1f27;
+  --ink-2: #474e5a;
+  --ink-3: #6f7682;
+  --rule: rgba(60, 50, 30, .14);
+  --brand: #1a5fe0;
+  --brand-ink: #0f47b8;
+  --gold: #b07a2a;
+  --glass: rgba(255, 253, 248, .58);
+  --glass-strong: rgba(255, 253, 248, .78);
+  --glass-edge: rgba(255, 255, 255, .75);
+  --glass-line: rgba(70, 55, 30, .12);
+  --shadow: 0 1px 1px rgba(60, 45, 20, .04), 0 10px 30px -8px rgba(60, 45, 20, .18), 0 40px 80px -30px rgba(40, 30, 10, .22);
+  --blob-1: #f1c27d;
+  --blob-2: #8fb3ff;
+  --blob-3: #c9d9b8;
+  --serif: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "Noto Serif SC", "Iowan Old Style", Georgia, SimSun, serif;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --shadow: 0 1px 2px rgba(29, 36, 48, .06), 0 12px 32px rgba(29, 36, 48, .10);
+  --r-lg: 24px;
+  --r: 16px;
+  --r-sm: 10px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #121417; --paper-2: #181b20; --card: #1b1e23;
-    --ink: #e8eaee; --ink-2: #b6bdc7; --ink-3: #8b94a1; --rule: #2b3038;
-    --brand: #5b8dff; --brand-ink: #8fb0ff; --brand-soft: #1c2a47; --accent: #d9a46d;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .45);
+    --paper: #0e1015;
+    --ink: #ece8df;
+    --ink-2: #b9b4a9;
+    --ink-3: #8a867d;
+    --rule: rgba(255, 240, 210, .10);
+    --brand: #7aa6ff;
+    --brand-ink: #a6c3ff;
+    --gold: #e0b265;
+    --glass: rgba(28, 31, 39, .55);
+    --glass-strong: rgba(30, 33, 42, .8);
+    --glass-edge: rgba(255, 255, 255, .10);
+    --glass-line: rgba(255, 240, 210, .09);
+    --shadow: 0 1px 1px rgba(0, 0, 0, .3), 0 14px 40px -10px rgba(0, 0, 0, .6), 0 40px 90px -30px rgba(0, 0, 0, .7);
+    --blob-1: #8a5a1e;
+    --blob-2: #1f3f8f;
+    --blob-3: #2d4a3a;
     color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.75; -webkit-font-smoothing: antialiased; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; -webkit-text-size-adjust: 100%; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.8; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
 img { max-width: 100%; height: auto; display: block; }
 a { color: var(--brand); text-decoration: none; }
-a:hover { text-decoration: underline; }
-:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 4px; }
-.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left)); padding-right: max(20px, env(safe-area-inset-right)); }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 6px; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+@media (min-width: 720px) { .wrap { padding-left: max(32px, env(safe-area-inset-left)); padding-right: max(32px, env(safe-area-inset-right)); } }
+
+/* 背景: 三团晕开的光 + 纸纹 */
+.ambient { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.ambient i { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .55; }
+.ambient i:nth-child(1) { width: 52vw; height: 52vw; left: -14vw; top: -18vw; background: var(--blob-1); animation: drift 38s ease-in-out infinite alternate; }
+.ambient i:nth-child(2) { width: 46vw; height: 46vw; right: -16vw; top: 18vh; background: var(--blob-2); opacity: .42; animation: drift 46s ease-in-out infinite alternate-reverse; }
+.ambient i:nth-child(3) { width: 40vw; height: 40vw; left: 22vw; bottom: -22vw; background: var(--blob-3); opacity: .45; animation: drift 52s ease-in-out infinite alternate; }
+.ambient::after { content: ""; position: absolute; inset: 0; opacity: .35; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .38 0 0 0 0 .25 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+@media (prefers-color-scheme: dark) { .ambient i { opacity: .38; } .ambient::after { mix-blend-mode: screen; opacity: .12; } }
+@keyframes drift { to { transform: translate3d(6vw, 4vh, 0) scale(1.08); } }
+
+/* 磨砂玻璃 */
+.glass { background: var(--glass); -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5); border: 1px solid var(--glass-line); box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow); border-radius: var(--r-lg); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .glass { background: var(--glass-strong); } }
 
 /* 顶栏 */
-.nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--rule); }
-.nav .wrap { display: flex; align-items: center; gap: 24px; height: 60px; }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 600; font-size: 17px; }
+.nav { position: sticky; top: 0; z-index: 20; padding-top: max(10px, env(safe-area-inset-top)); }
+.nav-bar { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 10px 0 16px; border-radius: 999px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 600; font-size: 16px; white-space: nowrap; }
 .brand:hover { text-decoration: none; }
 .brand img { width: 28px; height: 28px; }
-.brand small { font-weight: 400; color: var(--ink-3); font-size: 14px; }
-.nav-links { display: flex; gap: 22px; margin-left: auto; font-size: 15px; }
-.nav-links a { color: var(--ink-2); }
-.nav-links a:hover { color: var(--ink); text-decoration: none; }
-.nav-cta { padding: 7px 16px; border-radius: 999px; background: var(--brand); color: #fff !important; font-weight: 500; }
-@media (max-width: 760px) { .nav-links a:not(.nav-cta):not(.gh) { display: none; } .nav-links { gap: 14px; } }
+.brand small { font-weight: 400; color: var(--ink-3); font-size: 13px; letter-spacing: .02em; }
+.nav-links { display: flex; align-items: center; gap: 4px; margin-left: auto; font-size: 15px; }
+.nav-links a { color: var(--ink-2); padding: 7px 12px; border-radius: 999px; }
+.nav-links a:hover { color: var(--ink); background: var(--glass-line); text-decoration: none; }
+.nav-links .nav-cta { background: var(--ink); color: var(--paper); font-weight: 500; padding: 8px 18px; margin-left: 6px; }
+.nav-links .nav-cta:hover { background: var(--brand); color: #fff; }
+@media (max-width: 760px) { .nav-links a.opt { display: none; } .brand small { display: none; } }
 
 /* 首屏 */
-.hero { padding: 72px 0 40px; }
-.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; }
-.eyebrow { display: inline-flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink-3); letter-spacing: .04em; }
-.eyebrow b { color: var(--accent); font-weight: 500; }
-h1 { font-family: var(--serif); font-weight: 700; font-size: clamp(36px, 6.4vw, 68px); line-height: 1.18; letter-spacing: .01em; margin: 14px 0 18px; text-wrap: balance; }
-h1 em { font-style: normal; color: var(--brand); }
-.lede { font-size: clamp(17px, 2.1vw, 20px); color: var(--ink-2); max-width: 40em; margin: 0; }
-.cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 30px; }
-.btn { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 22px; border-radius: 12px; font-size: 16px; font-weight: 500; border: 1px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; }
-.btn:hover { text-decoration: none; border-color: var(--ink-3); }
-.btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
-.btn-primary:hover { background: var(--brand-ink); border-color: var(--brand-ink); }
+.hero { padding: 72px 0 24px; text-align: center; }
+.eyebrow { display: inline-flex; align-items: center; gap: 10px; padding: 6px 16px; border-radius: 999px; font-size: 13.5px; color: var(--ink-2); letter-spacing: .06em; }
+.eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 22%, transparent); }
+h1 { font-family: var(--serif); font-weight: 700; font-size: clamp(40px, 7.2vw, 84px); line-height: 1.14; letter-spacing: .02em; margin: 26px auto 22px; text-wrap: balance; max-width: 14em; }
+h1 em { font-style: normal; background: linear-gradient(100deg, var(--brand), color-mix(in srgb, var(--brand) 40%, var(--gold))); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lede { font-size: clamp(16.5px, 2vw, 19px); color: var(--ink-2); max-width: 36em; margin: 0 auto; }
+.cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 34px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 50px; padding: 0 24px; border-radius: 999px; font-size: 16px; font-weight: 500; color: var(--ink); cursor: pointer; border: 1px solid var(--glass-line); transition: transform .2s ease, background .2s ease, box-shadow .2s ease; }
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
 .btn svg { width: 18px; height: 18px; flex-shrink: 0; }
-.cta-note { width: 100%; font-size: 13.5px; color: var(--ink-3); margin: 4px 0 0; }
-.platforms { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; font-size: 14px; color: var(--ink-3); }
-.platforms span::before { content: "·"; margin-right: 18px; color: var(--rule); }
-.platforms span:first-child::before { content: none; }
-.hero-shot { position: relative; margin-top: 8px; }
-.hero-shot .desk { border-radius: 14px; box-shadow: var(--shadow); border: 1px solid var(--rule); width: 100%; height: auto; }
-.hero-shot .phone { position: absolute; right: 3%; bottom: -8%; width: 19%; min-width: 108px; border-radius: 18px; box-shadow: var(--shadow); border: 5px solid #111; background: #111; }
-@media (max-width: 560px) { .hero-shot .phone { display: none; } }
+.btn-primary { background: var(--brand); border-color: transparent; color: #fff; box-shadow: 0 10px 30px -10px color-mix(in srgb, var(--brand) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, .25); }
+.btn-primary:hover { background: var(--brand-ink); }
+@media (prefers-color-scheme: dark) { .btn-primary { color: #0b1020; } }
+.cta-note { margin: 16px 0 0; font-size: 14px; color: var(--ink-3); }
+.platforms { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 20px; margin-top: 18px; font-size: 13.5px; color: var(--ink-3); letter-spacing: .04em; }
 
-/* 格式条 */
-.formats { margin: 72px 0 0; padding: 22px 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
-.formats .wrap { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline; justify-content: center; font-family: var(--mono); font-size: 14px; color: var(--ink-2); letter-spacing: .04em; }
-.formats strong { font-family: var(--sans); font-weight: 500; color: var(--ink-3); letter-spacing: 0; margin-right: 4px; }
+.stage { position: relative; margin: 64px auto 0; max-width: 1080px; }
+.stage .frame { padding: 10px; }
+.stage .frame img { border-radius: 16px; width: 100%; }
+.stage .phone { position: absolute; right: -2%; bottom: -10%; width: 21%; min-width: 120px; padding: 7px; border-radius: 30px; }
+.stage .phone img { border-radius: 24px; }
+.float { position: absolute; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 16px; font-size: 14px; color: var(--ink-2); text-align: left; line-height: 1.4; animation: bob 7s ease-in-out infinite; }
+.float b { display: block; color: var(--ink); font-size: 15px; }
+.float .ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
+.float .ic svg { width: 18px; height: 18px; }
+.float.f1 { left: -3%; top: 18%; }
+.float.f2 { left: 6%; bottom: -6%; animation-delay: -3s; }
+.float.f2 .ic { background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); }
+@keyframes bob { 50% { transform: translateY(-6px); } }
+@media (max-width: 720px) { .float, .stage .phone { display: none; } .stage { margin-top: 44px; } }
 
-/* 功能 */
-.section { padding: 96px 0 0; }
-.section-head { max-width: 40em; margin-bottom: 40px; }
-.kicker { font-size: 13px; font-weight: 600; letter-spacing: .14em; color: var(--accent); text-transform: uppercase; }
-h2 { font-family: var(--serif); font-size: clamp(28px, 4vw, 40px); line-height: 1.3; margin: 8px 0 12px; text-wrap: balance; }
-h3 { font-family: var(--serif); font-size: clamp(22px, 2.6vw, 28px); line-height: 1.35; margin: 0 0 12px; text-wrap: balance; }
-.section-head p, .feature p { color: var(--ink-2); margin: 0; }
-.feature { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 48px; align-items: center; padding: 44px 0; border-top: 1px solid var(--rule); }
+/* 格式 */
+.formats { margin: 110px auto 0; padding: 18px 24px; display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline; justify-content: center; font-family: var(--mono); font-size: 13.5px; color: var(--ink-2); letter-spacing: .06em; max-width: 920px; border-radius: 999px; }
+.formats strong { font-family: var(--serif); font-weight: 600; color: var(--gold); letter-spacing: .1em; }
+@media (max-width: 720px) { .formats { border-radius: var(--r); margin-top: 64px; } }
+
+/* 章节 */
+.section { padding: 120px 0 0; }
+.chapter { display: flex; align-items: center; gap: 14px; font-family: var(--serif); color: var(--gold); font-size: 15px; letter-spacing: .3em; }
+.chapter::after { content: ""; flex: 0 0 56px; height: 1px; background: currentColor; opacity: .5; }
+h2 { font-family: var(--serif); font-size: clamp(30px, 4.4vw, 46px); line-height: 1.25; letter-spacing: .01em; margin: 14px 0 14px; text-wrap: balance; }
+h3 { font-family: var(--serif); font-size: clamp(23px, 2.7vw, 30px); line-height: 1.35; margin: 0 0 14px; text-wrap: balance; }
+.section-head { max-width: 760px; margin-bottom: 48px; }
+.section-head p { max-width: 36em; }
+.section-head p { color: var(--ink-2); margin: 0; font-size: 17px; }
+
+.feature { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; align-items: center; padding: 48px 0; }
 .feature:nth-of-type(even) { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
 .feature:nth-of-type(even) .feature-text { order: 2; }
 .feature-text { min-width: 0; }
-.feature ul { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; color: var(--ink-2); font-size: 15px; }
-.feature li { padding-left: 20px; position: relative; }
-.feature li::before { content: ""; position: absolute; left: 2px; top: .72em; width: 8px; height: 2px; background: var(--accent); }
-.feature figure { margin: 0; min-width: 0; }
-.feature figure img { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--rule); box-shadow: var(--shadow); }
-.feature .new { display: inline-block; margin-left: 10px; vertical-align: 4px; font-family: var(--sans); font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand-ink); }
+.feature-text .num { font-family: var(--serif); font-size: 14px; color: var(--ink-3); letter-spacing: .2em; margin-bottom: 10px; display: block; }
+.feature-text p { color: var(--ink-2); margin: 0; }
+.feature ul { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; color: var(--ink-2); font-size: 15px; }
+.feature li { padding-left: 22px; position: relative; }
+.feature li::before { content: ""; position: absolute; left: 2px; top: .78em; width: 10px; height: 1px; background: var(--gold); }
+.feature figure { margin: 0; min-width: 0; padding: 8px; }
+.feature figure img { width: 100%; border-radius: 14px; }
+.new { display: inline-block; margin-left: 10px; vertical-align: 5px; font-family: var(--sans); font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); letter-spacing: .06em; }
 @media (max-width: 860px) {
-  .feature, .feature:nth-of-type(even) { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .feature, .feature:nth-of-type(even) { grid-template-columns: minmax(0, 1fr); gap: 28px; padding: 36px 0; }
   .feature:nth-of-type(even) .feature-text { order: 0; }
 }
+.cards { display: flex; gap: 14px; align-items: flex-start; padding: 18px !important; }
+.cards img { flex: 1; min-width: 0; border-radius: 10px !important; box-shadow: 0 12px 30px -12px rgba(0, 0, 0, .35); }
+.cards img:nth-child(2) { margin-top: 30px; }
 
-/* 金句卡片排 */
-.cards { display: flex; gap: 16px; align-items: flex-start; }
-.cards img { flex: 1; min-width: 0; border-radius: 8px; border: 1px solid var(--rule); box-shadow: var(--shadow); }
-.cards img:nth-child(2) { margin-top: 28px; }
+/* 摘句 */
+.quote { margin: 120px auto 0; max-width: 860px; padding: 56px clamp(24px, 6vw, 72px); text-align: center; position: relative; }
+.quote::before { content: "“"; position: absolute; top: -8px; left: 50%; transform: translateX(-50%); font-family: var(--serif); font-size: 120px; line-height: 1; color: var(--gold); opacity: .35; }
+.quote p { font-family: var(--serif); font-size: clamp(22px, 3vw, 30px); line-height: 1.7; margin: 0; text-wrap: balance; }
+.quote cite { display: block; margin-top: 18px; font-style: normal; color: var(--ink-3); font-size: 15px; letter-spacing: .1em; }
 
-/* 手机截图 */
+/* 手机 */
 .phones { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 18px; }
-.phones figure { margin: 0; }
-.phones img { border-radius: 16px; border: 1px solid var(--rule); box-shadow: var(--shadow); width: 100%; height: auto; }
-.phones figcaption { margin-top: 10px; font-size: 14px; color: var(--ink-3); text-align: center; }
-@media (max-width: 860px) { .phones { grid-template-columns: repeat(6, 46%); overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 12px; } .phones figure { scroll-snap-align: start; } }
+.phones figure { margin: 0; padding: 6px; border-radius: 26px; }
+.phones img { border-radius: 21px; width: 100%; }
+.phones figcaption { padding: 10px 0 6px; font-size: 14px; color: var(--ink-2); text-align: center; font-family: var(--serif); letter-spacing: .1em; }
+@media (max-width: 860px) { .phones { grid-template-columns: repeat(6, 44%); overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 4px 24px; margin: 0 -4px; } .phones figure { scroll-snap-align: start; } }
 
 /* 原则 */
-.values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--rule); }
-.values div { padding: 28px 28px 28px 0; }
-.values div + div { padding-left: 28px; border-left: 1px solid var(--rule); }
-.values h3 { font-size: 20px; margin-bottom: 8px; }
+.values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.values > div { padding: 30px 28px; }
+.values .mark { font-family: var(--serif); font-size: 34px; color: var(--gold); line-height: 1; margin-bottom: 14px; display: block; }
+.values h3 { font-size: 21px; margin-bottom: 8px; }
 .values p { color: var(--ink-2); margin: 0; font-size: 15px; }
-@media (max-width: 760px) { .values { grid-template-columns: minmax(0, 1fr); } .values div, .values div + div { padding: 22px 0; border-left: 0; border-bottom: 1px solid var(--rule); } }
+@media (max-width: 760px) { .values { grid-template-columns: minmax(0, 1fr); } }
 
 /* 下载 */
-.download { margin-top: 96px; padding: 72px 0 80px; background: var(--paper-2); border-top: 1px solid var(--rule); }
-.dl-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 32px; }
-.dl { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 22px; display: grid; gap: 10px; align-content: start; }
-.dl.recommended { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.dl-wrap { padding: clamp(28px, 5vw, 56px); }
+.dl-top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 18px; }
+.dl-top h2 { margin-bottom: 6px; }
+.dl-top p { margin: 0; color: var(--ink-2); }
+.route { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--glass-line); gap: 2px; }
+.route button { appearance: none; border: 0; background: none; font: inherit; font-size: 14px; color: var(--ink-2); padding: 7px 16px; border-radius: 999px; cursor: pointer; min-height: 36px; }
+.route button[aria-pressed="true"] { background: var(--glass-strong); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); font-weight: 500; }
+.dl-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 32px; }
+.dl { border-radius: var(--r); padding: 22px; display: grid; gap: 12px; align-content: start; background: var(--glass-strong); border: 1px solid var(--glass-line); transition: border-color .2s, box-shadow .2s; }
+.dl.recommended { border-color: color-mix(in srgb, var(--brand) 55%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 12%, transparent); }
+.dl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .dl h3 { font-family: var(--sans); font-size: 18px; font-weight: 600; margin: 0; }
-.dl p { margin: 0; font-size: 14px; color: var(--ink-3); }
-.dl .links { display: grid; gap: 6px; font-size: 15px; }
-.dl .ver { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); }
-.mirror { margin-top: 24px; font-size: 15px; color: var(--ink-2); }
-@media (max-width: 900px) { .dl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 520px) { .dl-grid { grid-template-columns: minmax(0, 1fr); } }
+.dl .tag { font-size: 12px; color: var(--brand); font-weight: 500; display: none; }
+.dl.recommended .tag { display: inline; }
+.dl p { margin: 0; font-size: 14px; color: var(--ink-3); line-height: 1.5; }
+.dl .links { display: grid; gap: 8px; }
+.dl .links a { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 14px; border-radius: var(--r-sm); background: var(--glass-line); color: var(--ink); font-size: 15px; font-weight: 500; }
+.dl .links a:hover { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); text-decoration: none; }
+.dl .links a svg { width: 16px; height: 16px; opacity: .7; }
+.dl .ver { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); min-height: 1.5em; }
+@media (max-width: 960px) { .dl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) { .dl-grid { grid-template-columns: minmax(0, 1fr); } }
+.fixed { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--rule); font-size: 14.5px; color: var(--ink-2); display: grid; gap: 10px; }
+.fixed code { font-family: var(--mono); font-size: 13px; background: var(--glass-line); padding: 2px 8px; border-radius: 6px; color: var(--ink); word-break: break-all; }
+.fixed p { margin: 0; }
 
 /* 常见问题 */
-.faq { max-width: 760px; }
+.faq-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 56px; align-items: start; }
+@media (max-width: 860px) { .faq-grid { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+.faq { padding: 8px 28px; }
 .faq details { border-bottom: 1px solid var(--rule); padding: 18px 0; }
-.faq summary { cursor: pointer; font-weight: 600; font-size: 17px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+.faq details:last-child { border-bottom: 0; }
+.faq summary { cursor: pointer; font-weight: 600; font-size: 16.5px; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .faq summary::-webkit-details-marker { display: none; }
-.faq summary::after { content: "+"; color: var(--ink-3); font-weight: 400; }
-.faq details[open] summary::after { content: "−"; }
+.faq summary::after { content: ""; flex: 0 0 9px; height: 9px; border-right: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3); transform: rotate(45deg) translateY(-3px); transition: transform .2s; }
+.faq details[open] summary::after { transform: rotate(-135deg) translateX(-2px); }
 .faq details p { color: var(--ink-2); margin: 10px 0 0; }
+.faq code { font-family: var(--mono); font-size: 13px; background: var(--glass-line); padding: 1px 6px; border-radius: 5px; word-break: break-all; }
 
-footer { padding: 40px 0 56px; border-top: 1px solid var(--rule); color: var(--ink-3); font-size: 14px; }
-footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; }
-footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
-footer a { color: var(--ink-2); }
+/* 页脚 */
+footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom)); }
+.foot { padding: 32px; display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); gap: 28px; font-size: 14.5px; }
+.foot h4 { margin: 0 0 10px; font-size: 13px; letter-spacing: .14em; color: var(--ink-3); font-weight: 600; }
+.foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.foot a { color: var(--ink-2); }
+.foot .about p { margin: 10px 0 0; color: var(--ink-3); max-width: 26em; }
+@media (max-width: 760px) { .foot { grid-template-columns: repeat(2, minmax(0, 1fr)); } .foot .about { grid-column: 1 / -1; } }
+
+/* 滚动进入 */
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .8s ease, transform .8s ease; }
+.reveal.in { opacity: 1; transform: none; }
+.no-js .reveal { opacity: 1; transform: none; }
 </style>
 </head>
-<body>
+<body class="no-js">
+<div class="ambient" aria-hidden="true"><i></i><i></i><i></i></div>
 
 <header class="nav">
   <div class="wrap">
-    <a class="brand" href="#top"><img src="favicon.svg" alt="" width="28" height="28">轻阅 <small>LightRead</small></a>
-    <nav class="nav-links" aria-label="主导航">
-      <a href="#features">功能</a>
-      <a href="#app">手机 App</a>
-      <a href="#faq">常见问题</a>
-      <a class="gh" href="https://github.com/yzfly/LightRead">GitHub</a>
-      <a class="nav-cta" href="#download">下载</a>
-    </nav>
+    <div class="nav-bar glass">
+      <a class="brand" href="#top"><img src="favicon.svg" alt="" width="28" height="28">轻阅 <small>LightRead</small></a>
+      <nav class="nav-links" aria-label="主导航">
+        <a class="opt" href="#features">功能</a>
+        <a class="opt" href="#app">手机 App</a>
+        <a href="manual/">手册</a>
+        <a class="opt" href="https://github.com/yzfly/LightRead">GitHub</a>
+        <a class="nav-cta" href="#download">下载</a>
+      </nav>
+    </div>
   </div>
 </header>
 
 <main id="top">
   <section class="hero">
-    <div class="wrap hero-grid">
-      <div>
-        <span class="eyebrow">开源 · 免费 · 无广告 · <b>本地优先</b></span>
-        <h1>让想读的书，<br>变成<em>读进去</em>的书。</h1>
-        <p class="lede">轻阅是一款全格式电子书与 PDF 阅读器。点睛阅读帮你抓住重点，听书、打字机、歌词等模式陪你读完，划线可以一键导出、做成金句卡片。不需要账号，书和笔记留在你自己的设备上。</p>
-        <div class="cta">
-          <a class="btn btn-primary" id="hero-download" href="https://github.com/yzfly/LightRead/releases/latest">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4l2.3 2.3V4a1 1 0 0 1 1-1zM5 15a1 1 0 0 1 1 1v3h12v-3a1 1 0 1 1 2 0v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a1 1 0 0 1 1-1z"/></svg>
-            <span id="hero-download-label">免费下载</span>
-          </a>
-          <a class="btn" href="#download">全部平台</a>
-          <a class="btn" href="https://github.com/yzfly/LightRead">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg>
-            源码
-          </a>
-          <p class="cta-note" id="hero-note">国内下载慢？用 <a href="https://gitcode.com/langgpt/LightRead/releases">GitCode 镜像</a>。</p>
+    <div class="wrap">
+      <span class="eyebrow glass"><span class="dot" aria-hidden="true"></span>开源 · 免费 · 无广告 · 本地优先</span>
+      <h1>让想读的书，<br>变成<em>读进去</em>的书。</h1>
+      <p class="lede">轻阅是一款全格式电子书与 PDF 阅读器。点睛阅读帮你抓住重点，听书、打字机、歌词等模式陪你读完，划线可以一键导出、做成金句卡片。不需要账号，书和笔记留在你自己的设备上。</p>
+      <div class="cta">
+        <a class="btn btn-primary" id="hero-download" href="download/">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v8.6l2.3-2.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4l2.3 2.3V4a1 1 0 0 1 1-1zM5 15a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1z"/></svg>
+          <span id="hero-download-label">免费下载</span>
+        </a>
+        <a class="btn glass" href="#download">全部平台</a>
+        <a class="btn glass" href="manual/">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 6.5C10.5 5 8 4.5 4 4.5v13c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2v-13c-4 0-6.5.5-8 2zM12 6.5v13"/></svg>
+          使用手册
+        </a>
+      </div>
+      <p class="cta-note" id="hero-note">国内网络会自动走 GitCode 镜像，也可以在下方切换线路。</p>
+      <div class="platforms" aria-label="支持平台"><span>Windows</span><span>macOS</span><span>Linux</span><span>Android</span><span>网页 PWA</span></div>
+
+      <div class="stage reveal">
+        <div class="frame glass"><img src="assets/feature-library.webp" width="1600" height="1125" alt="轻阅桌面版藏书页：继续阅读卡片、今日与本周阅读时长、书单标签和封面书架"></div>
+        <div class="phone glass"><img src="assets/app-reader.webp" width="560" height="1212" alt="轻阅安卓 App 阅读页，点睛阅读标出重点词" loading="lazy"></div>
+        <div class="float f1 glass" aria-hidden="true">
+          <span class="ic"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.5l2.1 5.9 5.9 2.1-5.9 2.1L12 18.5l-2.1-5.9L4 10.5l5.9-2.1z"/></svg></span>
+          <span><b>点睛阅读</b>重点自己浮出来</span>
         </div>
-        <div class="platforms" aria-label="支持平台"><span>Windows</span><span>macOS</span><span>Linux</span><span>Android</span><span>网页 PWA</span></div>
+        <div class="float f2 glass" aria-hidden="true">
+          <span class="ic"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg></span>
+          <span><b>今日已读 42 分钟</b>连续 12 天</span>
+        </div>
       </div>
-      <div class="hero-shot">
-        <img class="desk" src="assets/feature-library.webp" width="1600" height="1125" alt="轻阅桌面版藏书页：继续阅读卡片、今日与本周阅读时长、书单标签和封面书架">
-        <img class="phone" src="assets/app-reader.webp" width="560" height="1212" alt="轻阅安卓 App 阅读页，点睛阅读标出重点词" loading="lazy">
-      </div>
+
+      <div class="formats glass" aria-label="支持的格式"><strong>能打开</strong><span>EPUB</span><span>PDF</span><span>MOBI</span><span>AZW3</span><span>FB2</span><span>TXT</span><span>Markdown</span><span>HTML</span><span>DjVu</span><span>CBZ/CBR</span></div>
     </div>
   </section>
 
-  <div class="formats" aria-label="支持的格式">
-    <div class="wrap"><strong>能打开</strong>EPUB PDF MOBI AZW3 FB2 TXT Markdown HTML DjVu CBZ/CBR</div>
-  </div>
-
   <section class="section" id="features">
     <div class="wrap">
-      <div class="section-head">
-        <span class="kicker">Features</span>
+      <div class="section-head reveal">
+        <span class="chapter">卷一 · 读</span>
         <h2>读书、读论文、听书，都在一个应用里</h2>
         <p>每个功能都为「读完、读懂、记住」服务，不堆砌，不打扰。</p>
       </div>
 
-      <article class="feature">
+      <article class="feature reveal">
         <div class="feature-text">
+          <span class="num">壹</span>
           <h3>点睛阅读，让重点自己浮出来</h3>
           <p>基础版离线标出词语与重点词，读长文不迷路；智能版用 AI 点出要句、概念和注释，复习时用章节要义和全书脉络找回重点。</p>
           <ul><li>中文分词与重点词完全离线</li><li>浓度可调，手机与电脑一致</li><li>章节要义、全书脉络、速读</li></ul>
         </div>
-        <figure><img src="assets/feature-dianjing.webp" width="1600" height="1125" alt="点睛阅读：正文里标出重点词与要句" loading="lazy"></figure>
+        <figure class="glass"><img src="assets/feature-dianjing.webp" width="1600" height="1125" alt="点睛阅读：正文里标出重点词与要句" loading="lazy"></figure>
       </article>
 
-      <article class="feature">
+      <article class="feature reveal">
         <div class="feature-text">
-          <h3>书摘与金句卡片 <span class="new">新</span></h3>
+          <span class="num">贰</span>
+          <h3>书摘与金句卡片<span class="new">新</span></h3>
           <p>划线和想法按章节、按书中顺序整理好。一键复制全部，或导出 Markdown、纯文本、JSON、CSV，直接放进 Obsidian、Notion、Readwise。喜欢的一句，做成金句卡片发给朋友。</p>
           <ul><li>纯文本与微信读书「复制全部笔记」同一版式</li><li>弥散、毛玻璃、大字报、稿纸、手账、纸卡等 15 套卡片版式，金句按句读分行</li><li>手机上直接存相册或分享到微信</li></ul>
         </div>
-        <figure class="cards">
-          <img src="assets/card-aurora.webp" width="720" height="960" alt="弥散版式金句卡片：柔和光斑渐变底，金句按句读分行，书名放在半透明小卡里" loading="lazy">
+        <figure class="cards glass">
+          <img src="assets/card-aurora.webp" width="720" height="960" alt="弥散版式金句卡片：柔和光斑渐变底，金句按句读分行" loading="lazy">
           <img src="assets/card-glass.webp" width="720" height="960" alt="毛玻璃版式金句卡片：书封模糊铺满背景，半透明面板上压着清晰书封" loading="lazy">
-          <img src="assets/card-poster.webp" width="720" height="960" alt="大字报版式金句卡片：柠檬黄底配超大得意黑" loading="lazy">
+          <img src="assets/card-poster.webp" width="720" height="960" alt="大字报版式金句卡片：柠檬黄底配超大字" loading="lazy">
         </figure>
       </article>
 
-      <article class="feature">
+      <article class="feature reveal">
         <div class="feature-text">
+          <span class="num">叁</span>
           <h3>PDF 对照翻译，外文资料也能读进去</h3>
           <p>原文在左，译文在右。划词翻译、逐页版式对照，边读边标注；桌面端还能用 BabelDOC 生成中文或双语 PDF，用论文 Agent 追问论点、方法和证据。</p>
           <ul><li>逐页对照与划词翻译</li><li>论文十问，答案单独保存</li><li>MuPDF / PDFium 高清渲染</li></ul>
         </div>
-        <figure><img src="assets/feature-pdf-translation.webp" width="1600" height="1125" alt="PDF 对照翻译：左侧英文原文，右侧中文译文" loading="lazy"></figure>
+        <figure class="glass"><img src="assets/feature-pdf-translation.webp" width="1600" height="1125" alt="PDF 对照翻译：左侧英文原文，右侧中文译文" loading="lazy"></figure>
       </article>
 
-      <article class="feature">
+      <article class="feature reveal">
         <div class="feature-text">
+          <span class="num">肆</span>
           <h3>换一种节奏读完它</h3>
           <p>打字机一字一字出现，歌词一行一行亮起，自动翻页与匀速滚动解放双手。夜读、护眼、墨水屏、大字、沉浸五种场景一键切换。</p>
           <ul><li>翻页、按章滚动、跨章连续滚动</li><li>字号、行距、字体、主题随手调</li><li>App 支持音量键翻页、PDF 重排</li></ul>
         </div>
-        <figure><img src="assets/feature-reading-modes.webp" width="1600" height="1125" alt="阅读模式面板：打字机、歌词、自动翻页与场景" loading="lazy"></figure>
+        <figure class="glass"><img src="assets/feature-reading-modes.webp" width="1600" height="1125" alt="阅读模式面板：打字机、歌词、自动翻页与场景" loading="lazy"></figure>
       </article>
 
-      <article class="feature">
+      <article class="feature reveal">
         <div class="feature-text">
+          <span class="num">伍</span>
           <h3>听书，眼睛累了也不停</h3>
           <p>自然的在线语音、可下载的离线模型和系统语音任选。正文随朗读高亮跟随，定时关闭、语速学习、剩余时长一目了然。</p>
-          <ul><li>中英文多音色</li><li>离线也能听</li><li>背景音与专注计时</li></ul>
+          <ul><li>中英文多音色</li><li>离线也能听</li><li>雨声、风声、白噪音等背景音</li></ul>
         </div>
-        <figure><img src="assets/feature-listen.webp" width="1600" height="1125" alt="听书面板：音色、语速、定时与剩余时长" loading="lazy"></figure>
+        <figure class="glass"><img src="assets/feature-listen.webp" width="1600" height="1125" alt="听书面板：音色、语速、定时与剩余时长" loading="lazy"></figure>
       </article>
 
-      <article class="feature">
+      <article class="feature reveal">
         <div class="feature-text">
+          <span class="num">陆</span>
           <h3>书单与书源，下一本早就准备好</h3>
           <p>把想读的书收进书单，到手的书自动归入；获奖书单开箱即用。古登堡计划、Internet Archive、arXiv、自建 OPDS 书库，统一搜索、一键入库。</p>
           <ul><li>书单分享与导入</li><li>公共书源免登录</li><li>OPDS 私人书库</li></ul>
         </div>
-        <figure><img src="assets/feature-booklists.webp" width="1600" height="1125" alt="书单：想读的书、已拥有的书与推荐书单" loading="lazy"></figure>
+        <figure class="glass"><img src="assets/feature-booklists.webp" width="1600" height="1125" alt="书单：想读的书、已拥有的书与推荐书单" loading="lazy"></figure>
       </article>
 
-      <article class="feature">
+      <article class="feature reveal">
         <div class="feature-text">
+          <span class="num">柒</span>
           <h3>阅读记录，看见每天读过的时间</h3>
           <p>今日目标、连续天数、每周达标和时长趋势，自动记录不打扰。换设备也不丢，多端合并统计。</p>
           <ul><li>账号或 WebDAV 同步进度、笔记、书单</li><li>藏书包导入导出</li><li>私密书籍不出本机</li></ul>
         </div>
-        <figure><img src="assets/feature-reading-stats.webp" width="1600" height="1125" alt="阅读记录：今日阅读、连续天数与时长趋势" loading="lazy"></figure>
+        <figure class="glass"><img src="assets/feature-reading-stats.webp" width="1600" height="1125" alt="阅读记录：今日阅读、连续天数与时长趋势" loading="lazy"></figure>
       </article>
     </div>
   </section>
 
+  <div class="wrap">
+    <blockquote class="quote glass reveal">
+      <p>读书之法，在循序而渐进，熟读而精思。</p>
+      <cite>— 朱熹</cite>
+    </blockquote>
+  </div>
+
   <section class="section" id="app">
     <div class="wrap">
-      <div class="section-head">
-        <span class="kicker">Android</span>
+      <div class="section-head reveal">
+        <span class="chapter">卷二 · 随身</span>
         <h2>手机上，是重新设计的轻阅</h2>
         <p>与桌面版共用同一套阅读引擎，界面按手机重做：底部标签栏、单手可达的工具栏、底部抽屉面板。</p>
       </div>
-      <div class="phones">
-        <figure><img src="assets/app-library.webp" width="560" height="1212" alt="App 藏书页" loading="lazy"><figcaption>藏书</figcaption></figure>
-        <figure><img src="assets/app-reader.webp" width="560" height="1212" alt="App 阅读页与点睛阅读" loading="lazy"><figcaption>点睛阅读</figcaption></figure>
-        <figure><img src="assets/app-reading-modes.webp" width="560" height="1212" alt="App 阅读模式" loading="lazy"><figcaption>阅读模式</figcaption></figure>
-        <figure><img src="assets/app-typography.webp" width="560" height="1212" alt="App 排版设置" loading="lazy"><figcaption>排版</figcaption></figure>
-        <figure><img src="assets/app-listen.webp" width="560" height="1212" alt="App 听书" loading="lazy"><figcaption>听书</figcaption></figure>
-        <figure><img src="assets/app-stats.webp" width="560" height="1212" alt="App 阅读记录" loading="lazy"><figcaption>阅读记录</figcaption></figure>
+      <div class="phones reveal">
+        <figure class="glass"><img src="assets/app-library.webp" width="560" height="1212" alt="App 藏书页" loading="lazy"><figcaption>藏书</figcaption></figure>
+        <figure class="glass"><img src="assets/app-reader.webp" width="560" height="1212" alt="App 阅读页与点睛阅读" loading="lazy"><figcaption>点睛</figcaption></figure>
+        <figure class="glass"><img src="assets/app-reading-modes.webp" width="560" height="1212" alt="App 阅读模式" loading="lazy"><figcaption>模式</figcaption></figure>
+        <figure class="glass"><img src="assets/app-typography.webp" width="560" height="1212" alt="App 排版设置" loading="lazy"><figcaption>排版</figcaption></figure>
+        <figure class="glass"><img src="assets/app-listen.webp" width="560" height="1212" alt="App 听书" loading="lazy"><figcaption>听书</figcaption></figure>
+        <figure class="glass"><img src="assets/app-stats.webp" width="560" height="1212" alt="App 阅读记录" loading="lazy"><figcaption>记录</figcaption></figure>
       </div>
     </div>
   </section>
 
   <section class="section">
     <div class="wrap">
-      <div class="values">
-        <div><h3>书是你的</h3><p>本地阅读不需要账号，不需要联网。藏书、进度、笔记默认只在你的设备上，同步与 AI 都按需开启。</p></div>
-        <div><h3>代码是开放的</h3><p>AGPL-3.0 开源，任何人都能查看、构建和改进。没有广告，没有会员墙。</p></div>
-        <div><h3>格式不设限</h3><p>EPUB、PDF、MOBI、AZW3、TXT、漫画、DjVu 都能打开，MOBI / AZW3 / TXT 还能一键转成 EPUB。</p></div>
+      <div class="section-head reveal">
+        <span class="chapter">卷三 · 守</span>
+        <h2>我们相信的三件事</h2>
+      </div>
+      <div class="values reveal">
+        <div class="glass"><span class="mark" aria-hidden="true">书</span><h3>书是你的</h3><p>本地阅读不需要账号，不需要联网。藏书、进度、笔记默认只在你的设备上，同步与 AI 都按需开启。</p></div>
+        <div class="glass"><span class="mark" aria-hidden="true">开</span><h3>代码是开放的</h3><p>AGPL-3.0 开源，任何人都能查看、构建和改进。没有广告，没有会员墙。</p></div>
+        <div class="glass"><span class="mark" aria-hidden="true">通</span><h3>格式不设限</h3><p>EPUB、PDF、MOBI、AZW3、TXT、漫画、DjVu 都能打开，MOBI / AZW3 / TXT 还能一键转成 EPUB。</p></div>
       </div>
     </div>
   </section>
 
-  <section class="download" id="download">
+  <section class="section" id="download">
     <div class="wrap">
-      <span class="kicker">Download</span>
-      <h2>下载轻阅</h2>
-      <p style="color: var(--ink-2); margin: 0;">桌面版与手机 App 分别发版，均可在应用内检查更新。</p>
-      <div class="dl-grid">
-        <div class="dl" data-os="windows">
-          <h3>Windows</h3><p>Windows 10 / 11 · x64</p>
-          <div class="links"><a data-asset="setup\.exe$" href="https://github.com/yzfly/LightRead/releases/latest">安装包 (.exe)</a></div>
-          <span class="ver" data-ver="desktop"></span>
-        </div>
-        <div class="dl" data-os="mac">
-          <h3>macOS</h3><p>Apple 芯片与 Intel</p>
-          <div class="links">
-            <a data-asset="aarch64\.dmg$" href="https://github.com/yzfly/LightRead/releases/latest">Apple 芯片 (.dmg)</a>
-            <a data-asset="x64\.dmg$" href="https://github.com/yzfly/LightRead/releases/latest">Intel (.dmg)</a>
+      <div class="dl-wrap glass reveal">
+        <div class="dl-top">
+          <div>
+            <span class="chapter">卷末 · 取书</span>
+            <h2>下载轻阅</h2>
+            <p>下面每个链接都固定不变，始终指向最新版。桌面版与手机 App 分别发版，都能在应用内检查更新。</p>
           </div>
-          <span class="ver" data-ver="desktop"></span>
-        </div>
-        <div class="dl" data-os="linux">
-          <h3>Linux</h3><p>x86_64</p>
-          <div class="links">
-            <a data-asset="\.AppImage$" href="https://github.com/yzfly/LightRead/releases/latest">AppImage</a>
-            <a data-asset="\.deb$" href="https://github.com/yzfly/LightRead/releases/latest">deb</a>
-            <a data-asset="\.rpm$" href="https://github.com/yzfly/LightRead/releases/latest">rpm</a>
+          <div class="route" role="group" aria-label="下载线路">
+            <button type="button" data-route="github" aria-pressed="true">GitHub</button>
+            <button type="button" data-route="gitcode" aria-pressed="false">国内镜像</button>
           </div>
-          <span class="ver" data-ver="desktop"></span>
         </div>
-        <div class="dl" data-os="android">
-          <h3>Android</h3><p>arm64 · Android 7.0 及以上</p>
-          <div class="links"><a data-asset="_android_arm64\.apk$" data-line="app" href="https://github.com/yzfly/LightRead/releases?q=app-v&amp;expanded=true">安装包 (.apk)</a></div>
-          <span class="ver" data-ver="app"></span>
+        <div class="dl-grid">
+          <div class="dl" data-os="windows">
+            <div class="dl-head"><h3>Windows</h3><span class="tag">本机</span></div>
+            <p>Windows 10 / 11 · x64</p>
+            <div class="links"><a data-fixed="windows" href="download/windows">安装包 .exe<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a></div>
+            <span class="ver" data-ver="windows"></span>
+          </div>
+          <div class="dl" data-os="mac">
+            <div class="dl-head"><h3>macOS</h3><span class="tag">本机</span></div>
+            <p>Apple 芯片与 Intel</p>
+            <div class="links">
+              <a data-fixed="mac" href="download/mac">Apple 芯片 .dmg<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
+              <a data-fixed="mac-intel" href="download/mac-intel">Intel .dmg<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
+            </div>
+            <span class="ver" data-ver="mac"></span>
+          </div>
+          <div class="dl" data-os="linux">
+            <div class="dl-head"><h3>Linux</h3><span class="tag">本机</span></div>
+            <p>x86_64</p>
+            <div class="links">
+              <a data-fixed="linux" href="download/linux">AppImage<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
+              <a data-fixed="linux-deb" href="download/linux-deb">deb<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
+              <a data-fixed="linux-rpm" href="download/linux-rpm">rpm<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
+            </div>
+            <span class="ver" data-ver="linux"></span>
+          </div>
+          <div class="dl" data-os="android">
+            <div class="dl-head"><h3>Android</h3><span class="tag">本机</span></div>
+            <p>arm64 · Android 7.0 及以上 · 实验版</p>
+            <div class="links"><a data-fixed="android" href="download/android">安装包 .apk<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a></div>
+            <span class="ver" data-ver="android"></span>
+          </div>
+        </div>
+        <div class="fixed">
+          <p>固定链接：<code>https://code.jiangshu.ai/LightRead/download/&lt;平台&gt;</code>，平台为 <code>windows</code> <code>mac</code> <code>mac-intel</code> <code>linux</code> <code>linux-deb</code> <code>linux-rpm</code> <code>android</code>；加 <code>?mirror=gitcode</code> 走国内镜像。不带平台 (<a href="download/"><code>/download/</code></a>) 按你的系统自动选择。</p>
+          <p>所有版本：<a href="https://github.com/yzfly/LightRead/releases">GitHub Releases</a> · <a href="https://gitcode.com/langgpt/LightRead/releases">GitCode 镜像</a> · 每个版本附带 <code>SHA256SUMS</code> 校验 · 机器可读：<a href="download/latest.json">latest.json</a></p>
         </div>
       </div>
-      <p class="mirror">国内网络：<a href="https://gitcode.com/langgpt/LightRead/releases">GitCode 镜像下载</a> · 所有版本：<a href="https://github.com/yzfly/LightRead/releases">GitHub Releases</a> · 校验：每个版本附带 <code>SHA256SUMS</code></p>
     </div>
   </section>
 
-  <section class="section" id="faq" style="padding-bottom: 80px;">
-    <div class="wrap faq">
-      <span class="kicker">FAQ</span>
-      <h2>常见问题</h2>
-      <details><summary>轻阅收费吗？</summary><p>完全免费，没有广告和会员。AI 翻译、智能点睛等功能使用你自己配置的模型服务，可能产生服务商费用；也提供试用额度。</p></details>
-      <details><summary>我的书和笔记会上传吗？</summary><p>不会，除非你开启同步。本地阅读不需要账号；开启轻阅账号或 WebDAV 同步后，进度、笔记、书单等才会在你的设备间同步。单本书可以设为私密，永不离开本机。</p></details>
-      <details><summary>能导出微信读书那样的笔记吗？</summary><p>可以。阅读器的「笔记」面板底部有「复制全部」和「导出」：纯文本与微信读书「复制全部笔记」同一版式，也能导出 Markdown、JSON 和 Readwise CSV。选中文字或点开划线，还能做成金句卡片。</p></details>
-      <details><summary>支持 Kindle 的书吗？</summary><p>支持 MOBI、AZW、AZW3。不支持 KFX 格式和 DRM 加密的文件。</p></details>
-      <details><summary>手机能和电脑同步吗？</summary><p>能。用轻阅账号（邮箱验证码登录）或自己的 WebDAV，同步阅读进度、划线笔记、书签、书单、阅读记录和设置；书籍文件也可以一起同步。</p></details>
-      <details><summary>遇到问题去哪反馈？</summary><p>到 <a href="https://github.com/yzfly/LightRead/issues">GitHub Issues</a> 提问题或建议，书摘导出就是读者在这里提出后做出来的。</p></details>
+  <section class="section" id="faq">
+    <div class="wrap faq-grid">
+      <div class="section-head reveal" style="margin-bottom: 0;">
+        <span class="chapter">附录</span>
+        <h2>常见问题</h2>
+        <p>更多用法见 <a href="manual/">使用手册</a>，安装与升级见 <a href="docs/installation.html">安装说明</a>。</p>
+      </div>
+      <div class="faq glass reveal">
+        <details><summary>轻阅收费吗？</summary><p>完全免费，没有广告和会员。AI 翻译、智能点睛等功能使用你自己配置的模型服务，可能产生服务商费用；也提供试用额度。</p></details>
+        <details><summary>我的书和笔记会上传吗？</summary><p>不会，除非你开启同步。本地阅读不需要账号；开启轻阅账号或 WebDAV 同步后，进度、笔记、书单等才会在你的设备间同步。单本书可以设为私密，永不离开本机。</p></details>
+        <details><summary>能导出微信读书那样的笔记吗？</summary><p>可以。阅读器的「笔记」面板底部有「复制全部」和「导出」：纯文本与微信读书「复制全部笔记」同一版式，也能导出 Markdown、JSON 和 Readwise CSV。选中文字或点开划线，还能做成金句卡片。</p></details>
+        <details><summary>支持 Kindle 的书吗？</summary><p>支持 MOBI、AZW、AZW3。不支持 KFX 格式和 DRM 加密的文件。</p></details>
+        <details><summary>手机能和电脑同步吗？</summary><p>能。用轻阅账号（邮箱验证码登录）或自己的 WebDAV，同步阅读进度、划线笔记、书签、书单、阅读记录和设置；书籍文件也可以一起同步。</p></details>
+        <details><summary>怎样总是下载到最新版？</summary><p>用固定链接 <code>https://code.jiangshu.ai/LightRead/download/android</code>（或 windows、mac、linux 等），它始终跳到最新版安装包，可以放心收藏和分享。</p></details>
+        <details><summary>遇到问题去哪反馈？</summary><p>到 <a href="https://github.com/yzfly/LightRead/issues">GitHub Issues</a> 提问题或建议，书摘导出就是读者在这里提出后做出来的。也可以在应用「设置 → 关于」里加读者群。</p></details>
+      </div>
     </div>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
-    <span>轻阅 LightRead · AGPL-3.0 开源</span>
-    <nav aria-label="页脚">
-      <a href="https://github.com/yzfly/LightRead">GitHub</a>
-      <a href="https://github.com/yzfly/LightRead/blob/main/docs/manual/README.md">使用手册</a>
-      <a href="https://github.com/yzfly/LightRead/issues">反馈</a>
-      <a href="https://github.com/yzfly/LightRead/blob/main/README.en.md">English</a>
-    </nav>
+    <div class="foot glass">
+      <div class="about">
+        <a class="brand" href="#top"><img src="favicon.svg" alt="" width="28" height="28">轻阅 LightRead</a>
+        <p>开源、本地优先的电子书与论文阅读器。AGPL-3.0 · 桌面 v__DESKTOP_VERSION__ · App v__APP_VERSION__</p>
+      </div>
+      <div><h4>产品</h4><ul><li><a href="#download">下载</a></li><li><a href="#features">功能</a></li><li><a href="#app">手机 App</a></li><li><a href="https://github.com/yzfly/LightRead/releases">更新记录</a></li></ul></div>
+      <div><h4>帮助</h4><ul><li><a href="manual/">使用手册</a></li><li><a href="docs/installation.html">安装与升级</a></li><li><a href="docs/paper-reading.html">论文阅读</a></li><li><a href="https://github.com/yzfly/LightRead/issues">反馈</a></li></ul></div>
+      <div><h4>开发者与 AI</h4><ul><li><a href="https://github.com/yzfly/LightRead">源码</a></li><li><a href="llms.txt">llms.txt</a></li><li><a href="llms-full.txt">llms-full.txt</a></li><li><a href="https://github.com/yzfly/LightRead/blob/main/README.en.md">English</a></li></ul></div>
+    </div>
   </div>
 </footer>
 
 <script>
-// 下载按钮: 读 GitHub Releases, 桌面取 latest (vX.Y.Z), App 取最新 app-vX.Y.Z; 失败时保留发布页链接
 (function () {
+  document.body.classList.remove('no-js')
+
+  // 滚动进入
+  var items = document.querySelectorAll('.reveal')
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target) } })
+    }, { rootMargin: '0px 0px -8% 0px' })
+    items.forEach(function (el) { io.observe(el) })
+  } else items.forEach(function (el) { el.classList.add('in') })
+
+  // 本机系统: 首屏按钮与推荐卡片
   var ua = navigator.userAgent
-  var os = /Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) ? 'ios' : /Mac/i.test(ua) ? 'mac' : /Win/i.test(ua) ? 'windows' : /Linux/i.test(ua) ? 'linux' : ''
+  var os = /Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) ? 'ios' : /Mac/i.test(ua) ? 'mac' : /Win/i.test(ua) ? 'windows' : /Linux|X11/i.test(ua) ? 'linux' : ''
   var card = document.querySelector('.dl[data-os="' + os + '"]')
   if (card) card.classList.add('recommended')
+  var hero = document.getElementById('hero-download')
   var labels = { windows: '下载 Windows 版', mac: '下载 macOS 版', linux: '下载 Linux 版', android: '下载安卓 App' }
   if (labels[os]) document.getElementById('hero-download-label').textContent = labels[os]
-  if (os === 'mac') document.getElementById('hero-download').href = '#download'
-  if (os === 'ios') {
-    document.getElementById('hero-download').href = '#download'
-    document.getElementById('hero-note').textContent = 'iOS 版还在准备中，可以先在电脑或安卓手机上使用。'
-  }
+  // macOS 要分 Apple 芯片与 Intel, 去下载区选; iOS 版还没有
+  if (os === 'mac' || os === 'ios' || !os) hero.setAttribute('href', '#download')
+  if (os === 'ios') document.getElementById('hero-note').textContent = 'iOS 版还在准备中，可以先在电脑或安卓手机上使用。'
 
-  fetch('https://api.github.com/repos/yzfly/LightRead/releases?per_page=30')
-    .then(function (r) { return r.ok ? r.json() : [] })
-    .then(function (list) {
-      var live = list.filter(function (r) { return !r.draft && !r.prerelease })
-      var desktop = live.find(function (r) { return /^v\d/.test(r.tag_name) })
-      var app = live.find(function (r) { return /^app-v\d/.test(r.tag_name) && r.assets.some(function (a) { return /_android_arm64\.apk$/.test(a.name) }) })
-      var pick = { desktop: desktop, app: app }
-      document.querySelectorAll('a[data-asset]').forEach(function (a) {
-        var rel = pick[a.dataset.line || 'desktop']
-        if (!rel) return
-        var re = new RegExp(a.dataset.asset)
-        var asset = rel.assets.find(function (x) { return re.test(x.name) })
-        if (asset) {
-          a.href = asset.browser_download_url
-          a.title = asset.name + ' · ' + (asset.size / 1048576).toFixed(0) + ' MB'
-        }
-      })
-      document.querySelectorAll('[data-ver]').forEach(function (el) {
-        var rel = pick[el.dataset.ver]
-        if (rel) el.textContent = rel.tag_name.replace(/^app-/, '') + ' · ' + rel.published_at.slice(0, 10)
-      })
-      var hero = { windows: ['desktop', 'setup\\.exe$'], linux: ['desktop', '\\.AppImage$'], android: ['app', '_android_arm64\\.apk$'] }[os]
-      if (hero && pick[hero[0]]) {
-        var re = new RegExp(hero[1])
-        var asset = pick[hero[0]].assets.find(function (x) { return re.test(x.name) })
-        if (asset) document.getElementById('hero-download').href = asset.browser_download_url
-      }
+  // 下载线路: 国内时区默认走镜像; 记住手动选择
+  var route = 'github'
+  try {
+    var saved = localStorage.getItem('lightread-site-route')
+    if (saved === 'github' || saved === 'gitcode') route = saved
+    else if (/^Asia\/(Shanghai|Chongqing|Urumqi|Harbin)$/.test(Intl.DateTimeFormat().resolvedOptions().timeZone)) route = 'gitcode'
+  } catch (e) {}
+  function applyRoute(r) {
+    route = r
+    var q = r === 'gitcode' ? '?mirror=gitcode' : ''
+    document.querySelectorAll('a[data-fixed]').forEach(function (a) { a.setAttribute('href', 'download/' + a.dataset.fixed + q) })
+    if (hero.getAttribute('href').indexOf('download/') === 0) hero.setAttribute('href', 'download/' + q)
+    document.querySelectorAll('.route button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.route === r)) })
+  }
+  document.querySelectorAll('.route button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      applyRoute(b.dataset.route)
+      try { localStorage.setItem('lightread-site-route', b.dataset.route) } catch (e) {}
     })
-    .catch(function () {})
+  })
+  applyRoute(route)
+
+  // 版本号与大小: 同站 latest.json (固定链接服务提供); 取不到就不显示
+  fetch('download/latest.json').then(function (r) { return r.ok ? r.json() : null }).then(function (data) {
+    if (!data || !data.platforms) return
+    data.platforms.forEach(function (p) {
+      var el = document.querySelector('[data-ver="' + p.platform + '"]')
+      if (el) el.textContent = 'v' + p.version
+    })
+  }).catch(function () {})
 })()
 </script>
 </body>

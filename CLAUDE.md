@@ -148,6 +148,12 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 - 阅读正文主题 (`settings.reader.theme`) 与应用外观 (`settings.appearance`) 是两个设置项，不要把显式选择的正文主题绑到外观上；默认值 `auto` 例外，它经 `resolveReaderTheme()` 跟随外观在浅色/夜间间切换。
 - 不要提交 `.env*`、`.corpus`、`dist`、`src-tauri/target`。
 
+## 官网与固定下载链接（2026-11-01 用户要求）
+
+- 官网 https://code.jiangshu.ai/LightRead/ 是对外唯一入口：GitHub 仓库 homepage、README、应用「关于」页与手册的「在网页上看」都指向它；以后 App 的说明页、帮助链接一律跳官网（地址集中在 `src/services/siteLinks.ts`）。页面同时写给人和 AI 看：JSON-LD、`llms.txt` / `llms-full.txt`、每章 `.md` 原文、sitemap。
+- 源码 `site/index.html`（手写首页，读书气质 + 磨砂玻璃）+ `scripts/build-site.mjs`（把 `docs/manual` 等渲染成 `manual/*.html`、`docs/*.html`，输出 `site-dist/`）。`.github/workflows/pages.yml` 在 site / 手册 / 版本文件改动后发布到 GitHub Pages。新增站内文档要同时改 `build-site.mjs` 的 `PAGES` 与 `siteLinks.ts`（`npm run test:site-links` 校验）。
+- 固定下载链接 `https://code.jiangshu.ai/LightRead/download/<windows|mac|mac-intel|linux|linux-deb|linux-rpm|android>` 始终 302 到最新版（`?mirror=gitcode` 走镜像，`/download/latest.json` 给机器读），由 Cloudflare Worker `download-worker/`（路由 `code.jiangshu.ai/LightRead/download*`）提供，版本挑选复用 `src/services/aboutLinks.ts`，发版后无需改动。部署：`cd download-worker && CLOUDFLARE_API_TOKEN=$(cat ~/.config/tokenssh-ai/cloudflare-workers-token) npx wrangler deploy -c wrangler.jsonc`。
+
 ## 账号后端部署
 
 - `cd sync-server && npx wrangler deploy -c wrangler.jsonc`（必须带 `-c`，否则会撞上根目录构建留下的 `.wrangler/deploy/config.json`）。用 `~/.config/tokenssh-ai/cloudflare-workers-token` 作 `CLOUDFLARE_API_TOKEN` 即可部署；它没有 D1 权限，改表结构要走 Cloudflare MCP 的 D1 query API。

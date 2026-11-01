@@ -45,3 +45,6 @@ temp/
 # Isolated platform verification builds
 dist-desktop/
 dist-mobile/
+
+# 项目主页构建产物 (scripts/build-site.mjs)
+site-dist

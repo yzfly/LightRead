@@ -10,6 +10,7 @@ import { MIRROR_RELEASES_URL, RELEASES_URL, copyLink, openDownload } from '../..
 import { toast } from '../../services/toast'
 import { AUTHOR_WECHAT, detectPlatform, type PackageKind, type PlatformDownload, type PlatformId, type WechatGroup } from '../../services/aboutLinks'
 import { loadCommunity, loadPlatformDownloads } from '../../services/aboutLinksLoad'
+import { SITE_URL } from '../../services/siteLinks'
 
 const PLATFORM_LABEL: Record<PlatformId, string> = {
   windows: 'Windows',
@@ -113,6 +114,7 @@ onMounted(async () => {
         </div>
       </div>
       <p class="more-links">
+        <a href="javascript:void 0" @click="open(SITE_URL)">{{ t('settings.website') }}</a>
         <a href="javascript:void 0" @click="open(RELEASES_URL)">{{ t('settings.downloadsAll') }}</a>
         <a href="javascript:void 0" @click="open(MIRROR_RELEASES_URL)">{{ t('settings.downloadsMirror') }}</a>
       </p>

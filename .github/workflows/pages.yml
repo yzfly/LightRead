@@ -1,13 +1,23 @@
 name: Homepage
 
-# 项目主页 (site/ 静态页面) 发布到 GitHub Pages: https://yzfly.github.io/LightRead/
-# 只在 site/ 或本文件改动时运行, 也可手动运行。页面不需要构建, 原样上传。
+# 项目主页发布到 GitHub Pages (https://code.jiangshu.ai/LightRead/):
+# site/ 手写首页 + scripts/build-site.mjs 渲染的手册、llms.txt、sitemap → site-dist/。
+# 固定下载链接 /LightRead/download/* 不在这里, 由 Cloudflare Worker (download-worker/) 提供。
 
 on:
   push:
     branches: [main]
     paths:
       - 'site/**'
+      - 'docs/manual/**'
+      - 'docs/installation.md'
+      - 'docs/paper-reading.md'
+      - 'docs/ambient-sources.md'
+      - 'docs/library-okf-profile.md'
+      - 'llms.txt'
+      - 'package.json'
+      - 'src-tauri/tauri.android.conf.json'
+      - 'scripts/build-site.mjs'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -28,9 +38,17 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 只需要 marked (版本取 package-lock): 装到独立目录再链接成 node_modules, 不装整个项目依赖
+      - run: |
+          npm install --prefix "$RUNNER_TEMP/site-deps" --no-package-lock "marked@$(node -p "require('./package-lock.json').packages['node_modules/marked'].version")"
+          ln -s "$RUNNER_TEMP/site-deps/node_modules" node_modules
+          node scripts/build-site.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: site-dist
       - id: deploy
         uses: actions/deploy-pages@v4

@@ -14,7 +14,7 @@ EPUB / PDF / MOBI / AZW3 / TXT and more · Key-idea highlighting · Many reading
 [![Downloads](https://img.shields.io/github/downloads/yzfly/LightRead/total)](https://github.com/yzfly/LightRead/releases)
 [![License: AGPL v3+](https://img.shields.io/badge/License-AGPL_v3%2B-blue.svg)](LICENSE)
 
-**[Download for desktop](https://github.com/yzfly/LightRead/releases/latest)** · **[Download the Android app](https://github.com/yzfly/LightRead/releases?q=app-v&expanded=true)** · [China mirror (GitCode)](https://gitcode.com/langgpt/LightRead/releases) · [User guide (中文)](docs/manual/README.md) · [Feedback](https://github.com/yzfly/LightRead/issues)
+**[Website](https://code.jiangshu.ai/LightRead/)** · **[Download for desktop](https://code.jiangshu.ai/LightRead/#download)** · **[Download the Android app](https://code.jiangshu.ai/LightRead/download/android)** · [China mirror (GitCode)](https://gitcode.com/langgpt/LightRead/releases) · [User guide (中文)](https://code.jiangshu.ai/LightRead/manual/) · [Feedback](https://github.com/yzfly/LightRead/issues)
 
 Windows · macOS · Linux · Android · Web PWA
 
@@ -130,6 +130,7 @@ Desktop and Android are released separately; each channel below always has the l
 
 | Channel | Link | For |
 | --- | --- | --- |
+| Fixed links on the website | `https://code.jiangshu.ai/LightRead/download/<platform>`: [windows](https://code.jiangshu.ai/LightRead/download/windows) · [mac](https://code.jiangshu.ai/LightRead/download/mac) · [mac-intel](https://code.jiangshu.ai/LightRead/download/mac-intel) · [linux](https://code.jiangshu.ai/LightRead/download/linux) · [linux-deb](https://code.jiangshu.ai/LightRead/download/linux-deb) · [linux-rpm](https://code.jiangshu.ai/LightRead/download/linux-rpm) · [android](https://code.jiangshu.ai/LightRead/download/android) | The link never changes and always serves the newest build; add `?mirror=gitcode` for the China mirror |
 | GitHub Releases · desktop | [github.com/yzfly/LightRead/releases/latest](https://github.com/yzfly/LightRead/releases/latest) | Windows, macOS, Linux |
 | GitHub Releases · Android | [Releases tagged `app-v…`](https://github.com/yzfly/LightRead/releases?q=app-v&expanded=true) | Android phones and tablets |
 | GitCode mirror (China) | [gitcode.com/langgpt/LightRead/releases](https://gitcode.com/langgpt/LightRead/releases) | When GitHub is slow; desktop and Android |

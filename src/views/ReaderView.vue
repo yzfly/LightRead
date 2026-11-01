@@ -34,6 +34,7 @@ import { AutoScrollClock } from '../services/autoScroll'
 import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_STOPS, rateText } from '../services/ttsRate'
 import { toast } from '../services/toast'
 import { t } from '../i18n'
+import { siteUrlForRepoPath } from '../services/siteLinks'
 import { matchesMQ, MQ } from '../composables/useMediaQuery'
 import { searchBook, type SearchHit } from '../services/bookSearch'
 import { chatStream, aiConfigured, readerSystemPrompt, explainPrompt, providerById, type AiMessage } from '../services/ai'
@@ -238,7 +239,7 @@ function toggleAmbientPanel() {
 
 async function showAmbientSources() {
   const { openDownload } = await import('../services/updater')
-  openDownload('https://github.com/yzfly/LightRead/blob/main/docs/ambient-sources.md')
+  openDownload(siteUrlForRepoPath('docs/ambient-sources.md'))
 }
 const ttsState = ref<'stopped' | 'playing' | 'paused'>('stopped')
 const ttsVoices = ref<{ name: string; lang: string }[]>([])
