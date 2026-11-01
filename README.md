@@ -86,7 +86,7 @@ Windows · macOS · Linux · Android · 网页 PWA
 
 **读过的、在读的、还没找到的，都能放进同一张书单。** 支持待找清单、自动匹配入库、推荐书单和导出分享，让阅读计划有个落脚点。
 
-<img src="docs/screenshots/feature-booklists.png" width="1000" alt="LightRead 书单管理：已收藏电子书与待找书目放在同一份阅读计划中，可找书、分享或导入书单" />
+<img src="docs/screenshots/feature-booklists.png" width="1000" alt="LightRead 书单：古典名著、教材课本、AI 与智能体三份书单以标签页切换" />
 
 ## 阅读记录，看见每天读过的时间
 

@@ -86,7 +86,7 @@ Basic mode is pictured. Smart mode sends text to the selected AI service after c
 
 **Keep books you own and books you still want in the same list.** Add wanted titles, match them automatically when imported, explore curated lists, and export a list to share.
 
-<img src="docs/screenshots/feature-booklists.png" width="1000" alt="LightRead booklist combining imported ebooks and wanted titles with search and sharing actions" />
+<img src="docs/screenshots/feature-booklists.png" width="1000" alt="LightRead booklists shown as tabs: classics, textbooks, and AI and agents" />
 
 ## Reading stats: see your reading add up
 
