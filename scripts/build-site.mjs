@@ -13,6 +13,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, posix, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
 import { marked } from 'marked'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -268,11 +269,17 @@ function build() {
   const index = readFileSync(indexPath, 'utf8')
     .replaceAll('__DESKTOP_VERSION__', versions.desktop)
     .replaceAll('__APP_VERSION__', versions.app)
-  if (index.includes('__')) {
-    const left = index.match(/__[A-Z_]+__/)
+  // 图片地址带内容哈希: 换截图后 Cloudflare / 浏览器缓存立即失效 (文件名不变)
+  const versioned = index.replace(/(["(])(assets\/[\w.-]+\.(?:webp|png|jpg|svg))(?=[")])/g, (_, q, path) => {
+    const file = join(ROOT, 'site', path)
+    if (!existsSync(file)) throw new Error(`site/index.html 引用了不存在的 ${path}`)
+    return `${q}${path}?v=${createHash('sha256').update(readFileSync(file)).digest('hex').slice(0, 8)}`
+  })
+  if (versioned.includes('__')) {
+    const left = versioned.match(/__[A-Z_]+__/)
     if (left) throw new Error(`site/index.html 里有未替换的占位符 ${left[0]}`)
   }
-  writeFileSync(indexPath, index)
+  writeFileSync(indexPath, versioned)
 
   const full = []
   for (const page of PAGES) {
