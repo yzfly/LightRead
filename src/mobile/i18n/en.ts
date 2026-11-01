@@ -159,6 +159,8 @@ export default {
   'library.chooseBooks': "Choose books",
 
   // Choose a folder to import / upload
+  'folder.createBooklists': 'Create booklists from folders',
+  'folder.booklistsHint': 'Booklist names keep the full folder path. Matching lists are reused.',
   'folder.choose': 'Choose folder…',
   'folder.scanning': "Finding books in this folder…",
   'folder.title': 'Add from folder',

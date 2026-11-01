@@ -142,6 +142,8 @@ export default {
   'library.chooseBooks': '去选书',
 
   // 选择文件夹导入 / 上传
+  'folder.createBooklists': '按文件夹建立书单',
+  'folder.booklistsHint': '书单名保留完整目录路径；同名书单合并。',
   'folder.choose': '选择文件夹…',
   'folder.scanning': '正在查找文件夹里的书…',
   'folder.title': '从文件夹添加',
