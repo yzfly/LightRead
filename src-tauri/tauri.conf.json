@@ -33,9 +33,7 @@
     "longDescription": "LightRead 轻阅：开源、本地优先的全格式电子书阅读器。支持 EPUB、MOBI、AZW3、FB2、CBZ、PDF、TXT、Markdown，藏书管理与 OPDS 开放书源。",
     "fileAssociations": [
       {
-        "ext": [
-          "pdf"
-        ],
+        "ext": ["pdf"],
         "name": "PDF Document",
         "description": "PDF 文档",
         "role": "Viewer",
@@ -43,9 +41,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "epub"
-        ],
+        "ext": ["epub"],
         "name": "EPUB eBook",
         "description": "EPUB 电子书",
         "role": "Viewer",
@@ -53,9 +49,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "mobi"
-        ],
+        "ext": ["mobi"],
         "name": "Mobipocket eBook",
         "description": "MOBI 电子书",
         "role": "Viewer",
@@ -63,10 +57,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "azw",
-          "azw3"
-        ],
+        "ext": ["azw", "azw3"],
         "name": "Kindle eBook",
         "description": "Kindle 电子书",
         "role": "Viewer",
@@ -74,11 +65,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "fb2",
-          "fbz",
-          "fb2.zip"
-        ],
+        "ext": ["fb2", "fbz", "fb2.zip"],
         "name": "FictionBook eBook",
         "description": "FictionBook 电子书",
         "role": "Viewer",
@@ -86,9 +73,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "cbz"
-        ],
+        "ext": ["cbz"],
         "name": "CBZ Comic Book",
         "description": "CBZ 漫画",
         "role": "Viewer",
@@ -96,9 +81,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "cbr"
-        ],
+        "ext": ["cbr"],
         "name": "CBR Comic Book",
         "description": "CBR 漫画",
         "role": "Viewer",
@@ -106,19 +89,14 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "djvu",
-          "djv"
-        ],
+        "ext": ["djvu", "djv"],
         "name": "DjVu Document",
         "description": "DjVu 文档",
         "role": "Viewer",
         "rank": "Default"
       },
       {
-        "ext": [
-          "txt"
-        ],
+        "ext": ["txt"],
         "name": "Plain Text Document",
         "description": "纯文本文档",
         "role": "Viewer",
@@ -126,10 +104,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "html",
-          "htm"
-        ],
+        "ext": ["html", "htm"],
         "name": "HTML Document",
         "description": "HTML 文档",
         "role": "Viewer",
@@ -137,9 +112,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "xhtml"
-        ],
+        "ext": ["xhtml"],
         "name": "XHTML Document",
         "description": "XHTML 文档",
         "role": "Viewer",
@@ -147,10 +120,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "md",
-          "markdown"
-        ],
+        "ext": ["md", "markdown"],
         "name": "Markdown Document",
         "description": "Markdown 文档",
         "role": "Viewer",
@@ -158,47 +128,7 @@
         "rank": "Default"
       },
       {
-        "ext": [
-          "mdown",
-          "mkd",
-          "mkdn",
-          "mdx",
-          "rst",
-          "org",
-          "adoc",
-          "log",
-          "csv",
-          "tsv",
-          "json",
-          "jsonl",
-          "yaml",
-          "yml",
-          "toml",
-          "ini",
-          "conf",
-          "xml",
-          "srt",
-          "vtt",
-          "sql",
-          "sh",
-          "py",
-          "js",
-          "ts",
-          "go",
-          "rs",
-          "java",
-          "c",
-          "cpp",
-          "h",
-          "rb",
-          "php",
-          "lua",
-          "swift",
-          "kt",
-          "css",
-          "vue",
-          "tex"
-        ],
+        "ext": ["mdown", "mkd", "mkdn", "mdx", "rst", "org", "adoc", "log", "csv", "tsv", "json", "jsonl", "yaml", "yml", "toml", "ini", "conf", "xml", "srt", "vtt", "sql", "sh", "py", "js", "ts", "go", "rs", "java", "c", "cpp", "h", "rb", "php", "lua", "swift", "kt", "css", "vue", "tex"],
         "name": "Plain Text / Source Code",
         "description": "纯文本与源码",
         "role": "Viewer",
@@ -215,11 +145,7 @@
     ],
     "windows": {
       "nsis": {
-        "languages": [
-          "English",
-          "SimpChinese",
-          "TradChinese"
-        ],
+        "languages": ["English", "SimpChinese", "TradChinese"],
         "displayLanguageSelector": false
       }
     },
