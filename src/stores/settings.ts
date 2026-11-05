@@ -211,8 +211,8 @@ interface SettingsState {
   autoReadSeconds: number
   /** PDF 打开方式: auto 文字版用电子书 (重排) 打开、扫描版与论文用原版; original 总是原版. 见 services/pdfReflow/viewMode.ts */
   pdfReflowDefault: 'auto' | 'original'
-  /** 听书引擎: edge 在线神经音色 / local 本地离线神经音色 / system 系统语音 */
-  ttsEngine: 'edge' | 'local' | 'system'
+  /** 听书引擎: edge 在线神经音色 / local 本地离线神经音色 / system 系统语音 / cloud 自带 Key 的 API 语音 / sapi Windows SAPI 5 语音 */
+  ttsEngine: 'edge' | 'local' | 'system' | 'cloud' | 'sapi'
   /** 听书语速 (0.5 - 2) */
   ttsRate: number
   /** 系统语音音色名称, 空为自动匹配 (中文优先) */
@@ -221,6 +221,19 @@ interface SettingsState {
   edgeVoice: string
   /** 本地音色编号 (Kokoro 0-102) */
   localVoiceId: number
+  /** SAPI 5 语音的令牌 id, 空为系统默认 */
+  sapiVoice: string
+  /** API 语音服务商 */
+  cloudTtsProvider: 'minimax' | 'doubao'
+  /** MiniMax 国内站 / 国际站: 两边的 Key 不通用 */
+  minimaxRegion: 'cn' | 'global'
+  minimaxModel: string
+  minimaxVoice: string
+  minimaxApiKey: string
+  doubaoVoice: string
+  doubaoApiKey: string
+  /** 豆包旧版控制台的 App ID; 新版控制台的 API Key 不需要 */
+  doubaoAppId: string
   /** Web 端跨域代理模板, {url} 为占位符; 桌面端走原生请求无需代理 */
   corsProxy: string
   /** 桌面端网络代理 (http:// 或 socks5://), 书源请求经此代理 */
@@ -304,6 +317,15 @@ const defaults: SettingsState = {
   ttsVoice: '',
   edgeVoice: 'zh-TW-HsiaoChenNeural',
   localVoiceId: 50,
+  sapiVoice: '',
+  cloudTtsProvider: 'minimax',
+  minimaxRegion: 'cn',
+  minimaxModel: 'speech-2.8-turbo',
+  minimaxVoice: 'female-chengshu',
+  minimaxApiKey: '',
+  doubaoVoice: 'zh_female_wenroushunv_uranus_bigtts',
+  doubaoApiKey: '',
+  doubaoAppId: '',
   corsProxy: '',
   httpProxy: '',
   calibrePath: '',

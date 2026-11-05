@@ -63,12 +63,16 @@ export interface ChunkProfile {
  * 在线 (Edge): 以整段为单位合成 —— 段内句与句由合成引擎自己衔接, 语调与停顿最自然;
  * 只有超长段 (约 500 字以上) 才在句末切开。首块仍短, 保证起播快。
  * 离线 (Kokoro): 本机推理慢, 块小一些, 但同样优先在段末断开。
+ * API 语音 (MiniMax / 豆包): 按字计费, 块小一些, 跳走时白花的钱少; 仍以段为单位保证语气连贯。
+ * SAPI: 本机或适配器串行合成, 块大小介于两者之间。
  * (2026-10-05 真机实测: 原先 120 字一块, 长段里每一两句就切一次, 每块独立合成都带「句终」语调,
  *  接缝处再裁静音 + 插停顿, 听感就是句与句之间卡一下。)
  */
-export const CHUNK_PROFILES: Record<'edge' | 'local', ChunkProfile> = {
+export const CHUNK_PROFILES: Record<'edge' | 'local' | 'cloud' | 'sapi', ChunkProfile> = {
   edge: { firstMax: 60, target: 500, max: 600, minParagraph: 16 },
   local: { firstMax: 30, target: 100, max: 160, minParagraph: 12 },
+  cloud: { firstMax: 60, target: 300, max: 400, minParagraph: 16 },
+  sapi: { firstMax: 40, target: 200, max: 300, minParagraph: 12 },
 }
 
 /**

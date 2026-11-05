@@ -25,6 +25,8 @@ import { ListenPlayer, type ListenFeed } from '../../services/listenPlayer.ts'
 import { SentenceCursor, loadListenBookmark, saveListenBookmark, agoBucket, type CursorPos, type ListenBookmark } from '../../services/readAloud.ts'
 import { readingArea, followTarget, jumpLine, isOnScreen, followHeld, scrollMotion, prefersReducedMotion, type Area } from '../../services/readingFocus.ts'
 import { EDGE_VOICES, edgeAvailable, playAudio } from '../../services/edgeTts.ts'
+import CloudTtsConfig from '../../components/CloudTtsConfig.vue'
+import { cloudSignature } from '../../services/cloudTts'
 import { KOKORO_VOICES, DEFAULT_KOKORO_SID, kokoroVoiceLabel } from '../../services/kokoroVoices.ts'
 import { localPack, localTtsSynthesize, refreshLocalPack, localTtsAvailable } from '../services/localTts.ts'
 import LocalTtsPack from '../../components/LocalTtsPack.vue'
@@ -248,6 +250,7 @@ const unavailableVoice = computed(() => settings.ttsEngine === 'local' && !local
 const voiceSummary = computed(() => {
   if (!edgeAvailable() || settings.ttsEngine === 'system') return settings.ttsVoice || t('tts.engineSystem')
   if (settings.ttsEngine === 'edge') return EDGE_VOICES.find(v => v.id === settings.edgeVoice)?.label.split(' · ')[0] || t('tts.engineEdge')
+  if (settings.ttsEngine === 'cloud') return t('tts.engineCloud')
   const voice = KOKORO_VOICES.find(v => v.sid === settings.localVoiceId)
   return voice ? kokoroVoiceLabel(voice, settings.language === 'en' ? 'en' : 'zh').split(' · ')[0] : t('tts.engineLocal')
 })
@@ -2099,7 +2102,7 @@ watch(ttsState, s => ambient.duck(s === 'playing'), { immediate: true })
 // 换音色 / 倍速 / 引擎: 从正在读的这一句开头按新设置重读 (拖语速滑条时停手 0.4 秒再重读一次);
 // 暂停中改的, 继续时从这句开头读
 let settingsRestartTimer: ReturnType<typeof setTimeout> | undefined
-watch(() => [settings.ttsEngine, settings.ttsRate, settings.edgeVoice, settings.localVoiceId, settings.ttsVoice], () => {
+watch(() => [settings.ttsEngine, settings.ttsRate, settings.edgeVoice, settings.localVoiceId, settings.ttsVoice, cloudSignature(settings), settings.minimaxApiKey, settings.doubaoApiKey, settings.doubaoAppId], () => {
   if (ttsState.value === 'stopped') return
   clearTimeout(settingsRestartTimer)
   if (ttsState.value === 'paused') {
@@ -3843,6 +3846,7 @@ onBeforeUnmount(() => {
           <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">{{ t('tts.engineEdge') }}</button>
           <button :class="{ active: settings.ttsEngine === 'local' }" :disabled="!localTtsAvailable()" :title="localTtsAvailable() ? t('tts.engineLocalTitle') : t('tts.localUnsupported')" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">{{ t('tts.engineLocal') }}</button>
           <button :disabled="!systemSpeechAvailable()" :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">{{ t('tts.engineSystem') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'cloud' }" :title="t('tts.engineCloudTitle')" @click="settings.ttsEngine = 'cloud'; resetEdgeFailure()">{{ t('tts.engineCloud') }}</button>
         </div>
       </div>
       <div v-show="ttsOptions === 'voice'" v-if="edgeAvailable() && settings.ttsEngine === 'edge'" class="tts-row">
@@ -3850,6 +3854,9 @@ onBeforeUnmount(() => {
         <AppSelect v-model="settings.edgeVoice" class="input" :aria-label="t('tts.voice')">
           <option v-for="v in EDGE_VOICES" :key="v.id" :value="v.id">{{ v.label }}</option>
         </AppSelect>
+      </div>
+      <div v-show="ttsOptions === 'voice'" v-else-if="edgeAvailable() && settings.ttsEngine === 'cloud'" class="tts-row">
+        <CloudTtsConfig :busy="ttsState !== 'stopped'" />
       </div>
       <div v-show="ttsOptions === 'voice'" v-else-if="edgeAvailable() && settings.ttsEngine === 'local'" class="tts-row">
         <label>{{ t('tts.voice') }}</label>
@@ -3869,7 +3876,7 @@ onBeforeUnmount(() => {
           <option v-for="v in ttsVoices" :key="v.name" :value="v.name">{{ v.name }} ({{ v.lang }})</option>
         </AppSelect>
       </div>
-      <p v-show="ttsOptions === 'voice'" class="tts-hint">
+      <p v-show="ttsOptions === 'voice' && (settings.ttsEngine !== 'cloud' || !edgeAvailable())" class="tts-hint">
         {{ !edgeAvailable() ? t('tts.hintSystem') : settings.ttsEngine === 'edge' ? t(systemSpeechAvailable() ? 'tts.hintEdge' : 'tts.hintEdgeNoSystem') : settings.ttsEngine === 'local' ? t('tts.hintLocal') : t('tts.hintSystem') }}
       </p>
         </div>

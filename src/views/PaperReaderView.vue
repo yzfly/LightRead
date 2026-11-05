@@ -80,6 +80,9 @@ import {
   listVoicesSorted,
 } from '../services/tts'
 import { EDGE_VOICES, edgeAvailable, playAudio } from '../services/edgeTts'
+import CloudTtsConfig from '../components/CloudTtsConfig.vue'
+import SapiVoiceSelect from '../components/SapiVoiceSelect.vue'
+import { sapiPlatform } from '../services/sapiTts'
 import { KOKORO_VOICES, DEFAULT_KOKORO_SID, kokoroVoiceLabel } from '../services/kokoroVoices'
 import { localPack, localTtsSynthesize, refreshLocalPack } from '../services/localTts'
 import LocalTtsPack from '../components/LocalTtsPack.vue'
@@ -4924,6 +4927,8 @@ onBeforeUnmount(() => {
           <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">{{ t('tts.engineEdge') }}</button>
           <button :class="{ active: settings.ttsEngine === 'local' }" :title="t('tts.engineLocalTitle')" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">{{ t('tts.engineLocal') }}</button>
           <button :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">{{ t('tts.engineSystem') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'cloud' }" :title="t('tts.engineCloudTitle')" @click="settings.ttsEngine = 'cloud'; resetEdgeFailure()">{{ t('tts.engineCloud') }}</button>
+          <button v-if="sapiPlatform()" :class="{ active: settings.ttsEngine === 'sapi' }" :title="t('tts.engineSapiTitle')" @click="settings.ttsEngine = 'sapi'; resetEdgeFailure()">{{ t('tts.engineSapi') }}</button>
         </div>
       </div>
       <div v-if="edgeAvailable() && settings.ttsEngine === 'edge'" class="tts-row">
@@ -4931,6 +4936,13 @@ onBeforeUnmount(() => {
         <AppSelect v-model="settings.edgeVoice" class="input" :aria-label="t('tts.voice')">
           <option v-for="v in EDGE_VOICES" :key="v.id" :value="v.id">{{ v.label }}</option>
         </AppSelect>
+      </div>
+      <div v-else-if="edgeAvailable() && settings.ttsEngine === 'cloud'" class="tts-row">
+        <CloudTtsConfig :busy="ttsState !== 'stopped'" />
+      </div>
+      <div v-else-if="edgeAvailable() && settings.ttsEngine === 'sapi' && sapiPlatform()" class="tts-row">
+        <label>{{ t('tts.voice') }}</label>
+        <SapiVoiceSelect :busy="ttsState !== 'stopped'" />
       </div>
       <div v-else-if="edgeAvailable() && settings.ttsEngine === 'local'" class="tts-row">
         <label>{{ t('tts.voice') }}</label>

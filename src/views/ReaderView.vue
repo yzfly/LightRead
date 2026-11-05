@@ -22,6 +22,10 @@ import { ListenPlayer, type ListenFeed } from '../services/listenPlayer'
 import { SentenceCursor, loadListenBookmark, saveListenBookmark, agoBucket, type CursorPos, type ListenBookmark } from '../services/readAloud'
 import { readingArea, followTarget, jumpLine, isOnScreen, followHeld, scrollMotion, prefersReducedMotion, type Area } from '../services/readingFocus'
 import { EDGE_VOICES, edgeAvailable, playAudio } from '../services/edgeTts'
+import CloudTtsConfig from '../components/CloudTtsConfig.vue'
+import { cloudSignature } from '../services/cloudTts'
+import SapiVoiceSelect from '../components/SapiVoiceSelect.vue'
+import { sapiPlatform } from '../services/sapiTts'
 import { KOKORO_VOICES, DEFAULT_KOKORO_SID, kokoroVoiceLabel } from '../services/kokoroVoices'
 import { localPack, localTtsSynthesize, refreshLocalPack } from '../services/localTts'
 import LocalTtsPack from '../components/LocalTtsPack.vue'
@@ -1814,7 +1818,7 @@ watch(ttsState, s => ambient.duck(s === 'playing'), { immediate: true })
 // 换音色 / 倍速 / 引擎: 从正在读的这一句开头按新设置重读 (拖语速滑条时停手 0.4 秒再重读一次);
 // 暂停中改的, 继续时从这句开头读
 let settingsRestartTimer: ReturnType<typeof setTimeout> | undefined
-watch(() => [settings.ttsEngine, settings.ttsRate, settings.edgeVoice, settings.localVoiceId, settings.ttsVoice], () => {
+watch(() => [settings.ttsEngine, settings.ttsRate, settings.edgeVoice, settings.localVoiceId, settings.ttsVoice, cloudSignature(settings), settings.sapiVoice, settings.minimaxApiKey, settings.doubaoApiKey, settings.doubaoAppId], () => {
   if (ttsState.value === 'stopped') return
   clearTimeout(settingsRestartTimer)
   if (ttsState.value === 'paused') {
@@ -3421,6 +3425,8 @@ onBeforeUnmount(() => {
           <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">{{ t('tts.engineEdge') }}</button>
           <button :class="{ active: settings.ttsEngine === 'local' }" :title="t('tts.engineLocalTitle')" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">{{ t('tts.engineLocal') }}</button>
           <button :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">{{ t('tts.engineSystem') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'cloud' }" :title="t('tts.engineCloudTitle')" @click="settings.ttsEngine = 'cloud'; resetEdgeFailure()">{{ t('tts.engineCloud') }}</button>
+          <button v-if="sapiPlatform()" :class="{ active: settings.ttsEngine === 'sapi' }" :title="t('tts.engineSapiTitle')" @click="settings.ttsEngine = 'sapi'; resetEdgeFailure()">{{ t('tts.engineSapi') }}</button>
         </div>
       </div>
       <div v-if="edgeAvailable() && settings.ttsEngine === 'edge'" class="tts-row">
@@ -3428,6 +3434,13 @@ onBeforeUnmount(() => {
         <AppSelect v-model="settings.edgeVoice" class="input" :aria-label="t('tts.voice')">
           <option v-for="v in EDGE_VOICES" :key="v.id" :value="v.id">{{ v.label }}</option>
         </AppSelect>
+      </div>
+      <div v-else-if="edgeAvailable() && settings.ttsEngine === 'cloud'" class="tts-row">
+        <CloudTtsConfig :busy="ttsState !== 'stopped'" />
+      </div>
+      <div v-else-if="edgeAvailable() && settings.ttsEngine === 'sapi' && sapiPlatform()" class="tts-row">
+        <label>{{ t('tts.voice') }}</label>
+        <SapiVoiceSelect :busy="ttsState !== 'stopped'" />
       </div>
       <div v-else-if="edgeAvailable() && settings.ttsEngine === 'local'" class="tts-row">
         <label>{{ t('tts.voice') }}</label>
@@ -3446,8 +3459,8 @@ onBeforeUnmount(() => {
           <option v-for="v in ttsVoices" :key="v.name" :value="v.name">{{ v.name }} ({{ v.lang }})</option>
         </AppSelect>
       </div>
-      <p class="tts-hint">
-        {{ !edgeAvailable() ? t('tts.hintSystem') : settings.ttsEngine === 'edge' ? t('tts.hintEdge') : settings.ttsEngine === 'local' ? t('tts.hintLocal') : t('tts.hintSystem') }}
+      <p v-if="settings.ttsEngine !== 'cloud' || !edgeAvailable()" class="tts-hint">
+        {{ !edgeAvailable() ? t('tts.hintSystem') : settings.ttsEngine === 'edge' ? t('tts.hintEdge') : settings.ttsEngine === 'local' ? t('tts.hintLocal') : settings.ttsEngine === 'sapi' ? t('tts.hintSapi') : t('tts.hintSystem') }}
       </p>
     </div>
 

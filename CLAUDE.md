@@ -51,6 +51,7 @@ npm run test:sync-large-files   # 同步大文件: 分块 SHA-256 / 原生算指
 npm run test:reading-log    # 阅读记录: 计时规则 + 每日统计 + 多端同步往返
 npm run test:compat / test:tts   # 旧 WebView 兼容 (构建目标/polyfill/CSS 回退); 离线听书调度
 npm run test:reader-pages / test:listen-eta   # 重排书页码 (实测+推算/双栏/跳页往返); 听书剩余时间 (语速学习/人话时长)
+npm run test:cloud-tts       # API 语音 (MiniMax / 豆包): 音色目录 / 设置到请求的映射 / 错误分类; 原生请求见 cargo test cloud_tts
 npm run test:read-aloud      # 听书: 句子游标断句 + 播放管线 (分块/预取/无缝拼接/回退, 假时钟) + 音色目录
 npm run test:reading-modes   # 阅读模式: 打字机出字节奏 / 断句 / 按行分组 (纯函数)
 npm run test:reading-focus   # 阅读焦点: 舒适区 25%–65% / 焦点线 38% / 长句 / 手动滚动后暂停跟随 (听书跟随与跳转落点, 纯函数)

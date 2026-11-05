@@ -282,3 +282,18 @@
 1. 试听 5.2 节的样本，以及阿里、火山官方页上龙安台、湾湾小何、温柔淑女 2.0 的试听，确认「更像真人」的方向（台湾腔优先，还是旁白感优先）。
 2. 是否愿意为中转试听设 TTS 专用预算（建议先每天 20–30 元）。
 3. 正式开通阿里百炼和火山前，由开发者实名注册，并通读服务协议中「向第三方或终端用户提供服务」的条款。
+
+## 7. 落地记录：API 语音与 SAPI 5（2026-11-04，issue #19）
+
+**已接入：** MiniMax（国内站 / 国际站）与火山豆包，用户自带 Key，Rust 发请求（`src-tauri/src/cloud_tts.rs`），目录与映射见 `src/services/cloudTts.ts`。只在桌面和 App 提供：网页版没有原生层，豆包也不放行浏览器跨域的鉴权头。阿里百炼、Azure 仍是候选，加一家只需在这两个文件各加一支。
+
+**接口依据（官方文档，2026-11-04 抓取）：**
+
+- MiniMax：`POST https://api.minimax.cn/v1/t2a_v2`（国际站 `api.minimax.io`），`Authorization: Bearer`，`voice_setting.speed` 0.5–2，非流式返回 hex。
+- 豆包：`POST https://openspeech.bytedance.com/api/v3/tts/unidirectional`，新版控制台 `X-Api-Key`，旧版 `X-Api-App-Id` + `X-Api-Access-Key`，都要 `X-Api-Resource-Id`；`speech_rate` -50–100（-50 为 0.5 倍速、100 为 2 倍速）；响应是相接的 JSON，以 code 20000000 结束。
+
+**未核实：** 没有真实 Key，请求和响应只对照文档用回环服务测过；音色 ID 抄自官方列表，未逐个合成。复刻音色（`S_` 开头）的 Resource Id 按 `seed-icl-2.0` 处理，1.0 复刻音色会报音色错误。
+
+**SAPI 5 是什么：** Windows 自带的语音编程接口，语音引擎注册到系统后，所有支持 SAPI 的程序都能用。它本身不提供更好的音色，音质取决于注册的引擎。issue 提到的项目应是 [NaturalVoiceSAPIAdapter](https://github.com/gexgd0419/NaturalVoiceSAPIAdapter)（发帖人尚未给出地址，这是按描述的推断）：把 Windows 11 讲述人本地自然语音、Edge 在线语音、Azure 语音注册成 SAPI 5 语音。其 README 自称更像 hack，并说明微软未允许第三方使用这些音色、系统更新后可能失效。
+
+**对轻阅的实际价值：** Edge 音色轻阅已内置，经适配器只是绕一圈；真正的增量是讲述人的**离线**自然语音，以及用户自己装的其他 SAPI 语音。所以只做通用的 SAPI 通道（`src-tauri/src/sapi_tts.rs`），不打包、不依赖该适配器，也不自动安装。

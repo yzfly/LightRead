@@ -54,9 +54,12 @@ export interface ListenCallbacks {
 export type ListenState = 'idle' | 'playing' | 'paused' | 'buffering'
 
 /** 各引擎的预取参数: 离线推理占满 CPU, 只能一块一块来, 但尽量多攒; 在线可并发 */
-const PIPELINE: Record<NeuralEngine['kind'], { concurrency: number; lookaheadSeconds: number; maxChunks: number }> = {
+const PIPELINE: Record<'edge' | 'local' | 'cloud' | 'sapi', { concurrency: number; lookaheadSeconds: number; maxChunks: number }> = {
   edge: { concurrency: 2, lookaheadSeconds: 45, maxChunks: 8 },
   local: { concurrency: 1, lookaheadSeconds: 90, maxChunks: 12 },
+  // 按字计费: 预取只够消除等待, 跳章时不为没听到的内容多付钱
+  cloud: { concurrency: 2, lookaheadSeconds: 30, maxChunks: 4 },
+  sapi: { concurrency: 1, lookaheadSeconds: 45, maxChunks: 6 },
 }
 /** 提前排进 AudioContext 时间线的秒数 (排上的音频不依赖 JS 定时器) */
 const SCHEDULE_AHEAD = 15
@@ -434,8 +437,8 @@ export class ListenPlayer {
     try {
       blob = await engine.synth(chunk.text)
     } catch (e) {
-      // 在线引擎偶发网络抖动: 重试一次再判定失败
-      if (engine.kind !== 'edge' || !alive()) throw e
+      // 在线引擎偶发网络抖动: 重试一次再判定失败; API 语音的 Key、余额问题重试也没用
+      if (!(engine.kind === 'edge' || engine.retryable?.(e)) || !alive()) throw e
       await sleep(600)
       if (!alive()) throw e
       blob = await engine.synth(chunk.text)

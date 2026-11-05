@@ -5,7 +5,9 @@ mod backup_zip;
 mod babeldoc;
 mod calibre;
 mod comic;
+mod cloud_tts;
 mod edge_tts;
+mod sapi_tts;
 mod epub_meta;
 mod folder_scan;
 mod fonts;
@@ -170,7 +172,10 @@ pub fn run() {
       agent::worksheet::agent_worksheet_load,
       agent::worksheet::agent_worksheet_save_draft,
       agent::worksheet::agent_worksheet_commit_human,
+      cloud_tts::cloud_tts_synthesize,
       edge_tts::edge_tts_synthesize,
+      sapi_tts::sapi_tts_voices,
+      sapi_tts::sapi_tts_synthesize,
       fonts::list_system_fonts,
       folder_scan::folder_scan,
       http_upload::http_upload,

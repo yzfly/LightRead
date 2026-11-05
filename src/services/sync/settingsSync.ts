@@ -73,6 +73,16 @@ export const SETTINGS_SYNC_SPEC: SettingsSpec = {
   ttsVoice: LOCAL,
   edgeVoice: SYNC,
   localVoiceId: SYNC,
+  /** SAPI 语音取决于这台 Windows 装了什么 */
+  sapiVoice: LOCAL,
+  cloudTtsProvider: SYNC,
+  minimaxRegion: SYNC,
+  minimaxModel: SYNC,
+  minimaxVoice: SYNC,
+  minimaxApiKey: SECRET,
+  doubaoVoice: SYNC,
+  doubaoApiKey: SECRET,
+  doubaoAppId: SECRET,
   /** 网络环境相关: 代理只对这台设备 / 这个浏览器有意义 */
   corsProxy: LOCAL,
   httpProxy: LOCAL,

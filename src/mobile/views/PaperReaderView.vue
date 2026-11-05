@@ -85,6 +85,7 @@ import {
   systemSpeechAvailable,
 } from '../services/tts'
 import { EDGE_VOICES, edgeAvailable, playAudio } from '../../services/edgeTts'
+import CloudTtsConfig from '../../components/CloudTtsConfig.vue'
 import { KOKORO_VOICES, DEFAULT_KOKORO_SID, kokoroVoiceLabel } from '../../services/kokoroVoices'
 import { localPack, localTtsAvailable, localTtsSynthesize, refreshLocalPack } from '../services/localTts'
 import LocalTtsPack from '../../components/LocalTtsPack.vue'
@@ -5002,6 +5003,7 @@ onBeforeUnmount(() => clearTimeout(phoneBarsTimer))
           <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">{{ t('tts.engineEdge') }}</button>
           <button :class="{ active: settings.ttsEngine === 'local' }" :disabled="!localTtsAvailable()" :title="localTtsAvailable() ? t('tts.engineLocalTitle') : t('tts.localUnsupported')" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">{{ t('tts.engineLocal') }}</button>
           <button :class="{ active: settings.ttsEngine === 'system' }" :disabled="!systemSpeechAvailable()" :title="systemSpeechAvailable() ? t('tts.engineSystem') : t('tts.systemUnsupported')" @click="settings.ttsEngine = 'system'">{{ t('tts.engineSystem') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'cloud' }" :title="t('tts.engineCloudTitle')" @click="settings.ttsEngine = 'cloud'; resetEdgeFailure()">{{ t('tts.engineCloud') }}</button>
         </div>
       </div>
       <div v-if="edgeAvailable() && settings.ttsEngine === 'edge'" class="tts-row">
@@ -5009,6 +5011,9 @@ onBeforeUnmount(() => clearTimeout(phoneBarsTimer))
         <AppSelect v-model="settings.edgeVoice" class="input" :aria-label="t('tts.voice')">
           <option v-for="v in EDGE_VOICES" :key="v.id" :value="v.id">{{ v.label }}</option>
         </AppSelect>
+      </div>
+      <div v-else-if="edgeAvailable() && settings.ttsEngine === 'cloud'" class="tts-row">
+        <CloudTtsConfig :busy="ttsState !== 'stopped'" />
       </div>
       <div v-else-if="edgeAvailable() && settings.ttsEngine === 'local' && localTtsAvailable()" class="tts-row">
         <label>{{ t('tts.voice') }}</label>

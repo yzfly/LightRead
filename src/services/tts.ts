@@ -97,6 +97,8 @@ import {
   edgeAvailable, edgePause, edgeResume, edgeStop, edgeSynthesize, playAudio,
 } from './edgeTts'
 import { isLocalCrashError, localPack, localTtsAvailable, localTtsSynthesize, localTtsWarmup } from './localTts'
+import { cloudErrorCode, cloudSignature, cloudSynthesize, isTransientCloudError } from './cloudTts.ts'
+import { sapiPlatform, sapiSynthesize } from './sapiTts.ts'
 
 /** 神经引擎失败后本次会话回退系统语音, 避免每段都等超时 */
 let neuralFailed = false
@@ -155,10 +157,12 @@ export function splitSpeechText(text: string, maxLen = 80): string[] {
 }
 
 export interface NeuralEngine {
-  kind: 'edge' | 'local'
+  kind: 'edge' | 'local' | 'cloud' | 'sapi'
   synth: (text: string) => Promise<Blob>
   /** 离线引擎: 单线程推理, 合成请求串行排队并按句切块 */
   local: boolean
+  /** 失败后值得重试一次 (网络抖动、限流) */
+  retryable?: (error: unknown) => boolean
 }
 
 /** 当前设置下的神经合成器 (edge 在线 / local 离线); 不可用或本次会话已失败返回 null (用系统语音) */
@@ -167,6 +171,17 @@ export function neuralEngine(): NeuralEngine | null {
   if (neuralFailed) return null
   if (settings.ttsEngine === 'edge' && edgeAvailable()) {
     return { kind: 'edge', local: false, synth: text => edgeSynthesize(text, settings.edgeVoice, settings.ttsRate) }
+  }
+  if (settings.ttsEngine === 'cloud' && edgeAvailable()) {
+    return {
+      kind: 'cloud',
+      local: false,
+      retryable: isTransientCloudError,
+      synth: text => cloudSynthesize(settings, text, settings.ttsRate),
+    }
+  }
+  if (settings.ttsEngine === 'sapi' && edgeAvailable() && sapiPlatform()) {
+    return { kind: 'sapi', local: true, synth: text => sapiSynthesize(text, settings.sapiVoice, settings.ttsRate) }
   }
   if (settings.ttsEngine === 'local' && localTtsAvailable()) {
     return {
@@ -213,6 +228,11 @@ export function reportNeuralFailure(error: unknown) {
   console.error(error)
   if (neuralFailed) return
   neuralFailed = true
+  const cloudCode = cloudErrorCode(error)
+  if (cloudCode) {
+    toast(t(`tts.cloudError.${cloudCode}`), 'error', 6000)
+    return
+  }
   if (isLocalCrashError(error)) {
     localPack.crashed = true
     toast(t('tts.localCrashedPaused'), 'error', 8000)
@@ -309,7 +329,7 @@ const synthCache = new Map<string, CacheEntry>()
 const MAX_CACHE = 32
 const cacheKey = (text: string) => {
   const s = useSettings()
-  return `${s.ttsEngine}|${s.edgeVoice}|${s.localVoiceId}|${s.ttsRate}|${text}`
+  return `${s.ttsEngine}|${s.edgeVoice}|${s.localVoiceId}|${s.ttsRate}|${s.ttsEngine === 'cloud' ? cloudSignature(s) : ''}|${s.ttsEngine === 'sapi' ? s.sapiVoice : ''}|${text}`
 }
 
 /** 取 (或发起) 一块文本的合成; priority 越小越先合成 */
@@ -337,6 +357,7 @@ function requestSynth(engine: NeuralEngine, text: string, priority: number): Cac
 }
 
 function speechParts(engine: NeuralEngine, text: string): string[] {
+  if (engine.kind === 'cloud') return splitSpeechText(text, 400)
   return engine.local ? splitSpeechText(text) : [text]
 }
 
