@@ -11,19 +11,51 @@
 import { init, type WrappedPdfiumModule } from '@embedpdf/pdfium'
 import wasmUrl from '@embedpdf/pdfium/pdfium.wasm?url'
 import { isMathChar, type TextItem } from './paperText'
+import { logEvent } from './diagnostics'
+import { isWasmCrash } from './wasmCrash'
 
 let modPromise: Promise<WrappedPdfiumModule> | null = null
+let currentMod: WrappedPdfiumModule | null = null
 
 function pdfiumModule(): Promise<WrappedPdfiumModule> {
   if (!modPromise) {
-    modPromise = (async () => {
+    const pending: Promise<WrappedPdfiumModule> = (async () => {
       const wasmBinary = await (await fetch(wasmUrl)).arrayBuffer()
       const mod = await init({ wasmBinary } as any)
       mod.PDFiumExt_Init()
+      currentMod = mod
       return mod
     })()
+    modPromise = pending
+    // 加载失败 (如网络) 不能把失败的 Promise 留到下次
+    pending.catch(() => {
+      if (modPromise === pending) modPromise = null
+    })
   }
   return modPromise
+}
+
+/** 丢弃实例: 崩溃后状态不可信, wasm 堆也无法缩小。下次打开重新创建, 旧实例由 GC 回收 */
+function retireModule(mod: WrappedPdfiumModule) {
+  if (currentMod !== mod) return
+  currentMod = null
+  modPromise = null
+}
+
+const heapMb = (mod: WrappedPdfiumModule) => {
+  try {
+    return Math.round((mod.pdfium as any).HEAPU8.length / 1048576)
+  } catch {
+    return -1
+  }
+}
+
+/** PDF 引擎无法继续工作; message 不面向用户, 界面用 reader.pdfEngineCrashed */
+export class PdfEngineError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'PdfEngineError'
+  }
 }
 
 export interface PdmPage {
@@ -96,11 +128,35 @@ export class PdfiumDoc {
   }
 
   static async open(data: ArrayBuffer): Promise<PdfiumDoc> {
-    const m = await pdfiumModule()
-    const d = new PdfiumDoc(m)
     const bytes = new Uint8Array(data)
+    logEvent('info', 'pdf', `open start ${Math.round(bytes.length / 1024)}KB`)
+    // 第一次失败可能只因实例已被之前的崩溃或占满的堆拖累 (导入取封面的崩溃是被吞掉的),
+    // 换干净实例再试一次; 再失败才是文件或设备本身的问题。
+    for (let attempt = 1; ; attempt++) {
+      const m = await pdfiumModule()
+      try {
+        const d = PdfiumDoc.load(m, bytes)
+        logEvent('info', 'pdf', `open ok pages=${d.pages.length} heap=${heapMb(m)}MB attempt=${attempt}`)
+        return d
+      } catch (error) {
+        if (error instanceof PdfEngineError || isWasmCrash(error)) {
+          logEvent('error', 'pdf', `open crashed attempt=${attempt} size=${Math.round(bytes.length / 1024)}KB heap=${heapMb(m)}MB`, error)
+          retireModule(m)
+          if (attempt < 2) continue
+          throw error instanceof PdfEngineError ? error : new PdfEngineError(String((error as Error)?.message ?? error), { cause: error })
+        }
+        logEvent('warn', 'pdf', 'open failed', error)
+        throw error
+      }
+    }
+  }
+
+  private static load(m: WrappedPdfiumModule, bytes: Uint8Array): PdfiumDoc {
+    const d = new PdfiumDoc(m)
     // PDFium 要求文档存续期间源缓冲有效, filePtr 在 close 时才释放
     d.filePtr = m.pdfium.wasmExports.malloc(bytes.length)
+    // 堆长不动时 malloc 返回 0; 这时再写入会从地址 0 起覆盖引擎自身的数据, 必须先拦下
+    if (!d.filePtr) throw new PdfEngineError(`PDFium out of memory: file ${bytes.length} bytes, heap ${heapMb(m)}MB`)
     ;(m.pdfium as any).HEAPU8.set(bytes, d.filePtr)
     d.doc = m.FPDF_LoadMemDocument(d.filePtr, bytes.length, '')
     if (!d.doc) {
@@ -108,17 +164,53 @@ export class PdfiumDoc {
       throw new Error(`PDFium load failed (${m.FPDF_GetLastError?.() ?? 'unknown'})`)
     }
     const n = m.FPDF_GetPageCount(d.doc)
+    // 只读页面尺寸, 不解析页面内容: 打开时不必把全书内容过一遍, 单页有问题也不影响打开
+    const size = m.pdfium.wasmExports.malloc(8)
+    if (!size) throw new PdfEngineError('PDFium out of memory: page sizes')
     for (let i = 0; i < n; i++) {
-      const page = m.FPDF_LoadPage(d.doc, i)
-      d.pages.push({ w: m.FPDF_GetPageWidthF(page), h: m.FPDF_GetPageHeightF(page) })
-      m.FPDF_ClosePage(page)
+      const ok = m.FPDF_GetPageSizeByIndexF(d.doc, i, size)
+      d.pages.push(ok
+        ? { w: d.rt.getValue(size, 'float'), h: d.rt.getValue(size + 4, 'float') }
+        : { w: 612, h: 792 })
     }
+    m.pdfium.wasmExports.free(size)
     return d
   }
 
+  /** 引擎已崩溃: 位图回退失败, 文本 / 链接 / 目录退化为空, 重新打开文档可恢复 */
+  private crashed = false
+  private crash(stage: string, error: unknown) {
+    this.crashed = true
+    logEvent('error', 'pdf', `engine crashed in ${stage} pages=${this.pages.length} heap=${heapMb(this.m)}MB`, error)
+    retireModule(this.m)
+  }
+
+  get alive() {
+    return !this.crashed && !!this.doc
+  }
+
+  /** 交互层调用: 崩溃时给出兜底值而不是让事件处理器抛错; 其他异常照常抛出 */
+  private guard<T>(stage: string, fallback: T, run: () => T): T {
+    if (this.crashed) return fallback
+    try {
+      return run()
+    } catch (error) {
+      if (!isWasmCrash(error)) throw error
+      this.crash(stage, error)
+      return fallback
+    }
+  }
+
   close() {
-    if (this.doc) this.m.FPDF_CloseDocument(this.doc)
-    if (this.filePtr) this.m.pdfium.wasmExports.free(this.filePtr)
+    // 已崩溃的实例不能再调用: 释放会再次触发 trap, 实例本身会被整个丢弃
+    if (!this.crashed) {
+      try {
+        if (this.doc) this.m.FPDF_CloseDocument(this.doc)
+        if (this.filePtr) this.m.pdfium.wasmExports.free(this.filePtr)
+      } catch (error) {
+        this.crash('close', error)
+      }
+    }
     this.doc = 0
     this.filePtr = 0
     this.textCache.clear()
@@ -140,32 +232,54 @@ export class PdfiumDoc {
    * 第二次缩放，这与原生阅读器的像素对齐方式一致。
    */
   renderToSize(pageIdx: number, width: number, height: number): ImageData {
+    if (this.crashed) throw new PdfEngineError('PDFium instance crashed')
     const m = this.m
     const w = Math.max(1, Math.round(width))
     const h = Math.max(1, Math.round(height))
-    const page = m.FPDF_LoadPage(this.doc, pageIdx)
-    const bmp = m.FPDFBitmap_CreateEx(w, h, 4 /* BGRA */, 0, 0)
-    m.FPDFBitmap_FillRect(bmp, 0, 0, w, h, 0xffffffff)
-    // 直接输出 RGBA，避免在 JS 中逐像素交换通道；LCD_TEXT 提升屏幕文字清晰度。
-    const flags = 0x01 /* FPDF_ANNOT */ | 0x02 /* FPDF_LCD_TEXT */ | 0x10 /* FPDF_REVERSE_BYTE_ORDER */
-    m.FPDF_RenderPageBitmap(bmp, page, 0, 0, w, h, 0, flags)
-    const buf = m.FPDFBitmap_GetBuffer(bmp)
-    const stride = m.FPDFBitmap_GetStride(bmp)
-    const out = new Uint8ClampedArray(w * h * 4)
-    const heapBuf: ArrayBuffer = this.rt.HEAPU8.buffer
-    for (let row = 0; row < h; row++) {
-      const src = new Uint8Array(heapBuf, buf + row * stride, w * 4)
-      out.set(src, row * w * 4)
+    let page = 0
+    let bmp = 0
+    try {
+      page = m.FPDF_LoadPage(this.doc, pageIdx)
+      bmp = m.FPDFBitmap_CreateEx(w, h, 4 /* BGRA */, 0, 0)
+      if (!bmp) throw new PdfEngineError(`PDFium out of memory: bitmap ${w}x${h}, heap ${heapMb(m)}MB`)
+      m.FPDFBitmap_FillRect(bmp, 0, 0, w, h, 0xffffffff)
+      // 直接输出 RGBA，避免在 JS 中逐像素交换通道；LCD_TEXT 提升屏幕文字清晰度。
+      const flags = 0x01 /* FPDF_ANNOT */ | 0x02 /* FPDF_LCD_TEXT */ | 0x10 /* FPDF_REVERSE_BYTE_ORDER */
+      if (page) m.FPDF_RenderPageBitmap(bmp, page, 0, 0, w, h, 0, flags)
+      const buf = m.FPDFBitmap_GetBuffer(bmp)
+      const stride = m.FPDFBitmap_GetStride(bmp)
+      const out = new Uint8ClampedArray(w * h * 4)
+      const heapBuf: ArrayBuffer = this.rt.HEAPU8.buffer
+      for (let row = 0; row < h; row++) {
+        const src = new Uint8Array(heapBuf, buf + row * stride, w * 4)
+        out.set(src, row * w * 4)
+      }
+      m.FPDFBitmap_Destroy(bmp)
+      bmp = 0
+      m.FPDF_ClosePage(page)
+      page = 0
+      return new ImageData(out, w, h)
+    } catch (error) {
+      if (isWasmCrash(error)) {
+        this.crash(`render page ${pageIdx + 1}`, error)
+        throw new PdfEngineError(`PDFium crashed rendering page ${pageIdx + 1}`, { cause: error })
+      }
+      // JS 侧的失败不留下 PDFium 页面和位图
+      if (bmp) m.FPDFBitmap_Destroy(bmp)
+      if (page) m.FPDF_ClosePage(page)
+      throw error
     }
-    m.FPDFBitmap_Destroy(bmp)
-    m.FPDF_ClosePage(page)
-    return new ImageData(out, w, h)
   }
 
   /** 字符级文本模型 (按页缓存) */
   text(pageIdx: number): TextModel {
     const cached = this.textCache.get(pageIdx)
     if (cached) return cached
+    const empty: TextModel = { count: 0, codes: new Uint32Array(0), boxes: new Float32Array(0), sizes: new Float32Array(0), lines: [] }
+    return this.guard(`text page ${pageIdx + 1}`, empty, () => this.readText(pageIdx))
+  }
+
+  private readText(pageIdx: number): TextModel {
     const m = this.m
     const pg = this.pages[pageIdx]
     const page = m.FPDF_LoadPage(this.doc, pageIdx)
@@ -199,6 +313,10 @@ export class PdfiumDoc {
 
   /** 文档元数据 (Title / Author 等) */
   meta(tag: string): string {
+    return this.guard('meta', '', () => this.readMeta(tag))
+  }
+
+  private readMeta(tag: string): string {
     const m = this.m
     const len = m.FPDF_GetMetaText(this.doc, tag, 0, 0)
     if (len <= 2) return ''
@@ -220,6 +338,10 @@ export class PdfiumDoc {
    * Agent 全文快照会遍历所有页面；走这个路径可避免为数百页常驻 boxes/sizes/lines。
    */
   pagePlainText(pageIdx: number): string {
+    return this.guard(`plain text page ${pageIdx + 1}`, '', () => this.readPlainText(pageIdx))
+  }
+
+  private readPlainText(pageIdx: number): string {
     const m = this.m
     const page = m.FPDF_LoadPage(this.doc, pageIdx)
     const textPage = m.FPDFText_LoadPage(page)
@@ -240,6 +362,10 @@ export class PdfiumDoc {
 
   /** 链接热区: 内链带目标页/页内偏移, 外链带 URL */
   links(pageIdx: number): PdmLink[] {
+    return this.guard(`links page ${pageIdx + 1}`, [], () => this.readLinks(pageIdx))
+  }
+
+  private readLinks(pageIdx: number): PdmLink[] {
     const m = this.m
     const rt = this.rt
     const page = m.FPDF_LoadPage(this.doc, pageIdx)
@@ -321,6 +447,10 @@ export class PdfiumDoc {
 
   /** 内嵌目录树 */
   outline(): PdmOutline[] {
+    return this.guard('outline', [], () => this.readOutline())
+  }
+
+  private readOutline(): PdmOutline[] {
     const walk = (parent: number): PdmOutline[] => {
       const m = this.m
       const out: PdmOutline[] = []

@@ -67,7 +67,7 @@ tauri-plugin-single-instance = "2"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 # SAPI 5 语音 (sapi_tts.rs): windows-sys 不含 COM 接口
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_Media_Speech", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_UI_Shell"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Media_Audio", "Win32_Media_Speech", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_SystemInformation", "Win32_UI_Shell"] }
 
 [dev-dependencies]
 tauri = { version = "2.11.3", features = ["test"] }

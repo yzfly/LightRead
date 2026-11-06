@@ -20,6 +20,7 @@ mod ipc_contract_tests;
 mod library_files;
 mod library_import;
 mod local_tts;
+mod diagnostics;
 mod tts_device;
 mod txt_epub;
 
@@ -154,6 +155,9 @@ pub fn run() {
     .manage(agent::AgentSupervisor::default())
     .manage(babeldoc::BabeldocState::default())
     .invoke_handler(tauri::generate_handler![
+      diagnostics::diagnostics_append,
+      diagnostics::diagnostics_read_logs,
+      diagnostics::diagnostics_system_info,
       take_open_files,
       read_open_file,
       agent::context::agent_snapshot_begin,
@@ -238,13 +242,7 @@ pub fn run() {
           }
         }
       }
-      if cfg!(debug_assertions) {
-        app.handle().plugin(
-          tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Info)
-            .build(),
-        )?;
-      }
+      diagnostics::install(app.handle())?;
       // Windows/Linux 冷启动时，关联文件路径直接出现在进程参数中。
       queue_open_files(app.handle(), supported_paths(std::env::args().skip(1)));
       Ok(())

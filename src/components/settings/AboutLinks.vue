@@ -3,7 +3,7 @@
  * 关于页: 各系统安装包 + 微信读者群。桌面与 App 共用 (openDownload / toast 在 App 构建里解析到各自实现)。
  * 数据与规则见 services/aboutLinks.ts。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { t } from '../../i18n'
 import { isTauri } from '../../storage/types'
 import { MIRROR_RELEASES_URL, RELEASES_URL, copyLink, openDownload } from '../../services/updater'
@@ -11,6 +11,8 @@ import { toast } from '../../services/toast'
 import { AUTHOR_WECHAT, detectPlatform, type PackageKind, type PlatformDownload, type PlatformId, type WechatGroup } from '../../services/aboutLinks'
 import { loadCommunity, loadPlatformDownloads } from '../../services/aboutLinksLoad'
 import { SITE_URL } from '../../services/siteLinks'
+import { consumeCommunityFocus } from '../../services/diagnostics'
+import DiagnosticsPanel from './DiagnosticsPanel.vue'
 
 const PLATFORM_LABEL: Record<PlatformId, string> = {
   windows: 'Windows',
@@ -75,7 +77,13 @@ onMounted(async () => {
       wechatId.value = info.wechatId
     })
     .catch(() => { group.value = null })
-    .finally(() => { groupState.value = 'ready' })
+    .finally(() => {
+      groupState.value = 'ready'
+      // 从报错页跳来: 二维码出现后再定位, 否则内容撑开后位置会变
+      if (consumeCommunityFocus()) {
+        void nextTick(() => document.getElementById('about-community-title')?.scrollIntoView({ block: 'start' }))
+      }
+    })
   try {
     downloads.value = (await loadPlatformDownloads()).items
     downloadsState.value = 'ready'
@@ -150,6 +158,7 @@ onMounted(async () => {
           </p>
         </div>
       </div>
+      <DiagnosticsPanel />
     </section>
   </div>
 </template>

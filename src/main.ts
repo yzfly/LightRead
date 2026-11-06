@@ -6,6 +6,9 @@ import { router } from './router'
 import './styles/main.css'
 import { isTauri } from './storage/types'
 import { installAndroidSafeArea } from './services/systemBars'
+import { installDiagnostics } from './services/diagnostics'
+
+installDiagnostics()
 
 // index.html 的旧 WebView 检查: 模块图能执行到这里就说明环境够新
 ;(window as unknown as { __lightreadBoot?: boolean }).__lightreadBoot = true

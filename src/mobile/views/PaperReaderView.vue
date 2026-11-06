@@ -26,6 +26,7 @@ import { translatePage, cachedTranslation } from '../../services/paperTranslate'
 import { aiConfigured, chatStream, explainPrompt, readerSystemPrompt, type AiMessage } from '../../services/ai'
 import {
   PdfiumDoc,
+  PdfEngineError,
   hitBoundary,
   rangeRects,
   rangeText,
@@ -33,6 +34,8 @@ import {
   textRuns,
 } from '../../services/pdfium'
 import { initMupdf } from '../../services/mupdf'
+import { isWasmCrash } from '../../services/wasmCrash'
+import { exportDiagnostics, requestCommunityFocus } from '../../services/diagnostics'
 import { importFile } from '../../services/importer'
 import { detectFormat } from '../../services/format'
 import { FONT_FAMILIES, HIGHLIGHT_COLORS, READER_THEME_CHOICES, resolveReaderColors } from '../../services/readerTheme'
@@ -131,6 +134,21 @@ let sourcePdfBlob: Blob | null = null
 const sourcePdfVersion = ref('')
 let mupdfDocPromise: Promise<any> | null = null
 let mupdfRenderFailed = false
+const pdfEngineCrashed = ref(false)
+
+function goToCommunity() {
+  requestCommunityFocus()
+  void router.push({ path: '/settings', query: { section: 'about' } })
+}
+
+async function exportDiagnosticsFromError() {
+  try {
+    if (await exportDiagnostics()) toast(t('settings.diagnosticsExported'), 'success')
+  } catch (e) {
+    console.warn('export diagnostics failed', e)
+    toast(t('settings.diagnosticsExportFailed'), 'error')
+  }
+}
 
 function mupdfDoc(): Promise<any> {
   if (!mupdfDocPromise) {
@@ -403,9 +421,12 @@ async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLC
       mupdfRenderFailed = true
       console.warn('MuPDF render failed; falling back to PDFium', e)
     } finally {
-      device?.destroy?.()
-      pixmap?.destroy?.()
-      page?.destroy?.()
+      // MuPDF 崩溃后释放也可能再次 trap; 这里抛错会跳过下面的 PDFium 回退
+      for (const item of [device, pixmap, page]) {
+        try {
+          item?.destroy?.()
+        } catch { /* 实例已不可用, 不再使用 */ }
+      }
     }
   }
 
@@ -3657,7 +3678,8 @@ onMounted(async () => {
     // 流式阅读已下线；读取旧设置时也必须回到原版 PDF。
     settings.pdf.layout = 'original'
     pdm = await PdfiumDoc.open(fileData)
-    renderBytes = settings.pdf.renderer === 'mupdf' ? new Uint8Array(fileData.slice(0)) : null
+    // PDFium 与 MuPDF 都把字节拷进各自的 wasm 堆, 这里不必再拷一份
+    renderBytes = settings.pdf.renderer === 'mupdf' ? new Uint8Array(fileData) : null
     pageCount.value = pdm.pages.length
     pageDims.value = pdm.pages.map(page => ({ w: page.w, h: page.h }))
     baseDims.value = pageDims.value[0] ?? { w: 612, h: 792 }
@@ -3707,7 +3729,8 @@ onMounted(async () => {
     observeActiveViewport()
   } catch (e: any) {
     console.error(e)
-    error.value = e?.message ?? t('reader.cantOpenPdf')
+    pdfEngineCrashed.value = e instanceof PdfEngineError || isWasmCrash(e)
+    error.value = pdfEngineCrashed.value ? t('reader.pdfEngineCrashed') : e?.message ?? t('reader.cantOpenPdf')
   } finally {
     loading.value = false
   }
@@ -4431,6 +4454,8 @@ onBeforeUnmount(() => clearTimeout(phoneBarsTimer))
     <div v-if="loading" class="paper-state">{{ t('reader.opening') }}</div>
     <div v-else-if="error" class="paper-state">
       <p>{{ error }}</p>
+      <button v-if="pdfEngineCrashed" class="btn" @click="exportDiagnosticsFromError">{{ t('settings.diagnosticsExport') }}</button>
+      <button v-if="pdfEngineCrashed" class="btn" @click="goToCommunity">{{ t('reader.pdfCrashJoinGroup') }}</button>
       <button class="btn" @click="router.push(backTarget)">{{ backLabel }}</button>
     </div>
 

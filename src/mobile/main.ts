@@ -7,6 +7,9 @@ import './styles/main.css'
 import { isTauri } from '../storage/types'
 import { installAndroidSafeArea } from '../services/systemBars'
 import { clearLegacyUiCaches } from './services/nativeCacheCleanup'
+import { installDiagnostics } from '../services/diagnostics'
+
+installDiagnostics()
 
 ;(window as unknown as { __lightreadBoot?: boolean }).__lightreadBoot = true
 

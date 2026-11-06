@@ -52,6 +52,8 @@ npm run test:reading-log    # 阅读记录: 计时规则 + 每日统计 + 多端
 npm run test:compat / test:tts   # 旧 WebView 兼容 (构建目标/polyfill/CSS 回退); 离线听书调度
 npm run test:reader-pages / test:listen-eta   # 重排书页码 (实测+推算/双栏/跳页往返); 听书剩余时间 (语速学习/人话时长)
 npm run test:cloud-tts       # API 语音 (MiniMax / 豆包): 音色目录 / 设置到请求的映射 / 错误分类; 原生请求见 cargo test cloud_tts
+npm run test:diagnostics     # 诊断日志: 脱敏 / 单行格式 / 环形缓冲 / 反馈链接 + wasm 崩溃判定
+E2E_BASE=http://localhost:<端口> npm run e2e:pdf-crash   # PDF 引擎崩溃自愈 (注入 trap): 退化不抛错 / 新实例恢复 / MuPDF 回退 PDFium / 诊断包; 需先起 vite dev
 npm run test:read-aloud      # 听书: 句子游标断句 + 播放管线 (分块/预取/无缝拼接/回退, 假时钟) + 音色目录
 npm run test:reading-modes   # 阅读模式: 打字机出字节奏 / 断句 / 按行分组 (纯函数)
 npm run test:reading-focus   # 阅读焦点: 舒适区 25%–65% / 焦点线 38% / 长句 / 手动滚动后暂停跟随 (听书跟随与跳转落点, 纯函数)
@@ -127,6 +129,8 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 ## 约定
 
 - **能用 Rust 就用 Rust（2026-10-22 用户要求）**：文件读写、哈希、下载、格式解析等重活优先写成 `src-tauri/src/` 的原生命令，提升质量与性能；前端只做界面和编排。安卓 WebView 的 IPC 会把字节数组序列化成 JSON 数字数组，大文件不要整本经 `plugin-fs` 进出 JS（导入走 `library_file_write_chunk`，同步走 `library_file_download` / `library_file_sha256`，见 issue #14）。网页版没有原生层，保留 JS 实现作回退。哪些已原生、哪些留在 JS 及实测依据见 `docs/rust-native-audit.md`，新增候选先对照它。
+- **诊断日志（2026-11-06 用户要求）**：桌面与 App 写本机滚动日志 (`src-tauri/src/diagnostics.rs`，`lightread.log` 1MB 一份、留 4 份历史)，前端错误经 `services/diagnostics.ts` 写入，网页版只留内存缓冲。写入和导出各脱敏一次（规则在 `diagnosticsCore.ts`，加规则同时加测试）。**不自动上传**（2026-11-06 用户确认一键上传先不做），反馈主入口是读者微信群：入口在关于页读者群模块（`AboutLinks` → `DiagnosticsPanel`），用户导出 zip 后发到群里，GitHub 只作次要入口。新功能的失败路径用 `logEvent` 记录；不记录书籍正文、划线和设置内容。
+- **wasm 实例崩溃后不能复用（2026-11-06）**：abort / trap 后实例状态不可信，之后任何文件都只会报 `memory access out of bounds`。PDFium 的处理在 `services/pdfium.ts`（`retireModule` + 打开重试一次），崩溃判定在 `services/wasmCrash.ts`；清理调用（`destroy` / `close`）放在 `finally` 里时必须自带 try，否则会盖掉回退路径。
 - **样式档位（2026-10-26 用户确认收敛方案，见 `docs/design/style-convergence.md`）**：新写或改动的界面只用 `--fs-caption/small/body/subtitle/title/display`、`--fw-regular/medium/semibold`、`--radius-xs/sm/(默认)/lg/pill`、`--space-*`、`--shadow-1/2/3`，不写新的裸 px；`npm run check:style-tokens` 在发版 preflight 里只许裸值减少。桌面藏书页已按用户选定的「书桌」原型（B）改版：继续阅读卡含今日 / 本周、书单像标签页、书卡只有封面 + 短书名 + 「进度 · 作者」，操作收进「⋯」菜单（菜单项保留 `.action.*` 类名并始终在 DOM 里）；其余桌面页面按方案逐页替换。
 - **样式只用语义令牌**（`--bg --card --surface-2 --text --text-2 --text-3 --border --brand --brand-light --danger --success …`），不要在组件里写裸色值。深色模式通过 `<html data-theme="dark">` 重定义令牌实现，由 `services/appearance.ts` 依据 `settings.appearance` (system/light/dark) 写入。
 - 全局类 `.segmented` 是设置页等的分段控件；阅读器工具栏各自有 scoped 的 `.seg`，不要合并。

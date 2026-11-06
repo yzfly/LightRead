@@ -1,0 +1,24 @@
+name: 问题反馈
+description: 软件报错、闪退或行为不对
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 版本与系统
+      description: 从应用内「也可以到 GitHub 反馈」进来会自动填好
+      placeholder: 2.7.0 · Windows App
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 怎么操作的、看到的报错原文、期望的结果。和文件有关时写明格式与大小
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 诊断日志
+      description: 设置 → 关于 → 读者群 → 导出诊断日志，把 zip 拖到这里。日志已去掉密钥、邮箱和用户名，不含书籍内容；发送前可以解压查看。

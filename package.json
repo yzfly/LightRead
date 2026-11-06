@@ -60,6 +60,8 @@
     "test:adaptive-layout": "node --experimental-strip-types --test scripts/test-adaptive-layout.mjs",
     "test:reader-pages": "node --experimental-strip-types --test scripts/test-reader-pages.mjs",
     "e2e:cloud-tts": "node scripts/e2e-cloud-tts.mjs",
+    "test:diagnostics": "node --experimental-strip-types --test scripts/test-diagnostics.mjs",
+    "e2e:pdf-crash": "node scripts/e2e-pdf-crash.mjs",
     "test:cloud-tts": "node --experimental-strip-types --test scripts/test-cloud-tts.mjs",
     "test:tts": "node --experimental-strip-types --test scripts/test-tts.mjs",
     "test:reading-modes": "node --experimental-strip-types --test scripts/test-reading-modes.mjs",

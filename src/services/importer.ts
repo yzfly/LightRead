@@ -44,7 +44,10 @@ async function extractFoliateMeta(file: File) {
 async function extractPdfMeta(file: File) {
   try {
     return await readPdfMeta(file)
-  } catch { /* 解析失败: 文件名兜底, 无封面 */ }
+  } catch (e) {
+    // 解析失败: 文件名兜底, 无封面。留一条日志, 否则崩溃会被这里吞掉
+    console.warn('PDF metadata failed', e)
+  }
   return { title: '', author: '', cover: undefined }
 }
 
