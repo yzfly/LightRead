@@ -47,6 +47,10 @@ import ReadingModePanel from '../components/ReadingModePanel.vue'
 import TypographyPanel, { type TypographySection } from '../components/TypographyPanel.vue'
 import ReadingModeMini from '../components/ReadingModeMini.vue'
 import { useReadingModes } from '../composables/useReadingModes'
+import TranslateSheet from '../components/TranslateSheet.vue'
+import { isWholeParagraph, paragraphRange } from '../services/selectParagraph'
+import { zhConvertController } from '../services/zhConvert'
+import ListenCapsule from '../components/ListenCapsule.vue'
 import AmbientPanel from '../components/AmbientPanel.vue'
 import ReadingModeLayer from '../components/ReadingModeLayer.vue'
 import DianjingToggle from '../components/DianjingToggle.vue'
@@ -1032,7 +1036,8 @@ try {
   const saved = JSON.parse(localStorage.getItem(MINI_POS_KEY) || 'null')
   if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) miniPos.value = saved
 } catch { /* 用默认位置 */ }
-const miniEl = ref<HTMLElement>()
+const miniEl = ref<InstanceType<typeof ListenCapsule>>()
+const miniRoot = () => miniEl.value?.el
 let miniDrag: { id: number; sx: number; sy: number; moved: boolean; dx: number; dy: number } | null = null
 const miniStyle = computed(() => miniPos.value
   ? { left: `${miniPos.value.x * 100}%`, top: `${miniPos.value.y * 100}%` }
@@ -1044,18 +1049,19 @@ const ttsMiniFloating = computed(() => !ttsPanel.value && ttsState.value !== 'st
 const ttsChipInBar = computed(() => ttsState.value !== 'stopped' && barsVisible.value && !miniPos.value)
 
 function onMiniDown(e: PointerEvent) {
-  if (e.button !== 0 || !miniEl.value) return
-  const r = miniEl.value.getBoundingClientRect()
+  const root = miniRoot()
+  if (e.button !== 0 || !root) return
+  const r = root.getBoundingClientRect()
   miniDrag = {
     id: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false,
     dx: e.clientX - (r.left + r.width / 2), dy: e.clientY - (r.top + r.height / 2),
   }
-  miniEl.value.setPointerCapture?.(e.pointerId)
+  root.setPointerCapture?.(e.pointerId)
 }
 
 function onMiniMove(e: PointerEvent) {
   const d = miniDrag
-  const el = miniEl.value
+  const el = miniRoot()
   const host = el?.offsetParent as HTMLElement | null
   if (!d || !el || !host || e.pointerId !== d.id) return
   if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return
@@ -1157,6 +1163,17 @@ function clockText(seconds: number, kind: 'listen' | 'read' = 'listen') {
 }
 
 const chapterEtaText = computed(() => listenEta.value ? t('tts.chapterLeft', { time: humanTime(listenEta.value.chapter) }) : '')
+/** 顶栏胶囊与浮动胶囊共用的显示内容 (见 components/ListenCapsule) */
+const capsuleProps = computed(() => ({
+  playing: ttsState.value === 'playing',
+  label: ttsBuffering.value ? t('tts.buffering') : listenEta.value ? humanTime(listenEta.value.chapter) : (ttsState.value === 'playing' ? t('tts.reading') : t('tts.paused')),
+  detail: chapterEtaText.value,
+  rate: settings.ttsRate !== 1 ? rateText(settings.ttsRate) : '',
+  sleep: sleepShort.value,
+  sleepTitle: sleepShort.value ? t('tts.sleepChangeHint', { text: sleepText.value }) : '',
+  sleepFading: sleepFading.value,
+  detached: listenDetached.value,
+}))
 const chapterFinishText = computed(() => listenEta.value ? clockText(listenEta.value.chapter) : '')
 const bookFinishText = computed(() => listenEta.value ? clockText(listenEta.value.book) : '')
 
@@ -1802,6 +1819,37 @@ function listenFromHere() {
 
 /** 划词时记下的选区 (点浮条按钮时 iframe 选区可能已变) */
 let selectionRange: Range | null = null
+/** 每个分节文档的选区刷新函数 (「选中本段」改了选区后立即刷新工具条) */
+const selectionUpdaters = new WeakMap<Document, () => void>()
+/** 选区不是整段时显示「选中本段」 */
+const canSelectParagraph = ref(false)
+
+/** 「选中本段」: 把选区扩到所在整段 (跨段时到末段结尾), 工具条随之刷新 */
+function selectParagraph() {
+  const range = selectionRange
+  const doc = range?.startContainer.ownerDocument
+  const next = range && paragraphRange(range)
+  if (!doc || !next) return
+  const sel = doc.getSelection()
+  sel?.removeAllRanges()
+  sel?.addRange(next)
+  selectionUpdaters.get(doc)?.()
+}
+
+/** 划词翻译 (components/TranslateSheet) */
+const translating = ref<string | null>(null)
+function translateSelection() {
+  const text = selection.value?.text
+  dismissSelection()
+  if (text) translating.value = text
+}
+
+// ---- 正文简繁转换 (services/zhConvert): 本地词表, 只改文字不改结构, 划线与进度不受影响 ----
+const zh = zhConvertController(
+  () => (view?.renderer?.getContents?.() ?? []).map((c: { doc?: Document }) => c.doc).filter((d: Document | undefined): d is Document => !!d),
+  () => toast(t('reader.zhConvertFailed'), 'error'),
+)
+watch(() => settings.zhConvert, mode => { void zh.setMode(mode) }, { immediate: true })
 
 /** 选中文字 → 从这里开始听 */
 function listenFromSelection() {
@@ -2034,6 +2082,8 @@ function onRendererUnload(e: Event) {
 }
 
 function onSectionLoad(e: CustomEvent) {
+  // 简繁转换最先做: 打字机 / 点睛读到的已是转换后的文字 (等长替换, 偏移不变)
+  try { zh.onSectionLoad(e.detail.doc) } catch { /* 忽略 */ }
   // 打字机: 在新章节首次绘制前隐藏未打出的文字
   modes.onSectionLoad(e.detail)
   dj.onSectionLoad(e.detail)
@@ -2064,13 +2114,16 @@ function onSectionLoad(e: CustomEvent) {
     }
     try {
       const cfi = view.getCFI(index, sel.getRangeAt(0))
-      selectionRange = sel.getRangeAt(0).cloneRange()
+      const range = sel.getRangeAt(0).cloneRange()
+      selectionRange = range
+      canSelectParagraph.value = !fixedLayout.value && !isWholeParagraph(range)
       selection.value = cfi ? { cfi, text } : null
       dj.onSelection(index, selectionRange)
     } catch {
       selection.value = null
     }
   }
+  selectionUpdaters.set(doc, updateSelection)
   doc.addEventListener('mouseup', () => setTimeout(updateSelection, 0))
   doc.addEventListener('touchend', () => setTimeout(updateSelection, 0))
   // 安卓浏览器 (vivo 自带浏览器、华为平板等) 长按选字会取消这次触摸 (touchcancel, 没有 touchend),
@@ -2973,24 +3026,15 @@ onBeforeUnmount(() => {
         <span v-if="chapterLabel" class="chapter">{{ chapterLabel }}</span>
       </div>
       <!-- 听书中且工具栏显示时, 胶囊收进顶栏中间 -->
-      <div v-if="ttsChipInBar" class="tts-chip" role="group" :aria-label="t('tts.title')">
-        <button class="tts-chip-main" :title="t('tts.expandPanel')" @click="openTTSPanel">
-          <span class="tts-mini-dot" :class="{ paused: ttsState === 'paused' }" />
-          <span class="tts-chip-text">{{ ttsBuffering ? t('tts.buffering') : listenEta ? humanTime(listenEta.chapter) : (ttsState === 'playing' ? t('tts.reading') : t('tts.paused')) }}</span>
-          <span v-if="settings.ttsRate !== 1" class="tts-chip-rate">{{ rateText(settings.ttsRate) }}</span>
-          <span v-if="sleepShort" class="tts-chip-sleep" :title="sleepText"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M12 4a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 1.5a1 1 0 0 1 1 1v3.09l2.2 1.27a1 1 0 0 1-1 1.73l-2.7-1.56A1 1 0 0 1 11 12V8.5a1 1 0 0 1 1-1z"/></svg>{{ sleepShort }}</span>
-        </button>
-        <button v-if="listenDetached" class="tts-mini-btn" :title="t('tts.backToListening')" :aria-label="t('tts.backToListening')" @click="returnToListening"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2a1 1 0 0 1 1 1v1.06A8 8 0 0 1 19.94 11H21a1 1 0 1 1 0 2h-1.06A8 8 0 0 1 13 19.94V21a1 1 0 1 1-2 0v-1.06A8 8 0 0 1 4.06 13H3a1 1 0 1 1 0-2h1.06A8 8 0 0 1 11 4.06V3a1 1 0 0 1 1-1zm0 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"/></svg></button>
-        <button
-          class="tts-mini-btn"
-          :title="ttsState === 'playing' ? t('common.pause') : t('common.resume')"
-          :aria-label="ttsState === 'playing' ? t('common.pause') : t('common.resume')"
-          @click="ttsState === 'playing' ? pauseTTS() : resumeTTS()"
-        >
-          <template v-if="ttsState === 'playing'"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 5a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-3 0v-11A1.5 1.5 0 0 1 8 5zm8 0a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-3 0v-11A1.5 1.5 0 0 1 16 5z"/></svg></template>
-          <template v-else><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8.5 5.2a1 1 0 0 1 1.02.03l9 5.95a1 1 0 0 1 0 1.66l-9 5.95A1 1 0 0 1 8 17.95V6.05a1 1 0 0 1 .5-.85z"/></svg></template>
-        </button>
-      </div>
+      <ListenCapsule
+        v-if="ttsChipInBar"
+        variant="bar"
+        v-bind="capsuleProps"
+        @open="openTTSPanel"
+        @toggle="ttsState === 'playing' ? pauseTTS() : resumeTTS()"
+        @back="returnToListening"
+        @stop="stopTTS()"
+      />
       <div class="bar-actions">
         <button class="icon-btn desk-only" :title="t('reader.toc')" @click="togglePanel('toc')">
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 6a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1zm5 0a1 1 0 0 1 1-1h9a1 1 0 1 1 0 2h-9a1 1 0 0 1-1-1zM4 12a1 1 0 0 1 1-1h1a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1zm5 0a1 1 0 0 1 1-1h9a1 1 0 1 1 0 2h-9a1 1 0 0 1-1-1zM4 18a1 1 0 0 1 1-1h1a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1zm5 0a1 1 0 0 1 1-1h9a1 1 0 1 1 0 2h-9a1 1 0 0 1-1-1z"/></svg>
@@ -3232,6 +3276,8 @@ onBeforeUnmount(() => {
         @click="addHighlight(name as string)"
       />
       <button class="btn btn-sm" @click="addHighlight('yellow', true)"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10l-4.3 3.4A1 1 0 0 1 4 19.6V6a2 2 0 0 1 1-2zm1 2v11.5L9.3 15H19V6H6zm2 2.5h8a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2zm0 3h5a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2z"/></svg>{{ t('reader.writeNote') }}</button>
+      <button v-if="canSelectParagraph" class="btn btn-sm" @click="selectParagraph"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 10h16M4 14h16M4 18h10"/><path d="M2 4v16M22 4v16" stroke-dasharray="2 2"/></svg>{{ t('reader.selectParagraph') }}</button>
+      <button class="btn btn-sm" @click="translateSelection"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h9M8.5 3v2M6 5c.6 3 2.6 5.6 5.5 7M11 5c-.8 3.3-3.2 6.2-6.5 7.5M13 21l4-9 4 9M14.4 18h5.2"/></svg>{{ t('translate.title') }}</button>
       <button class="btn btn-sm" @click="notes.cardFromSelection(selection.text, chapterLabel); dismissSelection()"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v14h12V5H6zm2.6 3.2c.5-.6 1.3-1 2.1-1.1l.3 1.3c-.5.1-.9.4-1.1.8.9.2 1.5 1 1.5 1.9a2 2 0 0 1-2.1 2c-1.2 0-2-1-2-2.3 0-1 .4-1.9 1.3-2.6zm5 0c.5-.6 1.3-1 2.1-1.1l.3 1.3c-.5.1-.9.4-1.1.8.9.2 1.5 1 1.5 1.9a2 2 0 0 1-2.1 2c-1.2 0-2-1-2-2.3 0-1 .4-1.9 1.3-2.6zM8 15h8v2H8v-2z"/></svg>{{ t('notes.makeCard') }}</button>
       <button class="btn btn-sm" @click="aiExplainSelection"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M10 3a1 1 0 0 1 .95.68l1.3 3.9a3 3 0 0 0 1.9 1.9l3.9 1.3a1 1 0 0 1 0 1.9l-3.9 1.3a3 3 0 0 0-1.9 1.9l-1.3 3.9a1 1 0 0 1-1.9 0l-1.3-3.9a3 3 0 0 0-1.9-1.9l-3.9-1.3a1 1 0 0 1 0-1.9l3.9-1.3a3 3 0 0 0 1.9-1.9l1.3-3.9A1 1 0 0 1 10 3zm8-1a1 1 0 0 1 .95.68l.4 1.2.97.32a1 1 0 0 1 0 1.9l-.97.32-.4 1.2a1 1 0 0 1-1.9 0l-.4-1.2-.97-.32a1 1 0 0 1 0-1.9l.97-.32.4-1.2A1 1 0 0 1 18 2z"/></svg>{{ t('ai.explain') }}</button>
       <button v-if="dj.selectionKey.value" class="btn btn-sm" @click="dj.openKeyCard(); selection = null">{{ t('dianjing.why') }}</button>
@@ -3240,6 +3286,8 @@ onBeforeUnmount(() => {
       <button v-if="settings.features.transfer" class="btn btn-sm" @click="sendSelectionToDevices(selection.text, meta?.title); selection = null"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/></svg>{{ t('transfer.sendToDevices') }}</button>
       <button class="icon-btn" :title="t('common.cancel')" :aria-label="t('common.cancel')" @click="dismissSelection"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.3 6.3a1 1 0 0 1 1.4 0L12 10.58l4.3-4.3a1 1 0 1 1 1.4 1.42L13.42 12l4.3 4.3a1 1 0 0 1-1.42 1.4L12 13.42l-4.3 4.3a1 1 0 0 1-1.4-1.42L10.58 12l-4.3-4.3a1 1 0 0 1 0-1.4z"/></svg></button>
     </div>
+
+    <TranslateSheet v-if="translating" :text="translating" :book="meta?.title" @close="translating = null" />
 
     <!-- 标注详情 / 想法编辑浮层 -->
     <div v-if="activeAnnotation" class="annotation-pop card">
@@ -3271,52 +3319,24 @@ onBeforeUnmount(() => {
     <QuoteCardDialog v-if="notes.card && cardCover !== undefined" :data="notes.card" :cover-url="cardCover || undefined" @close="notes.card = null" />
 
     <!-- 听书迷你胶囊: 面板收起但会话未停止时显示 -->
-    <div
+    <ListenCapsule
       v-if="ttsMiniFloating"
       ref="miniEl"
-      class="tts-mini card"
+      variant="float"
+      class="tts-mini"
       :class="{ placed: !!miniPos }"
       :style="miniStyle"
-      :title="t('tts.miniHint')"
-      role="button"
-      tabindex="0"
-      :aria-label="t('tts.expandPanel')"
+      v-bind="capsuleProps"
       @pointerdown="onMiniDown"
       @pointermove="onMiniMove"
       @pointerup="onMiniUp"
       @pointercancel="miniDrag = null"
       @dblclick="resetMiniPos"
-      @keydown.enter.prevent="ttsPanel = true"
-    >
-      <span class="tts-mini-dot" :class="{ paused: ttsState === 'paused' }" />
-      <span class="tts-mini-label">
-        <template v-if="ttsBuffering">{{ t('tts.buffering') }}</template>
-        <template v-else>{{ ttsState === 'playing' ? t('tts.reading') : t('tts.paused') }}<template v-if="listenEta"> · <span class="tts-mini-eta">{{ chapterEtaText }}</span></template></template>
-      </span>
-      <span v-if="settings.ttsRate !== 1" class="tts-mini-rate">{{ rateText(settings.ttsRate) }}</span>
-      <!-- 定时: 一眼看到几点停; 点按打开面板更改或取消 -->
-      <button
-        v-if="sleepShort"
-        class="tts-mini-sleep"
-        :class="{ fading: sleepFading }"
-        :title="t('tts.sleepChangeHint', { text: sleepText })"
-        :aria-label="t('tts.sleepChangeHint', { text: sleepText })"
-        @pointerdown.stop
-        @click.stop="openTTSPanel"
-      ><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M12 4a8 8 0 1 1 0 16 8 8 0 0 1 0-16zm0 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 1.5a1 1 0 0 1 1 1v3.09l2.2 1.27a1 1 0 0 1-1 1.73l-2.7-1.56A1 1 0 0 1 11 12V8.5a1 1 0 0 1 1-1z"/></svg>{{ sleepShort }}</button>
-      <button
-        class="tts-mini-btn"
-        :title="ttsState === 'playing' ? t('common.pause') : t('common.resume')"
-        :aria-label="ttsState === 'playing' ? t('common.pause') : t('common.resume')"
-        @pointerdown.stop
-        @click.stop="ttsState === 'playing' ? pauseTTS() : resumeTTS()"
-      >
-        <template v-if="ttsState === 'playing'"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 5a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-3 0v-11A1.5 1.5 0 0 1 8 5zm8 0a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-3 0v-11A1.5 1.5 0 0 1 16 5z"/></svg></template>
-        <template v-else><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8.5 5.2a1 1 0 0 1 1.02.03l9 5.95a1 1 0 0 1 0 1.66l-9 5.95A1 1 0 0 1 8 17.95V6.05a1 1 0 0 1 .5-.85z"/></svg></template>
-      </button>
-      <button v-if="listenDetached" class="tts-mini-btn" :title="t('tts.backToListening')" :aria-label="t('tts.backToListening')" @pointerdown.stop @click.stop="returnToListening"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2a1 1 0 0 1 1 1v1.06A8 8 0 0 1 19.94 11H21a1 1 0 1 1 0 2h-1.06A8 8 0 0 1 13 19.94V21a1 1 0 1 1-2 0v-1.06A8 8 0 0 1 4.06 13H3a1 1 0 1 1 0-2h1.06A8 8 0 0 1 11 4.06V3a1 1 0 0 1 1-1zm0 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"/></svg></button>
-      <button class="tts-mini-btn" :title="t('common.stop')" :aria-label="t('common.stop')" @pointerdown.stop @click.stop="stopTTS()"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg></button>
-    </div>
+      @open="ttsPanel = true"
+      @toggle="ttsState === 'playing' ? pauseTTS() : resumeTTS()"
+      @back="returnToListening"
+      @stop="stopTTS()"
+    />
 
     <!-- 背景音 -->
     <AmbientPanel
@@ -3932,7 +3952,11 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
   z-index: 20;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
+  width: max-content;
+  max-width: calc(100% - 24px);
   gap: 8px;
   padding: 8px 12px;
 }
@@ -4127,90 +4151,12 @@ onBeforeUnmount(() => {
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 4px 0 12px;
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-md);
-  cursor: grab;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none;
-  white-space: nowrap;
+  max-width: calc(100% - 24px);
   transition: top 0.25s;
-}
-.tts-mini:active {
-  cursor: grabbing;
 }
 .tts-mini.placed {
   transform: translate(-50%, -50%);
   transition: none;
-}
-.tts-mini-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--brand);
-  animation: tts-pulse 1.6s ease-in-out infinite;
-}
-.tts-mini-dot.paused {
-  background: var(--text-3);
-  animation: none;
-}
-@keyframes tts-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.75); }
-}
-.tts-mini-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  color: var(--text-2);
-}
-.tts-mini-btn {
-  width: 26px;
-  height: 26px;
-  border: none;
-  border-radius: 50%;
-  background: var(--bg);
-  color: var(--text-2);
-  font-size: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.tts-mini-btn:hover {
-  background: var(--brand-light);
-  color: var(--brand);
-}
-.tts-mini-eta {
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-.tts-mini-rate {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-}
-.tts-mini-sleep {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 24px;
-  padding: 0 8px;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--brand-soft);
-  color: var(--brand);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
 }
 .ambient-btn {
   position: relative;
@@ -4256,8 +4202,7 @@ onBeforeUnmount(() => {
 .tts-sleep-badge:hover {
   background: var(--brand-light);
 }
-.tts-sleep-badge:focus-visible,
-.tts-mini-sleep:focus-visible {
+.tts-sleep-badge:focus-visible {
   outline: none;
   box-shadow: var(--ring);
 }
@@ -4265,8 +4210,7 @@ onBeforeUnmount(() => {
   opacity: 0.7;
 }
 /* 最后 3 秒淡出时徽标跟着变淡 */
-.tts-sleep-badge.fading,
-.tts-mini-sleep.fading {
+.tts-sleep-badge.fading {
   opacity: 0.55;
   transition: opacity 3s linear;
 }
@@ -4408,40 +4352,6 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   text-align: right;
 }
-/* 顶栏里的听书胶囊 */
-.tts-chip {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 30px;
-  padding: 0 2px 0 4px;
-  border-radius: var(--radius-pill);
-  background: var(--brand-soft);
-}
-.tts-chip-main {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 100%;
-  padding: 0 6px;
-  border: none;
-  background: none;
-  color: var(--brand);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.tts-chip .tts-mini-btn {
-  background: var(--card);
-}
-.tts-chip-rate,
-.tts-chip-sleep {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-weight: 600;
-}
 .tts-progress-hint {
   margin: 0;
   color: var(--text-3);
@@ -4576,6 +4486,10 @@ onBeforeUnmount(() => {
   background: var(--bg);
   color: var(--text-2);
 }
+@keyframes tts-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
+}
 .ai-cursor {
   color: var(--brand);
   animation: tts-pulse 1s ease-in-out infinite;
@@ -4696,14 +4610,6 @@ onBeforeUnmount(() => {
     --head-band: 36px;
     /* 剩余时间很长时省略, 定时和按钮始终在 */
     max-width: calc(100% - 16px);
-  }
-  /* 顶栏放不下: 语速只在胶囊和面板上显示, 定时留着 */
-  .tts-chip-rate {
-    display: none;
-  }
-  .tts-chip-main {
-    gap: 4px;
-    padding: 0 4px;
   }
   .reader {
     --footer-h: 112px;

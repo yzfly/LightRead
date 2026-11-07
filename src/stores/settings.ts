@@ -6,6 +6,8 @@ import { readSyncedSettings } from '../services/sync/settingsSync.ts'
 import { emptyLayoutOverrides, restoreLayoutOverrides, resolveReaderPrefs, resolvePdfPrefs, screenLayout, type LayoutOverrides, type ReaderLayoutKey, type PdfLayoutKey } from '../services/adaptiveLayout.ts'
 import { readingViewport } from '../services/readingViewport.ts'
 import { isTauri } from '../storage/types.ts'
+import type { ZhConvertMode } from '../services/zhConvert.ts'
+import type { TranslateTarget } from '../services/translateCore.ts'
 import { BASIC_MARK_DEFAULT, migrateLevel, normalizeLevel, savedBasicMark, type BasicMark, type DjLevel } from '../services/dianjing/level.ts'
 
 export interface ReaderPrefs {
@@ -255,6 +257,10 @@ interface SettingsState {
   aiBaseUrl: string
   aiApiKey: string
   aiModel: string
+  /** 划词翻译的目标语言; auto 为中文译英文、其他语言译成界面语言 (services/translateCore.ts) */
+  translateTarget: TranslateTarget
+  /** 正文简繁转换: 关闭 / 繁→简 / 简→繁 (本地 OpenCC, 见 services/zhConvert.ts) */
+  zhConvert: ZhConvertMode
   /** AI 辅读: 设置页选择的本机引擎与可选手动可执行文件路径 */
   paperAgentEngine: 'codex' | 'claude' | 'pi'
   paperAgentExecutables: Record<'codex' | 'claude' | 'pi', string>
@@ -338,6 +344,8 @@ const defaults: SettingsState = {
   aiBaseUrl: 'https://lightread-ai.jiangshu.ai/v1',
   aiApiKey: '',
   aiModel: 'deepseek-ai/DeepSeek-V4-Flash',
+  translateTarget: 'auto',
+  zhConvert: 'off',
   paperAgentEngine: 'pi',
   paperAgentExecutables: { codex: '', claude: '', pi: '' },
   webdavUrl: '',

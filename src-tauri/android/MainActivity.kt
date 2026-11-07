@@ -15,6 +15,7 @@ package com.yzfly.lightread
 // 书摘分享 (window.LightReadShare, 前端 src/services/shareOut.ts): 金句卡片存进相册
 // (MediaStore Pictures/LightRead, Android 10+ 无需存储权限), 图片 / 文本 / 笔记文件
 // 经系统分享面板发到微信、笔记应用等; 分享用的临时文件放 cacheDir/share/ 并经 FileProvider 授权。
+// 划词翻译也经这个桥列出 / 拉起本机能处理文字的应用 (ACTION_PROCESS_TEXT, 前端 src/services/translate.ts)。
 
 //
 // 应用内更新 (window.LightReadUpdater, 前端 src/services/updater.ts): Rust 把校验过的安装包
@@ -399,6 +400,48 @@ class MainActivity : TauriActivity() {
           .putExtra(Intent.EXTRA_TEXT, text)
           .putExtra(Intent.EXTRA_SUBJECT, subject)
         startChooser(intent, title)
+        "ok"
+      } catch (e: Exception) {
+        "error"
+      }
+    }
+
+    /**
+     * 能处理选中文字的已装应用 (谷歌翻译、有道、DeepL 等在系统选字菜单里出现的那些),
+     * JSON 数组 [{label, pkg, cls}]; 清单的 <queries> 声明了 PROCESS_TEXT (scripts/patch-android-project.mjs)
+     */
+    @JavascriptInterface
+    fun textApps(): String {
+      return try {
+        val probe = Intent(Intent.ACTION_PROCESS_TEXT).setType("text/plain")
+        val pm = packageManager
+        val list = org.json.JSONArray()
+        for (info in pm.queryIntentActivities(probe, 0)) {
+          val act = info.activityInfo ?: continue
+          if (act.packageName == packageName || !act.exported) continue
+          list.put(org.json.JSONObject()
+            .put("label", info.loadLabel(pm).toString())
+            .put("pkg", act.packageName)
+            .put("cls", act.name))
+        }
+        list.toString()
+      } catch (e: Exception) {
+        "[]"
+      }
+    }
+
+    /** 把选中文字交给指定应用处理 (只读: 不接收改写结果) */
+    @JavascriptInterface
+    fun processText(text: String, pkg: String, cls: String): String {
+      return try {
+        val intent = Intent(Intent.ACTION_PROCESS_TEXT)
+          .setType("text/plain")
+          .setClassName(pkg, cls)
+          .putExtra(Intent.EXTRA_PROCESS_TEXT, text)
+          .putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+        runOnUiThread {
+          try { startActivity(intent) } catch (e: Exception) { /* 应用已卸载 */ }
+        }
         "ok"
       } catch (e: Exception) {
         "error"

@@ -362,6 +362,13 @@ let systemFontsLoading = false
           <button type="button" :class="{ active: reader.progressDisplay === 'percent' }" :aria-pressed="reader.progressDisplay === 'percent'" @click="reader.progressDisplay = 'percent'">{{ t('reader.progressPercent') }}</button>
         </div>
       </div>
+      <div class="set-row">
+        <span class="tp-label">{{ t('reader.zhConvert') }}</span>
+        <div class="seg" role="group" :aria-label="t('reader.zhConvert')">
+          <button v-for="mode in (['off', 't2s', 's2t'] as const)" :key="mode" type="button" :class="{ active: settings.zhConvert === mode }" :aria-pressed="settings.zhConvert === mode" @click="settings.zhConvert = mode">{{ t(mode === 'off' ? 'reader.zhConvertOff' : mode === 't2s' ? 'reader.zhConvertT2s' : 'reader.zhConvertS2t') }}</button>
+        </div>
+      </div>
+      <p v-if="settings.zhConvert !== 'off'" class="set-note" role="note">{{ t('reader.zhConvertHint') }}</p>
       <div v-if="volumeKeys" class="tp-portrait">
         <span>{{ t('reader.volumeKeyTurn') }}<small>{{ t('reader.volumeKeyTurnHint') }}</small></span>
         <button type="button" class="tp-switch" role="switch" :aria-checked="settings.volumeKeyTurn" :aria-label="t('reader.volumeKeyTurn')" @click="settings.volumeKeyTurn = !settings.volumeKeyTurn"><span aria-hidden="true" /></button>

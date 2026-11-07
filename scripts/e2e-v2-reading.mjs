@@ -210,7 +210,7 @@ try {
     assert.ok(await p.evaluate(() => !!speechSynthesis.current))
     await reveal(); await p.locator('.dock button').first().click()
     await p.locator('.panel').getByText('第一章 经验与交往',{exact:true}).click()
-    await reveal(); await p.locator('.tts-chip-main').click()
+    await reveal(); await p.locator('.listen-capsule.lc-bar .lc-main').click()
     assert.match(await p.locator('.tts-progress-chapter').innerText(),/第二章/, 'listening progress follows spoken chapter while browsing another')
     await p.locator('.tts-notice').getByRole('button',{name:'回到听书处',exact:true}).click()
     await p.locator('.tts-panel').getByRole('button',{name:'停止',exact:true}).click()
@@ -223,7 +223,7 @@ try {
     await p.locator('.listen-links').getByRole('button',{name:'原文',exact:true}).click()
     await reveal(); await p.locator('.dock button').first().click()
     await p.locator('.panel').getByText('第二章 阅读与思考',{exact:true}).click()
-    await reveal(); await p.locator('.tts-chip-main').click()
+    await reveal(); await p.locator('.listen-capsule.lc-bar .lc-main').click()
     assert.equal(await p.locator('.tts-play').getAttribute('aria-label'),'暂停')
     for(let i=0;i<100 && await p.locator('.tts-play').getAttribute('aria-label') === '暂停';i++) {
       await nextSpoken(() => p.evaluate(() => speechSynthesis.finish()))

@@ -139,6 +139,7 @@ export function aiConfigured(): boolean {
 export async function* chatStream(
   messages: AiMessage[],
   signal?: AbortSignal,
+  opts: { temperature?: number; maxTokens?: number } = {},
 ): AsyncGenerator<string> {
   const s = useSettings()
   const url = s.aiBaseUrl.trim().replace(/\/+$/, '') + '/chat/completions'
@@ -155,11 +156,20 @@ export async function* chatStream(
       model: s.aiModel.trim(),
       messages,
       stream: true,
-      temperature: 0.6,
+      temperature: opts.temperature ?? 0.6,
+      ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
     }),
     signal,
     raw: true,
   })
+  yield* readChatStream(res)
+}
+
+/**
+ * 读 OpenAI 兼容 chat/completions 的响应: SSE 逐段 yield 增量文本, 整段 JSON 时一次返回;
+ * 非 2xx 时抛出带服务端信息的错误 (message 以状态码开头, 如 "429 {...}")。
+ */
+export async function* readChatStream(res: Response): AsyncGenerator<string> {
   if (!res.ok) {
     const text = (await res.text().catch(() => '')).slice(0, 300)
     throw new Error(`${res.status} ${text || res.statusText}`)

@@ -68,6 +68,8 @@ npm run test:key-words       # 点睛重点词: 本书新词发现 / 自信息 +
 npm run test:terminology     # 术语来源完整性 / 22 类路由 / 原文跨度 / 边界与预算
 npm run test:concept-recognition # 生产完整概念边界 / 智能碎片扩展 / 失败回退
 npm run test:auto-scroll     # 多刷新率速度 / 卡帧与调速 / 亚像素累计
+npm run test:translate       # 划词翻译 (目标语言 / 校验 / relay /v1/translate 按账号每日 100 次 / 账号校验缓存) + 正文简繁转换 (OpenCC 等长替换, CFI 不变)
+E2E_BASE=http://localhost:<端口> npm run e2e:translate   # 选中本段 → 翻译 (未登录引导 / 账号额度 / 超额) → 简繁往返; E2E_MOBILE=1 测 App 并校验顶栏与浮动听书胶囊按钮一致 (components/ListenCapsule.vue)
 npm run audit:keywords       # 离线复现词边界、同形词跨语境和未来新词影响; 不是准确率评测
 node scripts/build-terminology.mjs   # 重建开放候选词库与覆盖报告; 方案见 docs/research/keyword-optimization.md
 node scripts/build-zh-lexicon.mjs   # 重新生成中文词表 src/data/zh-lexicon.txt + 回退合并表 zhMergeWords.ts (下载 jieba / DeepSeek-R1 词表到 ~/.cache, 校验 SHA-256)

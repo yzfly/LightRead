@@ -14,6 +14,11 @@ binding = "DB"
 database_name = "lightread-ai-usage"
 database_id = "b4038007-bed6-41e4-9513-490f0333b722"
 
+# 划词翻译校验轻阅账号会话 (GET /v1/me); 没有绑定时退回公网 https://sync.jiangshu.ai
+[[services]]
+binding = "ACCOUNT"
+service = "lightread-sync"
+
 [vars]
 # 试用通道每日次数 (设备 / IP 两个维度, 超出返回 429)
 DEVICE_DAILY_QUOTA = "120"
@@ -23,3 +28,5 @@ DJ_DEVICE_DAILY_CHARS = "100000"
 DJ_IP_DAILY_CHARS = "300000"
 # 全站每日预算 (元, 按 token 估算; 试用通道与点睛共用), 超出返回 429 code=budget
 DAILY_BUDGET_CNY = "50"
+# 登录账号每日免费翻译次数 (/v1/translate)
+ACCOUNT_TRANSLATE_DAILY = "100"

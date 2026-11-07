@@ -69,3 +69,38 @@ export async function sseToNdjson(readable, write) {
   if (t.startsWith('{') && t.endsWith('}')) write(t + '\n')
   return output
 }
+
+const ACCOUNT_TTL_MS = 10 * 60_000
+const accountCache = new Map()
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * 校验轻阅账号会话 token: 返回账号 id; token 无效返回 null; 账号服务出错返回 'unavailable'。
+ * 有效结果按 token 的 SHA-256 在 isolate 内缓存 10 分钟 (登出后最多 10 分钟内仍可用, 只影响翻译额度);
+ * lookup(token) 发起 GET /v1/me 请求。
+ */
+export async function verifyAccount(token, lookup, now = Date.now()) {
+  const key = await sha256Hex(token)
+  const hit = accountCache.get(key)
+  if (hit && now - hit.at < ACCOUNT_TTL_MS) return hit.id
+  let res
+  try {
+    res = await lookup(token)
+  } catch {
+    return 'unavailable'
+  }
+  if (res.status === 401) {
+    accountCache.delete(key)
+    return null
+  }
+  if (!res.ok) return 'unavailable'
+  const id = (await res.json().catch(() => null))?.account?.id
+  if (typeof id !== 'string' || !id) return 'unavailable'
+  if (accountCache.size > 5000) accountCache.clear()
+  accountCache.set(key, { id, at: now })
+  return id
+}

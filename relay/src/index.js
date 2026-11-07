@@ -4,6 +4,7 @@
  * 路由:
  *  - POST /v1/chat/completions  阅读 AI 助手的试用通道 (OpenAI 兼容, SSE 透传)
  *  - POST /v1/dianjing          点睛阅读专用接口 (提示词在服务端拼装, NDJSON 流)
+ *  - POST /v1/translate         划词翻译 (需轻阅账号登录, 每账号每日次数; 提示词在服务端拼装, SSE 透传)
  *  - GET  /v1/models            可用模型 (静态)
  *
  * 上游: SiliconFlow `deepseek-ai/DeepSeek-V4-Flash`, 强制 enable_thinking:false。
@@ -17,6 +18,9 @@
  *  3. 全站每日预算 (D1, 按 token 估算成本, 万分之一元为单位), 超出返回 429 code=budget
  *  4. 点睛只接受固定 schema (服务端拼提示词), 不能当通用代理; max_tokens 与长度上限
  *  D1 故障时不阻断服务, 退化为仅内存限速。
+ *
+ * 翻译: Bearer 是轻阅账号的会话 token, 经服务绑定 ACCOUNT (lightread-sync) 的 GET /v1/me 校验,
+ *  结果在 isolate 内缓存 10 分钟; 计数按账号 id (kind 'tr'), 提示词来自 src/services/translateCore.ts。
  *
  * 提示词与额度换算来自 src/services/dianjing/prompt.ts (wrangler/esbuild 直接打包, 与客户端单一来源)。
  *
@@ -38,7 +42,14 @@ import {
   sanitizeRequest,
   validateRequest,
 } from '../../src/services/dianjing/prompt.ts'
-import { CHAT_MODEL, LEGACY_MODELS, quotaDay, rateLimited, sseToNdjson } from './lib.js'
+import {
+  ACCOUNT_TRANSLATE_DAILY,
+  sanitizeTranslate,
+  translateMaxTokens,
+  translateMessages,
+  validateTranslate,
+} from '../../src/services/translateCore.ts'
+import { CHAT_MODEL, LEGACY_MODELS, quotaDay, rateLimited, sseToNdjson, verifyAccount } from './lib.js'
 
 const SF_BASE = 'https://api.siliconflow.cn/v1'
 const ZHIPU_BASE = 'https://open.bigmodel.cn/api/paas/v4'
@@ -50,12 +61,14 @@ const MAX_CONTEXT_CHARS = 32_000
 const CHAT_PER_IP_PER_MIN = 10
 const DJ_PER_DEVICE_PER_MIN = 20
 const DJ_PER_IP_PER_MIN = 60
+const TR_PER_ACCOUNT_PER_MIN = 20
+const ACCOUNT_API = 'https://sync.jiangshu.ai'
 
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'content-type, authorization, x-device-id',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
-  'access-control-expose-headers': 'x-dj-model, x-dj-remaining',
+  'access-control-expose-headers': 'x-dj-model, x-dj-remaining, x-translate-remaining',
 }
 
 const json = (status, payload, extra = {}) =>
@@ -283,6 +296,77 @@ async function handleDianjing(request, env, ctx) {
   return new Response(readable, { status: 200, headers })
 }
 
+// ---- 划词翻译: /v1/translate ----
+
+/** 向账号后端查会话: 有服务绑定走绑定, 否则走公网地址 */
+function accountFetch(env, token) {
+  const init = { headers: { authorization: `Bearer ${token}` } }
+  if (env.ACCOUNT?.fetch) return env.ACCOUNT.fetch(new Request(`${ACCOUNT_API}/v1/me`, init))
+  return fetch(`${ACCOUNT_API}/v1/me`, init)
+}
+
+async function handleTranslate(request, env, ctx) {
+  if (!env.SILICONFLOW_KEY) return err(503, '翻译内置通道尚未配置, 请在设置中填入自己的 API Key', 'config')
+  const m = /^Bearer\s+([A-Za-z0-9_-]{16,128})$/.exec(request.headers.get('authorization') ?? '')
+  if (!m) return err(401, '请先登录轻阅账号, 或在「设置 → AI 助手」填入自己的 Key', 'login')
+  const account = await verifyAccount(m[1], token => accountFetch(env, token))
+  if (account === 'unavailable') return err(503, '账号服务暂时不可用, 请稍后再试', 'account')
+  if (!account) return err(401, '登录已失效, 请重新登录', 'login')
+  const { ip } = clientIds(request)
+  if (rateLimited(`ta:${account}`, TR_PER_ACCOUNT_PER_MIN) || rateLimited(`c:${ip}`, CHAT_PER_IP_PER_MIN * 3)) {
+    return err(429, '翻译太频繁, 请稍后再试', 'rate')
+  }
+  let raw
+  try {
+    raw = await request.json()
+  } catch {
+    return err(400, 'invalid JSON body')
+  }
+  const invalid = validateTranslate(raw)
+  if (invalid) return err(400, invalid)
+  const req = sanitizeTranslate(raw)
+  const messages = translateMessages(req)
+  const maxTokens = translateMaxTokens(req.text)
+  const quota = Number(env.ACCOUNT_TRANSLATE_DAILY ?? ACCOUNT_TRANSLATE_DAILY)
+  const day = quotaDay()
+  let remaining = quota
+  try {
+    const spent = await readUsage(env.DB, day, 'cost', 'all')
+    if (spent >= budgetUnits(env)) {
+      return err(429, '今日内置通道总额度已用完。明天再来, 或在「设置 → AI 助手」填入自己的 Key (不限额)。', 'budget')
+    }
+    const used = await bumpUsage(env.DB, day, 'tr', account)
+    if (used > quota) {
+      return json(429, { error: { message: `今日 ${quota} 次免费翻译已用完。明天再来, 或在「设置 → AI 助手」填入自己的 Key (不限额)。`, code: 'quota' } }, { 'x-translate-remaining': '0' })
+    }
+    remaining = Math.max(0, quota - used)
+    const cost = costUnits(estimateTokens(messages.map(x => x.content).join('\n')), maxTokens)
+    ctx.waitUntil(bumpUsage(env.DB, day, 'cost', 'all', cost).catch(() => {}))
+    const cleanup = maybeCleanup(env)
+    if (cleanup) ctx.waitUntil(cleanup.catch(() => {}))
+  } catch (e) {
+    console.warn('quota check failed:', e?.message)
+  }
+  let upstream
+  try {
+    upstream = await siliconflow(env, {
+      model: CHAT_MODEL,
+      messages,
+      stream: true,
+      max_tokens: maxTokens,
+      temperature: 0.3,
+      enable_thinking: false,
+    })
+  } catch (e) {
+    return err(502, `上游服务暂时不可用: ${e?.message ?? e}`)
+  }
+  const headers = new Headers(CORS)
+  headers.set('content-type', upstream.headers.get('content-type') ?? 'application/json')
+  headers.set('cache-control', 'no-store')
+  headers.set('x-translate-remaining', String(remaining))
+  return new Response(upstream.body, { status: upstream.status, headers })
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
@@ -294,6 +378,9 @@ export default {
     }
     if (request.method === 'POST' && url.pathname.endsWith('/dianjing')) {
       return handleDianjing(request, env, ctx)
+    }
+    if (request.method === 'POST' && url.pathname.endsWith('/translate')) {
+      return handleTranslate(request, env, ctx)
     }
     if (request.method === 'POST' && url.pathname.endsWith('/chat/completions')) {
       return handleChat(request, env, ctx)

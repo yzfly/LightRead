@@ -611,6 +611,7 @@ test('Android project patch adds the install permission once and keeps the cache
   const patched = patchManifest(manifest)
   assert.match(patched, /INTERNET" \/>\n    <uses-permission android:name="android\.permission\.REQUEST_INSTALL_PACKAGES" \/>/)
   assert.equal(patchManifest(patched), patched)
+  assert.match(patched, /<queries>[\s\S]*android\.intent\.action\.PROCESS_TEXT[\s\S]*<\/queries>\n    <application>/, 'translate apps are visible to queryIntentActivities')
   assert.throws(() => patchManifest(manifest.replace(provider, '')), /FileProvider/)
 
   const tauriPaths = '<paths xmlns:android="http://schemas.android.com/apk/res/android">\n  <external-path name="my_images" path="." />\n  <cache-path name="my_cache_images" path="." />\n</paths>'
