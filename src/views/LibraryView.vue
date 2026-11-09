@@ -171,10 +171,10 @@ async function refreshToday() {
   }
 }
 /** 本周: 不足 1 小时按分钟, 否则按小时 (一位小数) */
-const weekStat = computed(() => weekSeconds.value < 3600
-  ? { value: String(Math.floor(weekSeconds.value / 60)), unit: t('library.statMinutes') }
+const weekStat = computed(() => weekSeconds.value < 3570
+  ? { value: String(Math.round(weekSeconds.value / 60)), unit: t('library.statMinutes') }
   : { value: (weekSeconds.value / 3600).toFixed(1).replace(/\.0$/, ''), unit: t('library.statHours') })
-const todayMinutes = computed(() => Math.floor(todaySeconds.value / 60))
+const todayMinutes = computed(() => Math.round(todaySeconds.value / 60))
 const settings = useSettings()
 const goalMinutes = computed(() => Math.max(0, Math.round(settings.dailyGoalMinutes || 0)))
 const todayRatio = computed(() => (goalMinutes.value > 0 ? Math.min(1, todaySeconds.value / (goalMinutes.value * 60)) : 0))

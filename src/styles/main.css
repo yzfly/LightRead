@@ -319,6 +319,11 @@ html.lr-stealth .titlebar,
 html.lr-fullscreen .titlebar {
   display: none;
 }
+/* 页面里的 .modal-mask 弹窗 (没 Teleport 到 body) 被 .shell 的 contain 关在页面层里, 盖不住浮在右上角的窗口按钮:
+   弹窗打开时按钮退回普通层级, 和页面一起被遮罩压暗 (AppModal 挂在 body 上, 本来就盖得住) */
+html.lr-chrome .frame:has(> .shell .modal-mask) > .titlebar.is-overlay {
+  z-index: auto;
+}
 /* 非阅读页: 没有标题条, 窗口按钮浮在右上角 (components/WindowTitleBar.vue overlay), 页面标题行上移到顶行,
    右侧让出按钮的宽度; 标题字号收到 --fs-title。2026-11-08 用户选定原型 B, 见 docs/prototypes/windows-shell */
 html.lr-chrome .shell:not(.immersive) .main {
@@ -823,8 +828,19 @@ input[type='range'] {
   width: min(480px, 100%);
   max-height: min(80dvh, 100%);
   overflow: auto;
-  padding: var(--space-6);
+  --modal-pad-b: var(--space-6);
+  padding: var(--space-6) var(--space-6) var(--modal-pad-b);
   animation: modal-in var(--dur-slow) var(--ease);
+}
+/* 内容比弹窗高时, 底部「取消 / 确定」贴住弹窗底边, 不跟着滚出可视区 (2026-11-09 Win10 窄窗口添加书源按钮只露一半) */
+.modal > .form-actions:last-child {
+  position: sticky;
+  bottom: calc(-1 * var(--modal-pad-b));
+  z-index: 1;
+  margin-bottom: calc(-1 * var(--modal-pad-b));
+  padding-top: var(--space-3);
+  padding-bottom: var(--modal-pad-b);
+  background: var(--card);
 }
 .modal h3 {
   font-size: 16px;
@@ -859,7 +875,8 @@ input[type='range'] {
     width: 100%;
     max-height: 88dvh;
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    padding: var(--space-5) var(--space-4) calc(var(--space-5) + var(--lr-safe-bottom));
+    --modal-pad-b: calc(var(--space-5) + var(--lr-safe-bottom));
+    padding: var(--space-5) var(--space-4) var(--modal-pad-b);
     animation-name: sheet-in;
   }
   @keyframes sheet-in {

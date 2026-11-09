@@ -257,6 +257,21 @@ function dismissSelection() {
 const annotations = ref<AnnotationRec[]>([])
 const activeAnnotation = ref<AnnotationRec | null>(null)
 const noteDraft = ref('')
+/** 「写想法」先画出的划线: 保存想法才算数, 取消 / 点别处 / 离开阅读页都撤掉 */
+let pendingNoteId: AnnotationRec['id'] | null = null
+function discardPendingNote() {
+  const id = pendingNoteId
+  pendingNoteId = null
+  const a = id == null ? undefined : annotations.value.find(x => x.id === id)
+  if (!a || a.note) return
+  annotations.value = annotations.value.filter(x => x.id !== id)
+  try { view?.deleteAnnotation({ value: a.cfi }) } catch { /* 当前分节未绘制时忽略 */ }
+  void getStorage().then(s => s.deleteAnnotation(a.id)).catch(() => {})
+}
+watch(activeAnnotation, (next, prev) => {
+  if (prev && prev.id === pendingNoteId && next?.id !== prev.id) discardPendingNote()
+})
+onBeforeUnmount(discardPendingNote)
 const annoTab = ref<'highlight' | 'bookmark'>('highlight')
 const highlights = computed(() => annotations.value.filter(a => a.kind !== 'bookmark'))
 const bookmarks = computed(() => annotations.value.filter(a => a.kind === 'bookmark'))
@@ -1005,6 +1020,8 @@ function handleKeydown(e: KeyboardEvent) {
     panel.value = 'none'
     settingsOpen.value = false
     jumpOpen.value = false
+    ambientPanel.value = false
+    activeAnnotation.value = null
     stopAutoRead()
   }
 }
@@ -2589,6 +2606,7 @@ async function addHighlight(color: string, withNote = false) {
   if (withNote) {
     noteDraft.value = ''
     activeAnnotation.value = saved
+    pendingNoteId = id
   } else {
     toast(t('reader.highlighted'), 'success')
   }
@@ -2598,6 +2616,7 @@ async function saveNote() {
   if (!activeAnnotation.value) return
   const storage = await getStorage()
   const note = noteDraft.value.trim() || undefined
+  pendingNoteId = null
   await storage.updateAnnotation(activeAnnotation.value.id, { note })
   activeAnnotation.value.note = note
   const item = annotations.value.find(a => a.id === activeAnnotation.value!.id)
