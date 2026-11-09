@@ -7,6 +7,8 @@ import ToastHost from './components/ToastHost.vue'
 import ConfirmHost from './components/ConfirmHost.vue'
 import BabeldocTaskStatus from './components/BabeldocTaskStatus.vue'
 import LibraryUploadStatus from './components/LibraryUploadStatus.vue'
+import WindowTitleBar from './components/WindowTitleBar.vue'
+import { initWindowChrome, windowChrome } from './services/windowChrome'
 import { useSettings } from './stores/settings'
 import { watchReadingViewport } from './services/readingViewport'
 import { useAppearance } from './services/appearance'
@@ -105,6 +107,7 @@ async function handleSidebarUpdate() {
 }
 
 onMounted(async () => {
+  void initWindowChrome()
   stopUpdateChecks = watchUpdateAvailability(info => {
     if (updateBusy.value) return
     if (info.version !== updateInfo.value?.version) downloadedInstaller.value = ''
@@ -168,104 +171,115 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M9 3h6
 </script>
 
 <template>
-  <div class="shell" :class="{ immersive }">
-    <aside v-if="!immersive" class="sidebar">
-      <div class="logo" aria-hidden="true">
-        <svg viewBox="0 0 48 48" width="30" height="30">
-          <defs>
-            <linearGradient id="logo-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B82FF" /><stop offset="1" stop-color="#0F4FE3" /></linearGradient>
-          </defs>
-          <rect width="48" height="48" rx="11" fill="url(#logo-bg)" />
-          <g transform="translate(24 25.6) scale(1.5) translate(-12 -12.4)">
-            <path d="M11.25 6.2C9.3 4.9 6.6 4.4 3 4.6v13.9c3.5-.2 6.2.3 8.25 1.6z" fill="#fff" />
-            <path d="M12.75 6.2c1.95-1.3 4.65-1.8 8.25-1.6v13.9c-3.5-.2-6.2.3-8.25 1.6z" fill="#fff" fill-opacity=".78" />
-          </g>
-          <path d="M37 7.2c0 2.6.9 3.5 3.5 3.5-2.6 0-3.5.9-3.5 3.5 0-2.6-.9-3.5-3.5-3.5 2.6 0 3.5-.9 3.5-3.5z" fill="#FFC53D" />
-        </svg>
-        <span class="logo-text">{{ t('app.name') }}</span>
-      </div>
-      <nav class="nav" :aria-label="t('nav.mainAria')">
-        <router-link
-          v-for="n in navs"
-          :key="n.path"
-          :to="n.path"
-          class="nav-item"
-          :class="{ 'nav-desktop-only': 'desktopOnly' in n && n.desktopOnly }"
-          :title="t(n.labelKey)"
-        >
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path :d="n.icon" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+  <div class="frame">
+    <WindowTitleBar v-if="windowChrome.custom" :overlay="!immersive" />
+    <div class="shell" :class="{ immersive }">
+      <aside v-if="!immersive" class="sidebar">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 48 48" width="30" height="30">
+            <defs>
+              <linearGradient id="logo-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B82FF" /><stop offset="1" stop-color="#0F4FE3" /></linearGradient>
+            </defs>
+            <rect width="48" height="48" rx="11" fill="url(#logo-bg)" />
+            <g transform="translate(24 25.6) scale(1.5) translate(-12 -12.4)">
+              <path d="M11.25 6.2C9.3 4.9 6.6 4.4 3 4.6v13.9c3.5-.2 6.2.3 8.25 1.6z" fill="#fff" />
+              <path d="M12.75 6.2c1.95-1.3 4.65-1.8 8.25-1.6v13.9c-3.5-.2-6.2.3-8.25 1.6z" fill="#fff" fill-opacity=".78" />
+            </g>
+            <path d="M37 7.2c0 2.6.9 3.5 3.5 3.5-2.6 0-3.5.9-3.5 3.5 0-2.6-.9-3.5-3.5-3.5 2.6 0 3.5-.9 3.5-3.5z" fill="#FFC53D" />
           </svg>
-          <span class="nav-label">{{ t(n.labelKey) }}</span>
-          <span
-            v-if="n.path === '/transfer' && transferState.unread"
-            class="nav-badge"
-            :aria-label="t('transfer.unread', { n: transferState.unread })"
-          >{{ transferState.unread > 99 ? '99+' : transferState.unread }}</span>
-        </router-link>
-      </nav>
-      <div class="sidebar-bottom">
-        <router-link :to="settingsNav.path" class="nav-item sidebar-settings" :title="t(settingsNav.labelKey)">
-          <span class="sidebar-settings-icon">
+          <span class="logo-text">{{ t('app.name') }}</span>
+        </div>
+        <nav class="nav" :aria-label="t('nav.mainAria')">
+          <router-link
+            v-for="n in navs"
+            :key="n.path"
+            :to="n.path"
+            class="nav-item"
+            :class="{ 'nav-desktop-only': 'desktopOnly' in n && n.desktopOnly }"
+            :title="t(n.labelKey)"
+          >
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-              <path :d="settingsNav.icon" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              <path :d="n.icon" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <!-- 手机底部标签栏没有更新按钮: 在「设置」图标上挂一个小圆点提示 -->
-            <span v-if="showSidebarUpdate" class="sidebar-settings-badge" aria-hidden="true" />
-          </span>
-          <span class="nav-label">{{ t(settingsNav.labelKey) }}</span>
-        </router-link>
-        <button
-          v-if="showSidebarUpdate"
-          class="sidebar-update"
-          :class="{
-            downloading: updateBusy,
-            determinate: updateBusy && updateProgress != null,
-            ready: !updateBusy && !!downloadedInstaller,
-          }"
-          type="button"
-          :title="sidebarUpdateTitle"
-          :aria-label="sidebarUpdateTitle"
-          :aria-busy="updateBusy"
-          @click="handleSidebarUpdate"
-        >
-          <span class="sidebar-update-icon" aria-hidden="true">
-            <svg class="sidebar-update-ring" viewBox="0 0 24 24" width="24" height="24">
-              <circle class="ring-track" cx="12" cy="12" r="10.5" pathLength="100" />
-              <circle
-                class="ring-bar"
-                cx="12"
-                cy="12"
-                r="10.5"
-                pathLength="100"
-                :stroke-dashoffset="updateProgress == null ? 72 : 100 - Math.round(updateProgress * 100)"
-              />
-            </svg>
-            <svg class="sidebar-update-glyph" viewBox="0 0 24 24" width="15" height="15">
-              <path d="M12 4.5v10m0 0 4-4m-4 4-4-4M5.5 19.5h13" />
-            </svg>
-            <span class="sidebar-update-dot" />
-          </span>
-          <span class="sidebar-update-label" aria-hidden="true">
-            {{ sidebarUpdateLabel }}<span v-if="!updateBusy && !downloadedInstaller && updateInfo?.version" class="sidebar-update-version">v{{ updateInfo.version }}</span>
-          </span>
-        </button>
-      </div>
-    </aside>
-    <main class="main">
-      <router-view :key="route.fullPath" />
-    </main>
-    <BabeldocTaskStatus />
-    <LibraryUploadStatus />
-    <ToastHost />
-    <ConfirmHost />
+            <span class="nav-label">{{ t(n.labelKey) }}</span>
+            <span
+              v-if="n.path === '/transfer' && transferState.unread"
+              class="nav-badge"
+              :aria-label="t('transfer.unread', { n: transferState.unread })"
+            >{{ transferState.unread > 99 ? '99+' : transferState.unread }}</span>
+          </router-link>
+        </nav>
+        <div class="sidebar-bottom">
+          <router-link :to="settingsNav.path" class="nav-item sidebar-settings" :title="t(settingsNav.labelKey)">
+            <span class="sidebar-settings-icon">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path :d="settingsNav.icon" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <!-- 手机底部标签栏没有更新按钮: 在「设置」图标上挂一个小圆点提示 -->
+              <span v-if="showSidebarUpdate" class="sidebar-settings-badge" aria-hidden="true" />
+            </span>
+            <span class="nav-label">{{ t(settingsNav.labelKey) }}</span>
+          </router-link>
+          <button
+            v-if="showSidebarUpdate"
+            class="sidebar-update"
+            :class="{
+              downloading: updateBusy,
+              determinate: updateBusy && updateProgress != null,
+              ready: !updateBusy && !!downloadedInstaller,
+            }"
+            type="button"
+            :title="sidebarUpdateTitle"
+            :aria-label="sidebarUpdateTitle"
+            :aria-busy="updateBusy"
+            @click="handleSidebarUpdate"
+          >
+            <span class="sidebar-update-icon" aria-hidden="true">
+              <svg class="sidebar-update-ring" viewBox="0 0 24 24" width="24" height="24">
+                <circle class="ring-track" cx="12" cy="12" r="10.5" pathLength="100" />
+                <circle
+                  class="ring-bar"
+                  cx="12"
+                  cy="12"
+                  r="10.5"
+                  pathLength="100"
+                  :stroke-dashoffset="updateProgress == null ? 72 : 100 - Math.round(updateProgress * 100)"
+                />
+              </svg>
+              <svg class="sidebar-update-glyph" viewBox="0 0 24 24" width="15" height="15">
+                <path d="M12 4.5v10m0 0 4-4m-4 4-4-4M5.5 19.5h13" />
+              </svg>
+              <span class="sidebar-update-dot" />
+            </span>
+            <span class="sidebar-update-label" aria-hidden="true">
+              {{ sidebarUpdateLabel }}<span v-if="!updateBusy && !downloadedInstaller && updateInfo?.version" class="sidebar-update-version">v{{ updateInfo.version }}</span>
+            </span>
+          </button>
+        </div>
+      </aside>
+      <main class="main">
+        <router-view :key="route.fullPath" />
+      </main>
+      <BabeldocTaskStatus />
+      <LibraryUploadStatus />
+      <ToastHost />
+      <ConfirmHost />
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* .frame: 自绘标题栏 (Windows) 在上, .shell 占满其余高度; 其他平台没有标题栏, .shell 即整窗 */
+.frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
 .shell {
   display: flex;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 /* 安卓 edge-to-edge / iOS 刘海屏: 网页铺到系统栏下, 普通页面让出状态栏与横屏两侧;
    阅读页 (immersive) 自行处理, 背景色可延伸到状态栏下 */
@@ -572,6 +586,7 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M9 3h6
   overflow: auto;
   overscroll-behavior: contain;
 }
+
 .immersive .main {
   overflow: hidden;
 }

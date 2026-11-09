@@ -70,6 +70,9 @@ npm run test:concept-recognition # 生产完整概念边界 / 智能碎片扩展
 npm run test:auto-scroll     # 多刷新率速度 / 卡帧与调速 / 亚像素累计
 npm run test:translate       # 划词翻译 (目标语言 / 校验 / relay /v1/translate 按账号每日 100 次 / 账号校验缓存) + 正文简繁转换 (OpenCC 等长替换, CFI 不变)
 E2E_BASE=http://localhost:<端口> npm run e2e:translate   # 选中本段 → 翻译 (未登录引导 / 账号额度 / 超额) → 简繁往返; E2E_MOBILE=1 测 App 并校验顶栏与浮动听书胶囊按钮一致 (components/ListenCapsule.vue)
+npm run test:stealth         # 摸鱼模式 (桌面): 老板键录制 / 校验 / 显示, 半透明底色, 传给原生层的选项, 透明窗口配置 (App 窗口保持不透明); 原生窗口命令见 cargo test stealth (src-tauri/src/stealth.rs)
+E2E_BASE=http://localhost:<端口> npm run e2e:stealth   # 模拟桌面 IPC: 网页版无入口 → 从「阅读模式」面板进入 (面板内可调浓淡与隐蔽开关) → 只剩正文 + 半透明 → 透明度 / 伪装即时生效 → 老板键事件 → Esc 退出 → 打开图书自动进入 → PDF 阅读页 (入口在「视图」, 页外底色透明, 整页按浓淡淡化) → 设置页录制老板键; 两个阅读页共用 composables/useStealth + components/StealthStrip
+E2E_BASE=http://localhost:<端口> npm run e2e:window-chrome   # Windows 自绘窗口 (与 macOS 对齐: 无系统标题栏 / 无深色细边框 / 圆角; 非阅读页为 2026-11-08 用户选定的原型 B「侧栏到顶」, docs/prototypes/windows-shell): 侧栏到顶 + 按钮浮在右上且不压页面标题行, 顶行空白拖动 / 双击最大化, 标题栏按钮 → 窗口命令, 阅读页保留标题条, 最大化去圆角, 摸鱼收起; 原生侧 cargo test window_chrome (src-tauri/src/window_chrome.rs, tauri.windows.conf.json)
 npm run audit:keywords       # 离线复现词边界、同形词跨语境和未来新词影响; 不是准确率评测
 node scripts/build-terminology.mjs   # 重建开放候选词库与覆盖报告; 方案见 docs/research/keyword-optimization.md
 node scripts/build-zh-lexicon.mjs   # 重新生成中文词表 src/data/zh-lexicon.txt + 回退合并表 zhMergeWords.ts (下载 jieba / DeepSeek-R1 词表到 ~/.cache, 校验 SHA-256)

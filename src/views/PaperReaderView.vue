@@ -31,7 +31,7 @@ import {
 } from '../services/pdfium'
 import { initMupdf } from '../services/mupdf'
 import { isWasmCrash } from '../services/wasmCrash'
-import { exportDiagnostics, requestCommunityFocus } from '../services/diagnostics'
+import { exportDiagnostics, logEvent, requestCommunityFocus } from '../services/diagnostics'
 import { importFile } from '../services/importer'
 import { detectFormat } from '../services/format'
 import { FONT_FAMILIES, HIGHLIGHT_COLORS, READER_THEME_CHOICES, resolveReaderColors } from '../services/readerTheme'
@@ -99,6 +99,10 @@ import TocList, { type TocItem } from '../components/TocList.vue'
 import PaperAgentSidebar from '../components/PaperAgentSidebar.vue'
 import { paperAgentRuntimeAvailable } from '../services/paperAgent.ts'
 import { t } from '../i18n'
+import { useStealth } from '../composables/useStealth'
+import { setWindowFullscreen, windowChrome } from '../services/windowChrome'
+import { stealthBackground, stealthInkMatrix, stealthPdfColors } from '../services/stealth'
+import StealthStrip from '../components/StealthStrip.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -410,6 +414,8 @@ async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLC
       canvas.dataset.renderer = 'mupdf'
       return canvas
     } catch (e) {
+      // 渲染途中离开了阅读页 (文档已关): 不是 MuPDF 坏了, 也不必回退, 交回空画布 (R3PRO-01)
+      if (!pdm) return canvas
       mupdfRenderFailed = true
       console.warn('MuPDF render failed; falling back to PDFium', e)
     } finally {
@@ -422,7 +428,8 @@ async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLC
     }
   }
 
-  const img = pdm!.renderToSize(pageNum - 1, targetW, targetH)
+  if (!pdm) return canvas
+  const img = pdm.renderToSize(pageNum - 1, targetW, targetH)
   canvas.width = img.width
   canvas.height = img.height
   canvas.getContext('2d')!.putImageData(img, 0, 0)
@@ -430,22 +437,31 @@ async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLC
   return canvas
 }
 
+/**
+ * 正在画的页又被要求重画 (窗口尺寸变了) 时不能直接丢掉这次请求: 手头那次画完发现比例已过期会作废,
+ * 若没人再画这一页就一直空白 (2026-11-08 Win10: 打开 PDF 同时自动进入摸鱼, 窗口在首帧渲染途中变尺寸,
+ * 整页空白 50 秒以上)。记下来, 收尾后按最新比例再画一次; 比例没变则 renderedScale 命中直接返回。
+ */
+const renderAgain = new Set<number>()
 async function renderScrollPage(num: number) {
-  if (!pdm || num < 1 || num > pageCount.value || rendering.has(num)) return
+  if (!pdm || num < 1 || num > pageCount.value) return
+  if (rendering.has(num)) { renderAgain.add(num); return }
   const holder = holderOf(num)
   if (!holder) return
   const scale = curScale.value
   const renderKey = renderKeyFor(num, scale)
   if (renderedScale.get(num) === renderKey) return
   rendering.add(num)
+  let stale = false
   try {
     const canvas = await renderBitmapCanvas(num, scale)
-    if (scale !== curScale.value) return
+    if (scale !== curScale.value) { stale = true; return }
     holder.querySelector('.p-canvas')?.replaceChildren(canvas)
     renderedScale.set(num, renderKey)
     renderPdmLinks(holder, num)
   } finally {
     rendering.delete(num)
+    if (renderAgain.delete(num) || stale) void renderScrollPage(num)
   }
 }
 
@@ -468,7 +484,8 @@ async function renderPaged() {
     while (rendering.has(page)) await new Promise(resolve => setTimeout(resolve, 0))
     await renderScrollPage(page)
   }))
-  pagedBox.value.scrollTo({ top: 0, left: 0 })
+  // 渲染途中离开了阅读页 (R3 novice N02: 跳页后立即返回藏书)
+  pagedBox.value?.scrollTo({ top: 0, left: 0 })
 }
 
 async function pagedGoto(page: number) {
@@ -1080,6 +1097,9 @@ function openProperties() {
 async function setFullscreen(enabled: boolean) {
   const el = paperRoot.value as any
   try {
+    // Windows 自绘窗口: 元素全屏交给 WebView2 放大窗口, 最大化时会露出桌面边和任务栏 (R3PM-01);
+    // 和 EPUB 一样走窗口全屏 (先还原再全屏, 退出再最大化)
+    if (windowChrome.custom) throw new Error('window fullscreen on custom chrome')
     if (enabled) {
       if (document.fullscreenElement) return
       if (el?.requestFullscreen) await el.requestFullscreen()
@@ -1094,8 +1114,7 @@ async function setFullscreen(enabled: boolean) {
   } catch {
     // WKWebView 元素全屏不可用时退回无边框窗口全屏。
     try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      await getCurrentWindow().setFullscreen(enabled)
+      await setWindowFullscreen(enabled)
       isFullscreen.value = enabled
     } catch { /* Web 端且元素全屏失败: 忽略 */ }
   }
@@ -1107,6 +1126,64 @@ async function toggleFullscreen() {
     return
   }
   await setFullscreen(!isFullscreen.value)
+}
+
+// ---- 摸鱼模式 (桌面): 无边框 + 半透明 + 老板键; 状态与窗口命令见 composables/useStealth ----
+// 页面上和全屏一样只留页面, 页面外的底色全透明; PDF 页是整张图 (纸和字画在一起), 「背景浓淡」作用于整页
+const {
+  available: stealthAvailable,
+  active: stealth,
+  intro: stealthIntro,
+  bossKeyOk: stealthBossKeyOk,
+  dismissIntro: dismissStealthIntro,
+  set: setStealth,
+  toggle: toggleStealth,
+  autoEnter: autoEnterStealth,
+} = useStealth({
+  async beforeEnter() {
+    closeToolbarPopovers()
+    moreMenu.value = false
+    if (presentationMode.value) await exitPresentation()
+    if (isFullscreen.value) await setFullscreen(false)
+  },
+  bossHidden() {
+    if (ttsState.value === 'playing') pauseTTS()
+    if (autoReading.value) stopAutoRead()
+  },
+  // 记下进出前的页码: 换窗口时滚动容器先变形, 滚动位置会被夹到顶, 当前页跟着变成 1
+  // (2026-11-08 Win10 第 2 轮: 对页模式第 5 页手动进入摸鱼回到首页, 退出也存成第 1 页)
+  changed: () => { stealthPage = currentPage.value },
+  // 去边框 / 换位置后按新尺寸重新渲染 (Win10 上自动进入时整页空白, 见 useStealth), 再回到进出前那一页
+  windowChanged: () => void rerenderAfterWindowChange().then(restoreStealthPage),
+})
+let stealthPage = 0
+function restoreStealthPage() {
+  const page = stealthPage
+  stealthPage = 0
+  if (!page || page === currentPage.value || pdfLayout.value !== 'original') return
+  logEvent('warn', 'stealth', `pdf page moved after window change: ${page} -> ${currentPage.value}, restored`)
+  gotoPage(page)
+}
+
+// 摸鱼模式下 PDF 只留墨迹 (白纸透明), 纸色按「背景浓淡」另画, 墨迹按「文字浓淡」淡化
+const stealthPaper = computed(() => stealthPdfColors(resolvedTheme.value).paper)
+const stealthInkValues = computed(() => stealthInkMatrix(stealthPdfColors(resolvedTheme.value).ink))
+
+async function rerenderAfterWindowChange(retry = true) {
+  if (pdfLayout.value !== 'original' || loading.value || !pageCount.value) return
+  renderedScale.clear()
+  if (bookPaged.value) await renderPaged()
+  else if (typeof zoom.value !== 'number') await relayout()
+  else updateViewport()
+  // 渲染途中尺寸又变时旧任务作废、不画 (renderScrollPage 比对 scale); 等手头的渲染收尾,
+  // 核对当前页确实画上了, 没有就再画一次 (2026-11-08 Win10: 自动进入偶发整页空白, 退出重进才好)
+  for (let i = 0; i < 60 && rendering.size; i++) await new Promise(r => setTimeout(r, 50))
+  const pages = bookPaged.value ? pagedPages.value : [currentPage.value]
+  const blank = pages.filter(p => !holderOf(p)?.querySelector('.p-canvas canvas'))
+  if (blank.length && retry) {
+    logEvent('warn', 'stealth', `pdf pages ${blank.join(',')} blank after window change, rendering again`)
+    await rerenderAfterWindowChange(false)
+  }
 }
 
 async function enterPresentation() {
@@ -1184,15 +1261,22 @@ async function relayout(force = false) {
 
 watch(currentPage, cur => {
   pageInput.value = String(cur)
+  progressDirty = true
   clearTimeout(settleTimer)
   settleTimer = setTimeout(onPageSettled, 600)
 })
 
-function onPageSettled() {
+let progressDirty = false
+function saveProgressNow() {
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    library.saveProgress(bookId, String(currentPage.value), pageCount.value ? currentPage.value / pageCount.value : 0)
-  }, 400)
+  if (!progressDirty || !pageCount.value) return
+  progressDirty = false
+  library.saveProgress(bookId, String(currentPage.value), currentPage.value / pageCount.value)
+}
+function onPageSettled() {
+  progressDirty = true
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(saveProgressNow, 400)
 }
 
 function jumpTo() {
@@ -3792,6 +3876,8 @@ onMounted(async () => {
       }, 200)
     })
     observeActiveViewport()
+    // 设置了「打开图书时自动进入摸鱼模式」
+    autoEnterStealth()
   } catch (e: any) {
     console.error(e)
     pdfEngineCrashed.value = e instanceof PdfEngineError || isWasmCrash(e)
@@ -3819,7 +3905,8 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   listenedScroller?.removeEventListener('scroll', onScroll)
   listenedScroller = undefined
-  clearTimeout(saveTimer)
+  // 翻页 / 跳页后 1 秒内离开: 还没到存进度的时候, 离开前补存 (R3 novice N01: 跳到第 3 页立即返回, 再开仍是第 5 页)
+  saveProgressNow()
   clearTimeout(settleTimer)
   clearTimeout(resizeTimer)
   clearTimeout(wheelPageReset)
@@ -3848,8 +3935,18 @@ onBeforeUnmount(() => {
   <div
     ref="paperRoot"
     class="paper"
-    :class="{ 'is-fullscreen': isFullscreen, 'is-presentation': presentationMode }"
+    :class="{ 'is-fullscreen': isFullscreen, 'is-presentation': presentationMode, 'is-stealth': stealth }"
+    :style="stealth ? { '--stealth-paper': stealthBackground(stealthPaper, settings.stealth.bgOpacity), '--stealth-ink': settings.stealth.textOpacity } : undefined"
   >
+    <!-- 摸鱼模式: 窗口没有标题栏, 顶部细条拖动窗口; 悬停时露出浓淡与退出 -->
+    <StealthStrip v-if="stealth" :intro="stealthIntro" :boss-key-ok="stealthBossKeyOk" @exit="setStealth(false)" @dismiss-intro="dismissStealthIntro" />
+    <!-- 摸鱼模式的「只留墨迹」滤镜: 白纸变透明, 字按深浅留下, 纸色由页面底色另画, 背景与文字浓淡互不牵连。
+         始终放在页面里: 与引用它的画布同时插入时, 个别 WebView 会把 filter:url() 当成找不到而不画 -->
+    <svg class="stealth-defs" aria-hidden="true" width="0" height="0">
+      <filter id="lr-stealth-ink" color-interpolation-filters="sRGB">
+        <feColorMatrix type="matrix" :values="stealthInkValues" />
+      </filter>
+    </svg>
     <input
       ref="pdfOpenInput"
       data-reader-pdf-open
@@ -4238,6 +4335,10 @@ onBeforeUnmount(() => {
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="11" rx="1.5" /><path d="M12 15.5V20M8.5 20h7M10.5 8.2v4.6l3.8-2.3z" /></svg>
           <span>{{ t('reader.slideshow') }}</span>
           <kbd aria-hidden="true">F5</kbd>
+        </button>
+        <button v-if="stealthAvailable" type="button" :title="t('stealth.enterHint')" @click="runFromToolbarPopover(toggleStealth)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 7c3.2 0 5.9 1.5 7.5 3.7L22 9v6l-1.5-1.7C18.9 15.5 16.2 17 13 17c-4.3 0-8-2.1-10-5 2-2.9 5.7-5 10-5z" /><circle cx="7.5" cy="12" r=".9" /></svg>
+          <span>{{ t('stealth.enter') }}</span>
         </button>
       </div>
     </section>
@@ -5043,6 +5144,12 @@ onBeforeUnmount(() => {
   width: 100vw;
   height: 100dvh;
 }
+.paper.is-stealth .paper-header,
+.paper.is-stealth .side-drawer,
+.paper.is-stealth .splitter,
+.paper.is-stealth .pane-right,
+.paper.is-stealth .tts-panel,
+.paper.is-stealth .auto-panel,
 .paper.is-fullscreen .paper-header,
 .paper.is-fullscreen .side-drawer,
 .paper.is-fullscreen .splitter,
@@ -5056,6 +5163,34 @@ onBeforeUnmount(() => {
 .paper.is-fullscreen .paged-box {
   padding: 20px;
   background: #17191d;
+}
+/* 摸鱼模式: 页面外的底色全透明, 透出窗口后面; 页面按「背景浓淡 × 文字浓淡」淡化 */
+.paper.is-stealth,
+.paper.is-stealth .paper-split,
+.paper.is-stealth .pane-left,
+.paper.is-stealth .paged-box,
+.paper.is-stealth .reflow-scroll {
+  background: transparent;
+}
+.paper.is-stealth .pane-left-wrap {
+  background: var(--stealth-paper, transparent);
+}
+.paper.is-stealth .p-holder {
+  background: transparent;
+  box-shadow: none;
+}
+.paper.is-stealth .p-num {
+  display: none;
+}
+.paper.is-stealth .p-canvas {
+  filter: url(#lr-stealth-ink);
+  opacity: var(--stealth-ink, 1);
+}
+.stealth-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
 }
 .fullscreen-exit,
 .fullscreen-toc-toggle {

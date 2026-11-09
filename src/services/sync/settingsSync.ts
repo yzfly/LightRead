@@ -98,6 +98,10 @@ export const SETTINGS_SYNC_SPEC: SettingsSpec = {
   aiBaseUrl: SYNC,
   aiApiKey: SECRET,
   aiModel: SYNC,
+  translateTarget: SYNC,
+  zhConvert: SYNC,
+  /** 摸鱼模式是工作电脑上的需求: 整组只属于本机 (家里的电脑不该一打开书就进摸鱼模式) */
+  stealth: LOCAL,
   /** 本机安装的 Agent 引擎与可执行文件路径 */
   paperAgentEngine: LOCAL,
   paperAgentExecutables: LOCAL,

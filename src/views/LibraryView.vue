@@ -1686,7 +1686,8 @@ async function batchClearTags() {
   gap: 10px;
   flex-wrap: wrap;
   margin: 0 calc(-1 * var(--page-x)) 18px;
-  padding: var(--page-top) var(--page-x) 12px;
+  /* --chrome-inset-right: Windows 自绘窗口按钮浮在右上角, 吸顶工具栏右侧让开 (styles/main.css) */
+  padding: var(--page-top) calc(var(--page-x) + var(--chrome-inset-right)) 12px var(--page-x);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);

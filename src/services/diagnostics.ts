@@ -59,6 +59,9 @@ export function installDiagnostics() {
     }
   }
   window.addEventListener('error', event => {
+    // 浏览器的良性通知: 一帧内 ResizeObserver 回调又改了尺寸, 剩下的通知推到下一帧, 不是错误。
+    // 窗口缩放 / 进出摸鱼时阅读页成串出现, 记成 ERROR 会淹没真正的问题
+    if (!event.error && /^ResizeObserver loop/.test(event.message ?? '')) return
     logEvent('error', 'window', event.error ?? event.message, `${event.filename}:${event.lineno}:${event.colno}`)
   })
   window.addEventListener('unhandledrejection', event => {

@@ -72,7 +72,10 @@ export function getReaderCSS(prefs: ReaderPrefs, appDark: boolean, style?: Reade
       ${prefs.fontFamily ? `font-family: ${prefs.fontFamily};` : ''}
       ${prefs.letterSpacing > 0 ? `letter-spacing: ${Math.min(0.5, prefs.letterSpacing)}em;` : ''}
     }
-    body { background: none !important; }
+    /* 书自带的 body 字色 (Project Gutenberg 的 pgepub.css 写死 color: black) 盖过主题后, 夜间 / 半透明底上是黑字 */
+    body { background: none !important; color: ${colors.fg} !important; }
+    /* Project Gutenberg 版权页的作者列表写了 all: initial, 字色回到默认黑色, 不继承主题 */
+    #pg-header :not(a), #pg-footer :not(a) { color: inherit !important; }
     p, li, blockquote, dd {
       line-height: ${prefs.lineHeight};
       ${prefs.justify ? 'text-align: justify;' : ''}

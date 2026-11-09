@@ -1532,7 +1532,8 @@ export class Paginator extends HTMLElement {
 
         // NOTE: needs `requestAnimationFrame` in Chromium
         requestAnimationFrame(() => {
-            this.#replaceBackground(this.#view.docBackground, this.columnCount)
+            // LightRead: 换书 / 关书后这一帧才到, #view 已经是 null
+            if (this.#view) this.#replaceBackground(this.#view.docBackground, this.columnCount)
         })
 
         // needed because the resize observer doesn't work in Firefox

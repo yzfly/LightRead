@@ -195,6 +195,32 @@ export interface DianjingPrefs {
   chapterCard: boolean
 }
 
+/** 摸鱼模式 (桌面阅读器): 让窗口尽量不显眼 */
+export interface StealthPrefs {
+  /** 打开图书时自动进入 */
+  autoEnter: boolean
+  /** 阅读区背景不透明度 0.2–1 (1 为不透明) */
+  bgOpacity: number
+  /** 正文文字不透明度 0.4–1 (调低像灰字) */
+  textOpacity: number
+  /** 窗口标题伪装 (任务栏显示的名字) */
+  disguise: boolean
+  /** 伪装标题; 空时用默认「文档1」 */
+  disguiseTitle: string
+  /** 老板键 (全局快捷键), 空为不启用 */
+  bossKey: string
+  /** 窗口置顶 */
+  alwaysOnTop: boolean
+  /** 不在任务栏和 Alt+Tab 里显示 (找回: 老板键或再次启动轻阅) */
+  skipTaskbar: boolean
+  /** 截图 / 录屏 / 共享屏幕时隐藏窗口 */
+  hideFromCapture: boolean
+  /** 上次摸鱼时的窗口位置大小 (物理像素); 摸鱼与普通阅读各记一套 */
+  bounds: { x: number; y: number; w: number; h: number } | null
+  /** 首次进入时的说明卡已看过 */
+  introSeen: boolean
+}
+
 interface SettingsState {
   version?: number
   /** 界面语言 */
@@ -261,6 +287,8 @@ interface SettingsState {
   translateTarget: TranslateTarget
   /** 正文简繁转换: 关闭 / 繁→简 / 简→繁 (本地 OpenCC, 见 services/zhConvert.ts) */
   zhConvert: ZhConvertMode
+  /** 摸鱼模式 (桌面): 无边框 + 半透明 + 老板键, 见 services/stealth.ts */
+  stealth: StealthPrefs
   /** AI 辅读: 设置页选择的本机引擎与可选手动可执行文件路径 */
   paperAgentEngine: 'codex' | 'claude' | 'pi'
   paperAgentExecutables: Record<'codex' | 'claude' | 'pi', string>
@@ -346,6 +374,19 @@ const defaults: SettingsState = {
   aiModel: 'deepseek-ai/DeepSeek-V4-Flash',
   translateTarget: 'auto',
   zhConvert: 'off',
+  stealth: {
+    autoEnter: false,
+    bgOpacity: 0.85,
+    textOpacity: 1,
+    disguise: false,
+    disguiseTitle: '',
+    bossKey: 'Alt+Shift+Z',
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    hideFromCapture: false,
+    bounds: null,
+    introSeen: false,
+  },
   paperAgentEngine: 'pi',
   paperAgentExecutables: { codex: '', claude: '', pi: '' },
   webdavUrl: '',
@@ -462,6 +503,10 @@ function load(): SettingsState {
       pdf: { ...defaults.pdf, ...saved.pdf },
       paperAgentExecutables: { ...defaults.paperAgentExecutables, ...savedAgentExecutables },
       readingMode: mergeReadingMode(saved.readingMode),
+      stealth: {
+        ...defaults.stealth,
+        ...(saved.stealth && typeof saved.stealth === 'object' && !Array.isArray(saved.stealth) ? saved.stealth : {}),
+      },
       features: {
         ...defaults.features,
         ...(saved.features && typeof saved.features === 'object' && !Array.isArray(saved.features) ? saved.features : {}),

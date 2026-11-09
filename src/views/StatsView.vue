@@ -218,6 +218,8 @@ const showHow = ref(false)
 }
 .page-head {
   display: flex;
+  /* Windows 自绘窗口按钮在右上角, 标题行右侧让开 (--chrome-inset-right, styles/main.css) */
+  padding-right: var(--chrome-inset-right);
   align-items: center;
   justify-content: space-between;
   gap: 12px;

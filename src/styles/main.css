@@ -62,6 +62,12 @@
   --radius-lg: 14px;
   --radius-xl: 20px;
   --radius-pill: 999px;
+  /* Windows 自绘标题栏高度 (services/windowChrome.ts) */
+  --titlebar-h: 32px;
+  /* Windows 自绘窗口的顶行: 侧栏品牌、页面标题行与窗口按钮同在这一行 (原型 B「侧栏到顶」) */
+  --chrome-band: 48px;
+  --chrome-inset-right: 0px;
+  --sidebar-bg: color-mix(in srgb, var(--text) 4%, var(--bg));
 
   /* 间距 (4pt 节奏) */
   --space-1: 4px;
@@ -274,6 +280,91 @@ body,
   height: 100%;
 }
 
+/* 摸鱼模式 (桌面): 主窗口是透明窗口, 页面各层不画底色, 只由阅读区画半透明底色 (services/stealth.ts) */
+html.lr-stealth,
+html.lr-stealth body,
+html.lr-stealth #app,
+html.lr-stealth .frame,
+html.lr-stealth .shell {
+  background: transparent !important;
+}
+
+/* 自绘窗口 (Windows, services/windowChrome.ts): 透明窗口里由 .frame 画底色与圆角, 标题栏在上, 页面在下。
+   .shell 设 contain: layout, 阅读页等的 position: fixed 以它为准, 不会盖到标题栏上 */
+html.lr-chrome,
+html.lr-chrome body {
+  background: transparent;
+}
+html.lr-chrome .frame {
+  background: var(--bg);
+}
+html.lr-chrome:not(.lr-stealth):not(.lr-fullscreen) .shell {
+  contain: layout;
+}
+html.lr-chrome-round:not(.lr-max):not(.lr-fullscreen) .frame {
+  overflow: hidden;
+  border-radius: var(--radius);
+}
+/* 圆角之外不许有任何东西: 合成层 (滚动区)、挂在 body 上的弹窗遮罩也一起裁 (clip-path 不改变 fixed 的定位基准)。
+   2026-11-08 Win10 深色下右下角露出白色三角 (滚动条交角默认白色) */
+html.lr-chrome-round:not(.lr-max):not(.lr-fullscreen):not(.lr-stealth) body {
+  clip-path: inset(0 round var(--radius));
+}
+/* 摸鱼窗口不画圆角也不裁切, 根元素一旦冒出滚动条, 交角就是一块白方块露在右下角; 页面滚动都在内部容器里, 根元素不滚 */
+html.lr-stealth,
+html.lr-stealth body {
+  overflow: hidden;
+}
+html.lr-stealth .titlebar,
+html.lr-fullscreen .titlebar {
+  display: none;
+}
+/* 非阅读页: 没有标题条, 窗口按钮浮在右上角 (components/WindowTitleBar.vue overlay), 页面标题行上移到顶行,
+   右侧让出按钮的宽度; 标题字号收到 --fs-title。2026-11-08 用户选定原型 B, 见 docs/prototypes/windows-shell */
+html.lr-chrome .shell:not(.immersive) .main {
+  /* 顶行控件 (--control-h) 与侧栏品牌、窗口按钮同一条水平中线: 上下各留 (顶行 - 控件) / 2 */
+  --page-top: calc((var(--chrome-band) - var(--control-h)) / 2);
+  --page-title: var(--fs-title);
+  /* 三个窗口按钮 + 与窗口右边的间距 (WindowTitleBar overlay) + 与页面最右控件之间的呼吸距离 */
+  --chrome-controls-w: calc(var(--control-h) * 3 + var(--space-1) * 2 + var(--space-3));
+  --chrome-inset-right: calc(var(--chrome-controls-w) + var(--space-5) - var(--page-x));
+}
+/* Windows 侧栏 (App.vue, 原型 B「侧栏到顶」): 浅灰直通到顶, 品牌与页面标题、窗口按钮同在顶行 (--chrome-band);
+   选中项用中性底 + 品牌色图标。写在全局样式里: Vue scoped 样式的 global 伪类会吞掉后面的选择器,
+   规则落到 html.lr-chrome 本身 (曾把整页 display: none) */
+html.lr-chrome .shell > .sidebar {
+  background: var(--sidebar-bg);
+  padding-top: calc((var(--chrome-band) - var(--control-h)) / 2);
+}
+html.lr-chrome .sidebar > .logo {
+  height: var(--control-h);
+  margin-bottom: var(--space-3);
+}
+html.lr-chrome .sidebar > .logo svg {
+  width: var(--icon-btn);
+  height: var(--icon-btn);
+}
+html.lr-chrome .sidebar .logo-text {
+  font-size: var(--fs-subtitle);
+  font-weight: var(--fw-semibold);
+}
+html.lr-chrome .sidebar .nav-item {
+  height: var(--control-h);
+}
+html.lr-chrome .sidebar .nav-item:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+html.lr-chrome .sidebar .nav-item.router-link-active {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--text);
+}
+html.lr-chrome .sidebar .nav-item.router-link-active svg {
+  color: var(--brand);
+}
+html.lr-chrome .sidebar .nav-item.router-link-active::before {
+  display: none;
+}
+
 body {
   font-family: var(--font);
   font-size: var(--fs-base);
@@ -366,7 +457,8 @@ svg {
     background: var(--text-3);
     background-clip: padding-box;
   }
-  ::-webkit-scrollbar-track {
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
     background: transparent;
   }
 }

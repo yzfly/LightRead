@@ -21,6 +21,7 @@ import { previewTypingSound } from '../services/readingModes/sound'
 import type { ReadingModeProgress } from '../services/readingModes/progress'
 import { largeTextValues } from '../services/readingModes/presets'
 import type { TypographySection } from './TypographyPanel.vue'
+import { bossKeyLabel } from '../services/stealth'
 
 const props = defineProps<{
   modes: ReadingModes
@@ -39,6 +40,8 @@ const props = defineProps<{
   progress?: ReadingModeProgress | null
   /** 听书正在播放 */
   ttsActive?: boolean
+  /** 桌面安装版: 显示摸鱼模式 (窗口级场景, 进入后面板关闭) */
+  stealthAvailable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -50,6 +53,8 @@ const emit = defineEmits<{
   'open-tts': []
   /** 场景微调 / 带读版式入口: 打开排版面板并滚到对应分区 */
   'open-typography': [section: TypographySection]
+  /** 摸鱼模式: 打开开关即进入 */
+  'enter-stealth': []
   close: []
 }>()
 
@@ -160,6 +165,9 @@ const sceneChanges = computed<string[]>(() => {
 function tune(section: TypographySection) {
   emit('open-typography', section)
 }
+
+// ---- 摸鱼: 面板最上面一行开关 ----
+const stealthKey = computed(() => (settings.stealth.bossKey ? bossKeyLabel(settings.stealth.bossKey) : ''))
 
 const reminderIntervals = [20, 30, 45] as const
 
@@ -331,6 +339,17 @@ function onAutoSpeedExact(e: Event) {
       </div>
 
     </div>
+    <!-- 摸鱼: 和点睛同样一行开关; 打开即进入 (面板随之关闭), 浓淡在窗口顶边细条里调, 其余在设置页 -->
+    <label v-if="stealthAvailable" class="rm-stealth">
+      <span class="rm-stealth-text">
+        <span class="rm-stealth-title">{{ t('stealth.title') }}</span>
+        <span class="rm-stealth-sub">{{ stealthKey ? t('stealth.cardHint', { key: stealthKey }) : t('stealth.cardHintNoKey') }}</span>
+      </span>
+      <span class="rm-switch">
+        <input type="checkbox" role="switch" :checked="false" aria-checked="false" :aria-label="t('stealth.enter')" @change="emit('enter-stealth')" />
+        <span class="rm-switch-track" aria-hidden="true"></span>
+      </span>
+    </label>
     <slot name="top" />
 
     <!-- 场景: 一键套用一组排版值, 关闭恢复; 数值本身在「排版」里调 -->
@@ -1409,5 +1428,30 @@ function onAutoSpeedExact(e: Event) {
   .rm-layout-link, .rm-more summary {
     min-height: 44px;
   }
+}
+
+/* ---- 摸鱼: 与点睛同样的一行 ---- */
+.rm-stealth {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.rm-stealth-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.rm-stealth-title {
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+.rm-stealth-sub {
+  font-size: var(--fs-caption);
+  color: var(--text-3);
 }
 </style>
