@@ -214,9 +214,20 @@ export async function* readChatStream(res: Response): AsyncGenerator<string> {
 
 /** 阅读场景的系统提示 */
 export function readerSystemPrompt(book: { title?: string; author?: string }, chapter: string, lang: 'zh' | 'en'): string {
-  const zh = `你是一位博学的阅读助手。用户正在阅读《${book.title ?? ''}》${book.author ? `(${book.author})` : ''}${chapter ? `, 当前章节:「${chapter}」` : ''}。请围绕这本书回答问题, 补充历史背景、人物关系、典故出处等知识。回答简洁准确, 分点或短段落, 不要空话。`
-  const en = `You are a knowledgeable reading companion. The user is reading "${book.title ?? ''}"${book.author ? ` by ${book.author}` : ''}${chapter ? `, currently in chapter "${chapter}"` : ''}. Answer questions around this book with background, context and references. Be concise and accurate.`
+  const zh = `你是一位博学的阅读助手。用户正在阅读《${book.title ?? ''}》${book.author ? `(${book.author})` : ''}${chapter ? `, 当前章节:「${chapter}」` : ''}。请围绕这本书回答问题, 补充历史背景、人物关系、典故出处等知识。回答简洁准确, 分点或短段落, 不要空话。界面只显示纯文本: 不要用 Markdown 符号 (**、#、- 列表), 分点写「1.」「2.」或换行。`
+  const en = `You are a knowledgeable reading companion. The user is reading "${book.title ?? ''}"${book.author ? ` by ${book.author}` : ''}${chapter ? `, currently in chapter "${chapter}"` : ''}. Answer questions around this book with background, context and references. Be concise and accurate. The answer is shown as plain text: no Markdown symbols (**, #, - bullets); number points as 1. 2. or use line breaks.`
   return lang === 'en' ? en : zh
+}
+
+/**
+ * AI 回答在阅读页按纯文本显示 (white-space: pre-wrap)。提示词已要求不用 Markdown,
+ * 模型仍写出来时去掉加粗 / 标题符号, 列表符号换成「•」, 不渲染 HTML。
+ */
+export function plainAiText(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '')
+    .replace(/^([ \t]*)[-*+][ \t]+/gm, '$1• ')
 }
 
 /** 划词解读的提问模板 */

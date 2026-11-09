@@ -37,7 +37,8 @@ export function fmtDuration(seconds: number): string {
 
 /** 大号数字排版: [{n:'1',u:'小时'},{n:'12',u:'分钟'}] */
 export function durationParts(seconds: number): Array<{ n: string; u: string }> {
-  const mins = Math.floor(Math.max(0, seconds) / 60)
+  // 与 fmtDuration (formatReadingTime) 同样四舍五入, 同一时长各处显示一致
+  const mins = Math.round(Math.max(0, seconds) / 60)
   if (mins < 60) return [{ n: String(mins), u: t('stats.unitMinutes') }]
   const h = Math.floor(mins / 60)
   const m = mins % 60

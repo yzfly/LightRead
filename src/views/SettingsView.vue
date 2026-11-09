@@ -659,6 +659,13 @@ const AGENT_STATE_KEYS: Record<AgentState, string> = {
   checking: 'settings.testing',
   unknown: 'settings.paperAgentsUnchecked',
 }
+/** 原生层的不可用原因是英文诊断; 最常见的「没装」换成本地化说明和下一步 */
+function paperAgentReason(id: PaperAgentEngine): string {
+  const status = paperAgentStatuses.value[id]
+  if (!status) return ''
+  if (!status.found && /executable not found/i.test(status.reason)) return t('settings.paperAgentsNotFound')
+  return status.reason
+}
 /** 收起时标题行右侧的摘要: 当前引擎 + 状态 */
 const agentsSummary = computed(() => {
   const id = settings.paperAgentEngine
@@ -667,7 +674,7 @@ const agentsSummary = computed(() => {
     label: paperAgentEngines.find(e => e.id === id)?.label ?? id,
     state,
     text: t(AGENT_STATE_KEYS[state]),
-    reason: state === 'unavailable' ? paperAgentStatuses.value[id]?.reason ?? '' : '',
+    reason: state === 'unavailable' ? paperAgentReason(id) : '',
   }
 })
 
@@ -1027,7 +1034,7 @@ const APPEARANCE_OPTIONS = [
           <span class="pl-ico tone-warning" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></span>
           <span class="pl-text"><span class="pl-title">{{ t('settings.featureBooklists') }}</span><span class="pl-desc">{{ t('settings.featureBooklistsDesc') }}</span></span>
           <span class="switch">
-            <input v-model="settings.features.recommendedBooklists" type="checkbox" role="switch" :aria-checked="settings.features.recommendedBooklists" />
+            <input v-model="settings.features.recommendedBooklists" type="checkbox" role="switch" :aria-label="t('settings.featureBooklists')" :aria-checked="settings.features.recommendedBooklists" />
             <span class="switch-track" aria-hidden="true"></span>
           </span>
         </label>
@@ -1035,7 +1042,7 @@ const APPEARANCE_OPTIONS = [
           <span class="pl-ico tone-brand" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l3 3-3 3M20 6H5M7 21l-3-3 3-3M4 18h15"/></svg></span>
           <span class="pl-text"><span class="pl-title">{{ t('settings.featureTransfer') }}</span><span class="pl-desc">{{ t('settings.featureTransferDesc') }}</span></span>
           <span class="switch">
-            <input v-model="settings.features.transfer" type="checkbox" role="switch" :aria-checked="settings.features.transfer" />
+            <input v-model="settings.features.transfer" type="checkbox" role="switch" :aria-label="t('settings.featureTransfer')" :aria-checked="settings.features.transfer" />
             <span class="switch-track" aria-hidden="true"></span>
           </span>
         </label>
@@ -1339,7 +1346,7 @@ const APPEARANCE_OPTIONS = [
           <span class="row-desc">{{ t('settings.featureBooklistsDesc') }}</span>
         </span>
         <span class="switch">
-          <input v-model="settings.features.recommendedBooklists" type="checkbox" role="switch" :aria-checked="settings.features.recommendedBooklists" />
+          <input v-model="settings.features.recommendedBooklists" type="checkbox" role="switch" :aria-label="t('settings.featureBooklists')" :aria-checked="settings.features.recommendedBooklists" />
           <span class="switch-track" aria-hidden="true"></span>
         </span>
       </label>
@@ -1349,7 +1356,7 @@ const APPEARANCE_OPTIONS = [
           <span class="row-desc">{{ t('settings.featureTransferDesc') }}</span>
         </span>
         <span class="switch">
-          <input v-model="settings.features.transfer" type="checkbox" role="switch" :aria-checked="settings.features.transfer" />
+          <input v-model="settings.features.transfer" type="checkbox" role="switch" :aria-label="t('settings.featureTransfer')" :aria-checked="settings.features.transfer" />
           <span class="switch-track" aria-hidden="true"></span>
         </span>
       </label>
@@ -1373,7 +1380,7 @@ const APPEARANCE_OPTIONS = [
           <div class="row-title">{{ t('settings.resetTypography') }}</div>
           <div class="row-desc">{{ t('settings.resetTypographyDesc') }}</div>
         </div>
-        <button class="btn" @click="settings.resetReader(); toast(t('settings.resetDone'), 'success')">{{ t('settings.restoreDefault') }}</button>
+        <button class="btn" @click="resetTypographyConfirmed">{{ t('settings.restoreDefault') }}</button>
       </div>
       <!-- 摸鱼模式 (桌面安装版): services/stealth.ts -->
       <div v-if="stealthAvailable" class="stealth-settings">
@@ -1603,8 +1610,8 @@ const APPEARANCE_OPTIONS = [
                   <span v-if="paperAgentStatuses[engine.id]?.version" class="agent-version">{{ paperAgentStatuses[engine.id]?.version }}</span>
                   <code>{{ paperAgentStatuses[engine.id]?.path }}</code>
                 </template>
-                <span v-if="paperAgentState(engine.id) === 'unavailable' && paperAgentStatuses[engine.id]?.reason" class="agent-reason">
-                  {{ paperAgentStatuses[engine.id]?.reason }}
+                <span v-if="paperAgentState(engine.id) === 'unavailable' && paperAgentReason(engine.id)" class="agent-reason">
+                  {{ paperAgentReason(engine.id) }}
                 </span>
               </div>
             </div>

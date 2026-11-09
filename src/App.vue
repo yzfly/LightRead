@@ -2,7 +2,7 @@
 import { pingUsage } from './services/usageStats'
 import { localPack, localTtsAvailable, refreshLocalPack } from './services/localTts'
 import { useRoute, useRouter } from 'vue-router'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ToastHost from './components/ToastHost.vue'
 import ConfirmHost from './components/ConfirmHost.vue'
 import BabeldocTaskStatus from './components/BabeldocTaskStatus.vue'
@@ -37,6 +37,22 @@ settings.persistOnChange()
 useAppearance()
 const route = useRoute()
 const router = useRouter()
+
+/* 各页面共用 .main 这一个滚动容器: 换页时记下离开页的位置, 进入页回到它自己上次的位置 (没去过就是顶部),
+   不再把设置页 / 阅读记录的滚动偏移带进藏书、书源。同一路径只改查询参数 (设置分区等) 不动 */
+const mainEl = ref<HTMLElement | null>(null)
+const pageScroll = new Map<string, number>()
+router.beforeEach((to, from) => {
+  if (mainEl.value && to.path !== from.path) pageScroll.set(from.path, mainEl.value.scrollTop)
+})
+router.afterEach((to, from) => {
+  if (to.path === from.path) return
+  const top = pageScroll.get(to.path) ?? 0
+  const restore = () => mainEl.value?.scrollTo({ top })
+  // 新页面挂载后再滚; 列表异步加载时内容还不够高, 稍后再补一次
+  void nextTick(restore)
+  if (top) setTimeout(restore, 300)
+})
 let stopNativeDrop: (() => void) | undefined
 let stopExternalOpen: (() => void) | undefined
 let stopSync: (() => void) | undefined
@@ -257,7 +273,7 @@ const settingsNav = { path: '/settings', labelKey: 'nav.settings', icon: 'M9 3h6
           </button>
         </div>
       </aside>
-      <main class="main">
+      <main ref="mainEl" class="main">
         <router-view :key="route.fullPath" />
       </main>
       <BabeldocTaskStatus />

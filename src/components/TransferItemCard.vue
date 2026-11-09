@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { askConfirm } from '../services/confirm'
+import { askConfirm, deleteConfirmOptions } from '../services/confirm'
 /** 互传页的一条记录: 文字 / 链接 / 文件, 带复制、打开、导入、下载、删除 */
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -135,7 +135,7 @@ const download = () => run(async () => {
 
 const remove = async () => {
   const forgetOnly = props.item.channel === 'drop' && !props.item.ownerToken
-  if (!(await askConfirm(t(forgetOnly ? 'transfer.forgetConfirm' : 'transfer.deleteConfirm')))) return
+  if (!(await askConfirm(t(forgetOnly ? 'transfer.forgetConfirm' : 'transfer.deleteConfirm'), forgetOnly ? {} : deleteConfirmOptions()))) return
   return run(async () => {
     await removeTransfer(props.item)
     toast(t('transfer.deleted'), 'success')

@@ -24,9 +24,29 @@ function systemPrefersDark(): boolean {
     && window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
+/** 设置解析出的界面主题; 阅读页可临时用 setPageTheme 盖过它 (不改设置, resolvedTheme 仍是应用外观) */
+let appTheme: ResolvedTheme = resolvedTheme.value
+let pageTheme: ResolvedTheme | null = null
+
 export function applyTheme(theme: ResolvedTheme) {
   if (typeof document === 'undefined') return
+  appTheme = theme
   resolvedTheme.value = theme
+  paintTheme()
+}
+
+/**
+ * 阅读页按正文主题给整页 (工具栏、面板、弹窗、标题栏) 配深浅: 夜读时界面也是深色, 不留浅色栏目 (2026-11-09 用户反馈)。
+ * 只改显示, 不写回设置; 离开阅读页传 null 回到应用外观。
+ */
+export function setPageTheme(theme: ResolvedTheme | null) {
+  if (typeof document === 'undefined' || pageTheme === theme) return
+  pageTheme = theme
+  paintTheme()
+}
+
+function paintTheme() {
+  const theme = pageTheme ?? appTheme
   setAppBarsDark(theme === 'dark')
   const root = document.documentElement
   if (root.dataset.theme === theme) return

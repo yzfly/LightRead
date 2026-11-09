@@ -11,7 +11,8 @@ const props = defineProps<{
   max: number
   step?: number
   /** 有名字的档位, value 在 [min, max] 内, 按从左到右排列 */
-  stops: Array<{ value: number; label: string }>
+  /** minor: 只画刻度不显示文字 (档位挤在一起时), 名字仍给读屏和悬停提示 */
+  stops: Array<{ value: number; label: string; minor?: boolean }>
   /** 无障碍名称 (读屏读出「速度：适中」) */
   label: string
   /** 滑动条右侧显示的当前值 (如第几档); 不传则不显示 */
@@ -56,13 +57,14 @@ function onInput(e: Event) {
         :key="s.value"
         type="button"
         class="ls-stop"
-        :class="{ active: nearest === i, exact: nearest === i && exact }"
+        :class="{ active: nearest === i, exact: nearest === i && exact, minor: s.minor }"
+        :title="s.minor ? s.label : undefined"
         :style="{ left: pct(s.value) + '%' }"
         :aria-pressed="nearest === i && exact"
         @click="emit('update:modelValue', s.value)"
       >
         <span class="ls-tick" aria-hidden="true" />
-        <span class="ls-label">{{ s.label }}</span>
+        <span class="ls-label" :class="{ 'sr-only': s.minor }">{{ s.label }}</span>
       </button>
     </div>
   </div>
@@ -121,6 +123,11 @@ function onInput(e: Event) {
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
+}
+.ls-stop.minor {
+  min-width: 0;
+  width: var(--space-4);
+  height: 100%;
 }
 .ls-tick {
   width: 2px;

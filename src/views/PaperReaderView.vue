@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import AppSelect from '../components/AppSelect.vue'
+import AppModal from '../components/AppModal.vue'
 import { AutoScrollClock, ScrollAccumulator } from '../services/autoScroll'
 import { AUTO_SPEED_LEVELS, AUTO_SPEED_STEPS, speedPosition, secondsAtPosition } from '../services/autoReadSpeed'
 import LevelSlider from '../components/LevelSlider.vue'
-import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_STOPS, rateText } from '../services/ttsRate'
+import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_MINOR_STOPS, TTS_RATE_STOPS, rateText } from '../services/ttsRate'
 import { pingUsage } from '../services/usageStats'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -19,7 +20,7 @@ import {
   type PaperParagraph,
 } from '../services/paperText'
 import { translatePage, cachedTranslation } from '../services/paperTranslate'
-import { aiConfigured, chatStream, explainPrompt, readerSystemPrompt, type AiMessage } from '../services/ai'
+import { aiConfigured, chatStream, explainPrompt, plainAiText, readerSystemPrompt, type AiMessage } from '../services/ai'
 import {
   PdfiumDoc,
   PdfEngineError,
@@ -194,6 +195,8 @@ const pdfEffective = computed(() => effectivePdfLayout({
 }))
 /** 所有 PDF 共用阅读模式；v7 起默认连续滚动。 */
 const mode = computed<'paged' | 'scroll'>(() => pdfEffective.value.mode)
+/** 浮动条只有约 240px 宽: 七档里只给两端和中间写字, 其余只画刻度 */
+const AUTO_SPEED_MAJOR: readonly string[] = ['slowest', 'medium', 'fastest']
 const pdfLayout = computed(() => settings.pdf.layout)
 const bookPaged = computed(() => pdfLayout.value === 'original' && mode.value === 'paged')
 const spreadMode = computed(() => pdfEffective.value.spreadMode)
@@ -518,19 +521,18 @@ async function syncPdfLayout() {
   if (next.mode === laidOut.mode && next.spreadMode === laidOut.spreadMode) return
   const modeChanged = next.mode !== laidOut.mode
   laidOut = next
+  const page = currentPage.value
   // 重排版式 (reflow) 不分翻页 / 滚动, 回到原版时按当时的生效值排
   if (pdfLayout.value !== 'original') return
   renderedScale.clear()
   await nextTick()
   if (modeChanged) {
     if (next.mode === 'paged') {
-      await pagedGoto(currentPage.value)
+      await pagedGoto(page)
     } else {
       attachScrollListener()
       await nextTick()
-      await relayout(true)
-      scrollGoto(currentPage.value)
-      updateViewport()
+      await relayout(true, page)
     }
     observeActiveViewport()
   } else if (bookPaged.value) {
@@ -1236,15 +1238,17 @@ function onFullscreenChange() {
 let relayoutSession = 0
 
 /** 重算缩放并保持当前页锚点 (页内比例) */
-async function relayout(force = false) {
+/** anchorPage: 从翻页切到滚动时滚动容器是新建的 (scrollTop=0), 不能按它推算页内位置, 直接停在该页页首 */
+async function relayout(force = false, anchorPage?: number) {
   const el = scroller.value
   if (!el) return
   const next = typeof zoom.value === 'number' ? fixedZoomScale(zoom.value) : fitScale(zoom.value)
   if (!force && Math.abs(next - curScale.value) < 0.001) return
   const session = ++relayoutSession
-  const anchorPage = currentPage.value
+  const fresh = anchorPage != null
+  anchorPage ??= currentPage.value
   const anchorHeight = displaySizeOf(anchorPage).h
-  const frac = anchorHeight ? (el.scrollTop - pageTop(anchorPage)) / anchorHeight : 0
+  const frac = !fresh && anchorHeight ? (el.scrollTop - pageTop(anchorPage)) / anchorHeight : 0
   for (let pass = 0; pass < 3; pass++) {
     const settled = typeof zoom.value === 'number' ? fixedZoomScale(zoom.value) : fitScale(zoom.value)
     if (pass > 0 && Math.abs(settled - curScale.value) < 0.001) break
@@ -4371,26 +4375,20 @@ onBeforeUnmount(() => {
       <button :disabled="atLastPage" :aria-label="t('reader.nextPage')" @click="nextPage">›</button>
     </div>
 
-    <div v-if="propertiesOpen" class="document-dialog-mask" @click.self="propertiesOpen = false">
-      <section class="document-dialog card" role="dialog" aria-modal="true" :aria-label="t('reader.propertiesTitle')">
-        <header>
-          <div>
-            <small>PDF</small>
-            <h2>{{ t('reader.propertiesTitle') }}</h2>
-          </div>
-          <button class="icon-btn" :aria-label="t('common.close')" @click="propertiesOpen = false">×</button>
-        </header>
-        <dl>
+    <!-- 文件属性: AppModal 负责 Esc / 焦点回到入口 / 内容区滚动, 底部按钮始终可见 -->
+    <AppModal v-if="propertiesOpen" :title="t('reader.propertiesTitle')" description="PDF" @close="propertiesOpen = false">
+      <div class="document-dialog">
+        <dl class="document-props">
           <template v-for="row in propertyRows" :key="row.label">
             <dt>{{ row.label }}</dt>
             <dd>{{ row.value }}</dd>
           </template>
         </dl>
-        <footer>
+        <footer class="document-props-actions">
           <button class="btn btn-sm" @click="propertiesOpen = false">{{ t('common.done') }}</button>
         </footer>
-      </section>
-    </div>
+      </div>
+    </AppModal>
 
     <!-- BabelDOC 整本重排版翻译面板 -->
     <div v-if="bd.open" class="bd-mask" @click.self="closeBabeldoc">
@@ -4980,13 +4978,13 @@ onBeforeUnmount(() => {
     <div v-if="selTr" class="sel-tr card" :style="{ left: `${selTrPos.x}px`, top: `${selTrPos.y}px` }">
       <div class="sel-tr-head">
         <strong>{{ isPaper ? t('paper.selTranslate') : t('ai.explain') }}</strong>
-        <span v-if="selTr.busy" class="pt-busy">{{ t('paper.translating') }}</span>
+        <span v-if="selTr.busy" class="pt-busy">{{ t(isPaper ? 'paper.translating' : 'ai.explaining') }}</span>
         <span style="flex: 1" />
-        <button class="icon-btn" :title="t('paper.copy')" :disabled="!selTr.out" @click="copySelTr">⧉</button>
-        <button class="icon-btn" @click="closeSelTr"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.3 6.3a1 1 0 0 1 1.4 0L12 10.58l4.3-4.3a1 1 0 1 1 1.4 1.42L13.42 12l4.3 4.3a1 1 0 0 1-1.42 1.4L12 13.42l-4.3 4.3a1 1 0 0 1-1.4-1.42L10.58 12l-4.3-4.3a1 1 0 0 1 0-1.4z"/></svg></button>
+        <button class="icon-btn" :title="t('paper.copy')" :aria-label="t('paper.copy')" :disabled="!selTr.out" @click="copySelTr">⧉</button>
+        <button class="icon-btn" :title="t('common.close')" :aria-label="t('common.close')" @click="closeSelTr"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.3 6.3a1 1 0 0 1 1.4 0L12 10.58l4.3-4.3a1 1 0 1 1 1.4 1.42L13.42 12l4.3 4.3a1 1 0 0 1-1.42 1.4L12 13.42l-4.3 4.3a1 1 0 0 1-1.4-1.42L10.58 12l-4.3-4.3a1 1 0 0 1 0-1.4z"/></svg></button>
       </div>
       <p class="sel-tr-src">{{ selTr.src }}</p>
-      <p class="sel-tr-out">{{ selTr.out || '…' }}</p>
+      <p class="sel-tr-out">{{ selTr.out ? plainAiText(selTr.out) : '…' }}</p>
     </div>
 
     <!-- 高亮想法编辑浮层 -->
@@ -5042,7 +5040,7 @@ onBeforeUnmount(() => {
           :min="TTS_RATE_MIN"
           :max="TTS_RATE_MAX"
           :step="0.05"
-          :stops="TTS_RATE_STOPS.map(v => ({ value: v, label: v === 1 ? t('tts.rateNormal') : rateText(v) }))"
+          :stops="TTS_RATE_STOPS.map(v => ({ value: v, label: v === 1 ? t('tts.rateNormal') : rateText(v), minor: TTS_RATE_MINOR_STOPS.includes(v) }))"
           :label="t('tts.rate')"
         />
         <span class="tts-value">{{ rateText(settings.ttsRate) }}</span>
@@ -5112,11 +5110,11 @@ onBeforeUnmount(() => {
           :min="1"
           :max="AUTO_SPEED_STEPS"
           :step="1"
-          :stops="AUTO_SPEED_LEVELS.map(l => ({ value: l.position, label: t(l.key) }))"
-          :value-text="String(speedPosition(settings.autoReadSeconds))"
+          :stops="AUTO_SPEED_LEVELS.map(l => ({ value: l.position, label: t(l.key), minor: !AUTO_SPEED_MAJOR.includes(l.level) }))"
           :label="t('reader.speed')"
           @update:model-value="settings.autoReadSeconds = secondsAtPosition($event)"
         />
+        <span class="auto-seconds">{{ Math.round(settings.autoReadSeconds) }} {{ t(mode === 'paged' ? 'readingMode.secondsPage' : 'readingMode.secondsScreen') }}</span>
         <button class="icon-btn auto-collapse" :title="t('reader.collapseControls')" @click="collapseAutoPanel">
           <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="m5.5 7.5 4.5 4.5 4.5-4.5" /></svg>
         </button>
@@ -5291,71 +5289,37 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
-.document-dialog-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(20, 24, 32, 0.34);
-  backdrop-filter: blur(4px);
-}
-.document-dialog {
-  width: min(560px, 100%);
-  max-height: min(720px, calc(100dvh - 48px));
-  overflow: auto;
-  border-radius: 16px;
-  box-shadow: 0 22px 70px rgba(29, 33, 41, 0.22);
-}
-.document-dialog > header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 20px 14px;
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
-}
-.document-dialog h2 {
-  margin: 2px 0 0;
-  color: var(--text);
-  font-size: 18px;
-  letter-spacing: -0.02em;
-}
-.document-dialog small {
-  color: var(--brand);
-  font: 650 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.12em;
-}
-.document-dialog dl {
+.document-props {
   display: grid;
   grid-template-columns: minmax(112px, 0.34fr) 1fr;
   margin: 0;
-  padding: 8px 20px;
+  padding: var(--space-2) var(--space-5);
 }
-.document-dialog dt,
-.document-dialog dd {
+.document-props dt,
+.document-props dd {
   min-width: 0;
   margin: 0;
-  padding: 10px 0;
+  padding: var(--space-2) 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.55;
 }
-.document-dialog dt {
+.document-props dt {
   color: var(--text-3);
 }
-.document-dialog dd {
+.document-props dd {
   color: var(--text);
   overflow-wrap: anywhere;
 }
-.document-dialog footer {
+/* 吸底: 属性多时正文区滚动, 「完成」始终可见 */
+.document-props-actions {
+  position: sticky;
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
-  padding: 12px 20px 18px;
+  padding: var(--space-3) var(--space-5);
+  background: var(--card);
+  border-top: 1px solid var(--border);
 }
 .paper-header {
   position: relative;
@@ -6154,8 +6118,9 @@ onBeforeUnmount(() => {
   top: 10px;
   left: 50%;
   z-index: 71;
-  width: min(430px, calc(100% - 32px));
-  max-height: calc(100dvh - 20px);
+  width: min(480px, calc(100% - 32px));
+  /* 弹层从工具栏下方开始, 要扣掉顶栏高度, 否则底部几行在窗口外 */
+  max-height: calc(100dvh - 140px);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 10px 14px 12px;
@@ -6175,7 +6140,8 @@ onBeforeUnmount(() => {
 }
 .shortcut-row {
   display: grid;
-  grid-template-columns: minmax(178px, auto) 1fr;
+  /* 快捷键列可换行, 说明列保底宽度: 长组合 (Alt+← / Backspace …) 不能把说明挤成逐字竖排 */
+  grid-template-columns: minmax(0, 1.3fr) minmax(8em, 1fr);
   align-items: center;
   gap: 16px;
   min-height: 39px;
@@ -6975,9 +6941,15 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 26px color-mix(in srgb, var(--brand) 12%, transparent), 0 2px 8px rgba(29, 33, 41, 0.08);
   backdrop-filter: blur(14px);
 }
-.auto-panel label {
+.auto-panel label,
+.auto-seconds {
+  flex: none;
   font-size: 13px;
   color: var(--text-2);
+  white-space: nowrap;
+}
+.auto-seconds {
+  font-variant-numeric: tabular-nums;
 }
 .auto-panel input[type='range'] {
   width: 160px;
@@ -7446,9 +7418,9 @@ onBeforeUnmount(() => {
   .fullscreen-toc-toggle span {
     display: none;
   }
-  .document-dialog dl {
+  .document-props {
     grid-template-columns: 96px 1fr;
-    padding-inline: 16px;
+    padding-inline: var(--space-4);
   }
 }
 </style>
