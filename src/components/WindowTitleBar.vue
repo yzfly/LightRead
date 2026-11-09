@@ -64,7 +64,11 @@ defineProps<{ overlay?: boolean }>()
   align-self: stretch;
   align-items: center;
   gap: var(--space-1);
+  padding-left: var(--space-2);
   padding-right: var(--space-3);
+  /* 页面没有吸顶标题时内容会滚到按钮下面: 按钮区垫一块页面底色 (顶部未滚动时与页面同色, 看不出来) */
+  background: var(--bg);
+  border-bottom-left-radius: var(--radius);
 }
 .titlebar.is-overlay .tb-btn {
   width: var(--control-h);

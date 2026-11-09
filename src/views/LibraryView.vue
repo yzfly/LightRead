@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { askConfirm } from '../services/confirm'
+import { askConfirm, deleteConfirmOptions } from '../services/confirm'
 import AppSelect from '../components/AppSelect.vue'
+import { vAutofocus } from '../directives/autofocus'
 import AppModal from '../components/AppModal.vue'
 import { shortAuthor, shortTitle } from '../services/displayTitle'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -404,7 +405,7 @@ async function removeBook(book: BookMeta) {
     : book.format === 'pdf'
       ? 'library.deletePdfConfirm'
       : 'library.deleteConfirm'
-  if (!(await askConfirm(t(confirmation, { title: book.title })))) return
+  if (!(await askConfirm(t(confirmation, { title: book.title }), deleteConfirmOptions()))) return
   try {
     await library.removeBook(book.id)
     toast(t('library.deleted'), 'success')
@@ -477,7 +478,7 @@ async function batchDelete() {
     : includesPdf
       ? 'library.batchDeleteWithAgentConfirm'
       : 'library.batchDeleteConfirm'
-  if (!count || !(await askConfirm(t(confirmation, { count })))) return
+  if (!count || !(await askConfirm(t(confirmation, { count }), deleteConfirmOptions(t('library.batchDeleteTitle', { count }))))) return
   let deleted = 0
   try {
     for (const id of selectedIds.value) {
@@ -611,7 +612,7 @@ async function renameBooklist(id: string) {
 
 async function deleteBooklist(id: string) {
   const item = library.booklists.find(booklist => booklist.id === id)
-  if (!item || !(await askConfirm(t('library.deleteBooklistConfirm', { name: item.name })))) return
+  if (!item || !(await askConfirm(t('library.deleteBooklistConfirm', { name: item.name }), deleteConfirmOptions()))) return
   await library.deleteBooklist(id)
   if (activeBooklistId.value === id) activeBooklistId.value = ''
   delete booklistRenames.value[id]
@@ -695,7 +696,7 @@ async function renameTag(oldName: string) {
 }
 
 async function deleteTag(tag: string) {
-  if (!(await askConfirm(t('library.deleteTagConfirm', { tag })))) return
+  if (!(await askConfirm(t('library.deleteTagConfirm', { tag }), deleteConfirmOptions()))) return
   const storage = await (await import('../storage')).getStorage()
   for (const book of library.books) {
     if (!book.tags.includes(tag)) continue
@@ -1163,7 +1164,7 @@ async function batchClearTags() {
           {{ t(paperMode ? 'library.importPapers' : 'library.import') }}
         </button>
         <button v-if="folderSupported" class="btn" @click="chooseFolder()">{{ t('folder.choose') }}</button>
-        <router-link to="/catalogs" class="btn">{{ t('library.browseCatalogs') }}</router-link>
+        <router-link to="/catalogs" class="btn">{{ t(paperMode ? 'library.browsePapers' : 'library.browseCatalogs') }}</router-link>
       </div>
     </div>
 
@@ -1308,10 +1309,9 @@ async function batchClearTags() {
         :disabled="!selectedIds.size"
         @click="removeSelectedFromBooklist"
       >{{ t('library.removeFromBooklist') }}</button>
-      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPin(true)">{{ t('library.pin') }}</button>
-      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPin(false)">{{ t('library.unpin') }}</button>
-      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPrivate(true)">{{ t('library.setPrivate') }}</button>
-      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPrivate(false)">{{ t('library.unsetPrivate') }}</button>
+      <!-- 置顶 / 私密各一个按钮, 按所选书的现状切换 (同手机操作栏), 一行放得下 -->
+      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPin(!allSelectedPinned)">{{ allSelectedPinned ? t('library.unpin') : t('library.pin') }}</button>
+      <button class="btn btn-sm" :disabled="!selectedIds.size" @click="batchPrivate(!allSelectedPrivate)">{{ allSelectedPrivate ? t('library.unsetPrivate') : t('library.setPrivate') }}</button>
       <button class="btn btn-sm" :disabled="!selectedIds.size" @click="showTagModal = true">{{ t('library.setTags') }}</button>
       <button class="btn btn-sm btn-danger" :disabled="!selectedIds.size" @click="batchDelete">{{ t('common.delete') }}</button>
       <button class="btn btn-sm" @click="toggleManage">{{ t('common.done') }}</button>
@@ -1494,7 +1494,7 @@ async function batchClearTags() {
           :placeholder="t('library.booklistNamePlaceholder')"
           :aria-label="t('library.booklistNamePlaceholder')"
           maxlength="40"
-          autofocus
+          v-autofocus
           @keyup.enter="createBooklist"
         />
         <div class="form-actions">
@@ -1539,6 +1539,7 @@ async function batchClearTags() {
               :aria-label="t('library.booklistName')"
               :placeholder="t('library.booklistNamePlaceholder')"
               maxlength="40"
+              v-autofocus="!library.booklists.length"
               @keyup.enter="createBooklistAndAdd"
             />
             <button
@@ -1600,7 +1601,7 @@ async function batchClearTags() {
     <div v-if="showTagModal" class="modal-mask" @click.self="showTagModal = false">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tag-modal-title">
         <h3 id="tag-modal-title">{{ t('library.tagModalTitle', { count: selectedIds.size }) }}</h3>
-        <input v-model="tagDraft" class="input full" :placeholder="t('library.tagPlaceholder')" :aria-label="t('library.setTags')" autofocus @keyup.enter="batchTag" />
+        <input v-model="tagDraft" class="input full" :placeholder="t('library.tagPlaceholder')" :aria-label="t('library.setTags')" v-autofocus @keyup.enter="batchTag" />
         <div class="form-actions">
           <button class="btn btn-sm" @click="batchClearTags">{{ t('library.clearTags') }}</button>
           <button class="btn btn-sm" @click="showTagModal = false">{{ t('common.cancel') }}</button>
@@ -1621,7 +1622,7 @@ async function batchClearTags() {
           :placeholder="t('library.urlPlaceholder')"
           :aria-label="t('library.urlPlaceholder')"
           :disabled="!!urlImporting"
-          autofocus
+          v-autofocus
           @keyup.enter="doUrlImport"
         />
         <p class="url-hint">{{ t('library.urlHint') }}</p>

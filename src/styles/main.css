@@ -332,37 +332,40 @@ html.lr-chrome .shell:not(.immersive) .main {
 /* Windows 侧栏 (App.vue, 原型 B「侧栏到顶」): 浅灰直通到顶, 品牌与页面标题、窗口按钮同在顶行 (--chrome-band);
    选中项用中性底 + 品牌色图标。写在全局样式里: Vue scoped 样式的 global 伪类会吞掉后面的选择器,
    规则落到 html.lr-chrome 本身 (曾把整页 display: none) */
-html.lr-chrome .shell > .sidebar {
-  background: var(--sidebar-bg);
-  padding-top: calc((var(--chrome-band) - var(--control-h)) / 2);
-}
-html.lr-chrome .sidebar > .logo {
-  height: var(--control-h);
-  margin-bottom: var(--space-3);
-}
-html.lr-chrome .sidebar > .logo svg {
-  width: var(--icon-btn);
-  height: var(--icon-btn);
-}
-html.lr-chrome .sidebar .logo-text {
-  font-size: var(--fs-subtitle);
-  font-weight: var(--fw-semibold);
-}
-html.lr-chrome .sidebar .nav-item {
-  height: var(--control-h);
-}
-html.lr-chrome .sidebar .nav-item:hover {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-}
-html.lr-chrome .sidebar .nav-item.router-link-active {
-  background: color-mix(in srgb, var(--text) 9%, transparent);
-  color: var(--text);
-}
-html.lr-chrome .sidebar .nav-item.router-link-active svg {
-  color: var(--brand);
-}
-html.lr-chrome .sidebar .nav-item.router-link-active::before {
-  display: none;
+/* 只管左侧竖排侧栏; ≤720px 侧栏变成底部标签栏 (App.vue), 不能把 52px 的标签压成 36px */
+@media (min-width: 721px) {
+  html.lr-chrome .shell > .sidebar {
+    background: var(--sidebar-bg);
+    padding-top: calc((var(--chrome-band) - var(--control-h)) / 2);
+  }
+  html.lr-chrome .sidebar > .logo {
+    height: var(--control-h);
+    margin-bottom: var(--space-3);
+  }
+  html.lr-chrome .sidebar > .logo svg {
+    width: var(--icon-btn);
+    height: var(--icon-btn);
+  }
+  html.lr-chrome .sidebar .logo-text {
+    font-size: var(--fs-subtitle);
+    font-weight: var(--fw-semibold);
+  }
+  html.lr-chrome .sidebar .nav-item {
+    height: var(--control-h);
+  }
+  html.lr-chrome .sidebar .nav-item:hover {
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+  }
+  html.lr-chrome .sidebar .nav-item.router-link-active {
+    background: color-mix(in srgb, var(--text) 9%, transparent);
+    color: var(--text);
+  }
+  html.lr-chrome .sidebar .nav-item.router-link-active svg {
+    color: var(--brand);
+  }
+  html.lr-chrome .sidebar .nav-item.router-link-active::before {
+    display: none;
+  }
 }
 
 body {

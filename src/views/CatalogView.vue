@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { askConfirm } from '../services/confirm'
+import { askConfirm, deleteConfirmOptions } from '../services/confirm'
+import { vAutofocus } from '../directives/autofocus'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { getStorage, type CatalogSourceRec, isTauri } from '../storage'
 import {
@@ -471,6 +472,10 @@ async function addCuratedToMine(list: CuratedList) {
 
 const sources = ref<CatalogSourceRec[]>([])
 /** 卡片上只显示主机名, 完整地址放在悬停提示里 */
+/** 内置书源存的是「古登堡计划 (Project Gutenberg)」, 卡片宽度放不下: 显示本地化短名, 全名留在悬停提示 */
+function sourceTitle(s: CatalogSourceRec): string {
+  return s.builtin && s.url.includes('gutenberg.org') ? t('catalog.gutenberg') : s.title
+}
 function hostOf(url: string) {
   try { return new URL(url).host || url } catch { return url }
 }
@@ -950,7 +955,7 @@ async function saveSource() {
 }
 
 async function removeSource(s: CatalogSourceRec) {
-  if (!(await askConfirm(t('catalog.deleteSourceConfirm', { title: s.title })))) return
+  if (!(await askConfirm(t('catalog.deleteSourceConfirm', { title: s.title }), deleteConfirmOptions()))) return
   const storage = await getStorage()
   await storage.deleteSource(s.id)
   forgetSearchTemplate(s.id)
@@ -1292,7 +1297,7 @@ async function removeSource(s: CatalogSourceRec) {
               </div>
               <div class="source-body">
                 <div class="source-title-row">
-                  <span class="source-title">{{ s.title }}</span>
+                  <span class="source-title" :title="s.title">{{ sourceTitle(s) }}</span>
                   <span v-if="s.builtin" class="tag tag-muted">{{ t('catalog.builtin') }}</span>
                 </div>
                 <div class="source-url" :title="s.url">
@@ -1622,7 +1627,7 @@ async function removeSource(s: CatalogSourceRec) {
         </div>
         <div class="form-row">
           <label for="src-name">{{ t('catalog.name') }}</label>
-          <input id="src-name" v-model="newTitle" class="input" :placeholder="t('catalog.namePlaceholder')" autofocus />
+          <input id="src-name" v-model="newTitle" class="input" :placeholder="t('catalog.namePlaceholder')" v-autofocus />
         </div>
         <div class="form-row">
           <label for="src-url">{{ t('catalog.opdsUrl') }}</label>

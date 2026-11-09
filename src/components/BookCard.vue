@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import type { BookMeta } from '../storage'
 import { formatLabelOf } from '../services/plainText'
 import { formatReadingTime } from '../composables/useReadingTimer'
@@ -118,6 +118,8 @@ function openMenu() {
   if (menuOpen.value) return
   menuOpen.value = true
   setTimeout(() => document.addEventListener('pointerdown', onOutsidePointerDown, true))
+  // 靠近窗口下沿的书: 菜单会伸出可视区, 把页面滚到整个菜单可见
+  void nextTick(() => actionsEl.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
 }
 type MenuEvent = 'remove' | 'togglePin' | 'addToBooklist' | 'upload' | 'convert' | 'send' | 'moveKind' | 'togglePrivate'
 function menuAction(event: MenuEvent) {
@@ -128,7 +130,7 @@ function onMore() {
   if (props.compact) emit('menu')
   else toggleMenu()
 }
-/* 触屏长按封面: 与点「⋯」一样展开操作 (系统的长按菜单无意义, 拦掉) */
+/* 右键 / 触屏长按封面: 与点「⋯」一样展开操作 (系统菜单只有图片另存为之类, 拦掉) */
 function onContextMenu(e: Event) {
   if (props.compact) {
     // 手机书格: 长按进入选择并选中这本 (选择模式下由点击切换)
@@ -136,9 +138,9 @@ function onContextMenu(e: Event) {
     if (!props.selectable) emit('longPress')
     return
   }
-  if (props.selectable || !window.matchMedia('(hover: none)').matches) return
+  // 桌面右键 / 触屏长按: 都展开书卡自己的操作菜单, 不出 WebView 的「图像另存为 / 复制图像」
   e.preventDefault()
-  openMenu()
+  if (!props.selectable) openMenu()
 }
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutsidePointerDown, true))
 

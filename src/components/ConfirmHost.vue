@@ -9,12 +9,12 @@ watch(() => route.fullPath, () => settleConfirmation(false))
 onBeforeUnmount(() => settleConfirmation(false))
 </script>
 <template>
-  <AppModal v-if="confirmation" :title="t('common.confirm')" initial-focus=".confirm-cancel" @close="settleConfirmation(false)">
+  <AppModal v-if="confirmation" :title="confirmation.title || t('common.confirm')" initial-focus=".confirm-cancel" @close="settleConfirmation(false)">
     <p class="confirm-message">{{ confirmation.message }}</p>
     <template #footer>
       <div class="confirm-actions">
         <button type="button" class="btn confirm-cancel" @click="settleConfirmation(false)">{{ t('common.cancel') }}</button>
-        <button type="button" class="btn btn-primary confirm-accept" @click="settleConfirmation(true)">{{ t('common.confirm') }}</button>
+        <button type="button" class="btn confirm-accept" :class="confirmation.danger ? 'btn-danger' : 'btn-primary'" @click="settleConfirmation(true)">{{ confirmation.confirmLabel || t('common.confirm') }}</button>
       </div>
     </template>
   </AppModal>

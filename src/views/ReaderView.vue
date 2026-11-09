@@ -13,7 +13,7 @@ import { convertToEpub, TEXT_EPUB_LAYOUT } from '../services/textToEpub'
 import { textViewForBook } from '../services/plainText'
 import { tapZone } from '../services/readerTapZone'
 import { getReaderCSS, resolveReaderColors, resolveReaderTheme, HIGHLIGHT_COLORS, listenMarkStyle, type ListenMarkStyle } from '../services/readerTheme'
-import { resolvedTheme } from '../services/appearance'
+import { resolvedTheme, setPageTheme } from '../services/appearance'
 import { setPageBarsDark, setSystemBarsHidden, setKeepScreenOn } from '../services/systemBars'
 import { injectFontIntoDoc, resolveFontFamily } from '../services/fonts'
 import { isTauri } from '../storage/types'
@@ -35,7 +35,7 @@ import { usePortraitView } from '../composables/usePortraitView'
 import { effectiveReaderLayout } from '../services/portraitLayout'
 import { autoReadMotion, autoSpeedKey, stepAutoSpeed } from '../services/autoReadSpeed'
 import { AutoScrollClock } from '../services/autoScroll'
-import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_STOPS, rateText } from '../services/ttsRate'
+import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_MINOR_STOPS, TTS_RATE_STOPS, rateText } from '../services/ttsRate'
 import { toast } from '../services/toast'
 import { logEvent } from '../services/diagnostics'
 import { stealthBackground } from '../services/stealth'
@@ -46,7 +46,7 @@ import { t } from '../i18n'
 import { siteUrlForRepoPath } from '../services/siteLinks'
 import { matchesMQ, MQ } from '../composables/useMediaQuery'
 import { searchBook, type SearchHit } from '../services/bookSearch'
-import { chatStream, aiConfigured, readerSystemPrompt, explainPrompt, providerById, type AiMessage } from '../services/ai'
+import { chatStream, aiConfigured, readerSystemPrompt, explainPrompt, plainAiText, providerById, type AiMessage } from '../services/ai'
 import TocList, { type TocItem } from '../components/TocList.vue'
 import ReadingModePanel from '../components/ReadingModePanel.vue'
 import TypographyPanel, { type TypographySection } from '../components/TypographyPanel.vue'
@@ -80,6 +80,7 @@ import { HIGHLIGHT_TEXT_MAX, hitsAnnotation } from '../services/annotationContex
 import { useNotesTools } from '../composables/useNotesTools'
 import NotesExportDialog from '../components/NotesExportDialog.vue'
 import QuoteCardDialog from '../components/QuoteCardDialog.vue'
+import { vAutofocus } from '../directives/autofocus'
 
 const route = useRoute()
 const router = useRouter()
@@ -458,9 +459,14 @@ onBeforeUnmount(() => {
 const readerDark = computed(() => resolveReaderTheme(settings.readerPrefs.theme, appDark.value) === 'dark')
 watch(
   readerDark,
-  dark => setPageBarsDark(dark),
+  dark => {
+    setPageBarsDark(dark)
+    // 工具栏、面板、弹窗、标题栏跟正文同深浅: 夜读时不留浅色栏目, 深色外观读白底时也不割裂 (services/appearance)
+    setPageTheme(dark ? 'dark' : 'light')
+  },
   { immediate: true },
 )
+onBeforeUnmount(() => setPageTheme(null))
 
 /** 当前选中的自定义字体 (settings.readerPrefs.fontFamily 为 custom:Name 时) */
 function selectedCustomFont() {
@@ -2034,7 +2040,7 @@ watch(() => [settings.ttsEngine, settings.ttsRate, settings.edgeVoice, settings.
 
 /** 语速显示: 1.0× / 1.25× / 0.75× (用乘号, 不用字母 x) */
 /** 语速档位: 1.0× 标「正常」; 其余两档之间可以拖 (步长 0.05) */
-const rateStops = computed(() => TTS_RATE_STOPS.map(v => ({ value: v, label: v === 1 ? t('tts.rateNormal') : rateText(v) })))
+const rateStops = computed(() => TTS_RATE_STOPS.map(v => ({ value: v, label: v === 1 ? t('tts.rateNormal') : rateText(v), minor: TTS_RATE_MINOR_STOPS.includes(v) })))
 
 // ---- 定时关闭: 15 / 30 分钟、1 小时, 或听完本章 ----
 // 到点前 3 秒开始淡出, 到点停在暂停 (不是停止, 进度和断点都在), Toast 可一键「再听 15 分钟」。
@@ -2300,7 +2306,13 @@ function onSectionLoad(e: CustomEvent) {
   doc.addEventListener('click', (e: MouseEvent) => {
     // 触屏轻点已在 touchend 处理过, 吞掉其后的合成 click
     if (Date.now() < suppressClickUntil) return
-    onContentClick(e.clientX, doc, e.target as Element, e.clientY)
+    // 鼠标双击是选词: 第一下先等一等, 等到第二下就不翻页 / 不切工具栏
+    clearTimeout(contentClickTimer)
+    if (e.detail > 1) return
+    const { clientX, clientY } = e
+    const target = e.target as Element
+    if (e.detail === 1) contentClickTimer = setTimeout(() => onContentClick(clientX, doc, target, clientY), DOUBLE_CLICK_MS)
+    else onContentClick(clientX, doc, target, clientY)
   })
 
   // 触屏轻点: 触摸设备上合成 click 与 foliate 的 touch 吸附赛跑, 时有丢失/弹回
@@ -2474,6 +2486,9 @@ function onMarginTouchMove(e: TouchEvent) {
 
 // 点正文翻页 (横屏左/右, 竖屏上/下)
 let overlayDismissed = false
+/** 鼠标单击翻页前等待第二下的时长: 双击选词不应翻页 */
+const DOUBLE_CLICK_MS = 220
+let contentClickTimer: ReturnType<typeof setTimeout> | undefined
 
 function onContentClick(clientX: number, doc: Document, target?: Element | null, clientY = 0) {
   if (overlayDismissed) {
@@ -3125,6 +3140,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(contentClickTimer)
   document.removeEventListener('visibilitychange', resetAutoScrollClock)
   setPageBarsDark(null)
   window.removeEventListener('keydown', handleKeydown)
@@ -3443,6 +3459,8 @@ onBeforeUnmount(() => {
         :key="name"
         class="hl-color"
         :style="{ background: hex }"
+        :title="`${t('reader.highlight')} · ${t(`reader.highlightColor.${name}`)}`"
+        :aria-label="`${t('reader.highlight')} · ${t(`reader.highlightColor.${name}`)}`"
         @click="addHighlight(name as string)"
       />
       <button class="btn btn-sm" @click="addHighlight('yellow', true)"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10l-4.3 3.4A1 1 0 0 1 4 19.6V6a2 2 0 0 1 1-2zm1 2v11.5L9.3 15H19V6H6zm2 2.5h8a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2zm0 3h5a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2z"/></svg>{{ t('reader.writeNote') }}</button>
@@ -3729,7 +3747,7 @@ onBeforeUnmount(() => {
           <div ref="aiListEl" class="panel-body ai-list">
             <p v-if="!aiMessages.length" class="panel-empty">{{ t('ai.intro') }}</p>
             <div v-for="(m, i) in aiMessages" :key="i" class="ai-msg" :class="m.role">
-              <div class="ai-bubble">{{ m.content }}<span v-if="m.role === 'assistant' && aiStreaming && i === aiMessages.length - 1" class="ai-cursor">▍</span></div>
+              <div class="ai-bubble">{{ m.role === 'assistant' ? plainAiText(m.content) : m.content }}<span v-if="m.role === 'assistant' && aiStreaming && i === aiMessages.length - 1" class="ai-cursor">▍</span></div>
             </div>
           </div>
           <div class="ai-input-row">
@@ -3750,7 +3768,7 @@ onBeforeUnmount(() => {
       <template v-else>
         <h3>{{ t('reader.searchInBook') }}</h3>
         <form class="search-form" @submit.prevent="runSearch">
-          <input v-model="searchQuery" class="input" type="search" :placeholder="t('reader.searchPlaceholder')" />
+          <input v-model="searchQuery" v-autofocus class="input" type="search" :placeholder="t('reader.searchPlaceholder')" :aria-label="t('reader.searchInBook')" />
         </form>
         <div class="search-opts">
           <button type="button" class="search-opt" :class="{ active: searchOpts.caseSensitive }" :title="t('reader.matchCase')" @click="toggleSearchOpt('caseSensitive')">Aa</button>
@@ -3811,9 +3829,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   padding: 8px max(14px, var(--lr-safe-right)) 8px max(14px, var(--lr-safe-left));
-  background: color-mix(in srgb, var(--card) 86%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* 不透明: 半透明时正文页眉页脚 (书名 / 页码) 会透出来和工具栏文字叠影 */
+  background: var(--card);
   border-bottom: 1px solid var(--border);
   transition: transform 0.25s, opacity 0.25s;
   color: var(--text);
@@ -3831,15 +3848,16 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--card) 70%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  color: var(--text-3);
-  opacity: 0.45;
+  color: var(--text-2);
+  opacity: 0.7;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   transition: opacity 0.2s;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
-.fs-exit:hover {
+.fs-exit:hover,
+.fs-exit:focus-visible {
   opacity: 1;
   color: var(--text);
 }
