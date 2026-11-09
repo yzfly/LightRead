@@ -8,6 +8,8 @@ mod comic;
 mod cloud_tts;
 mod edge_tts;
 mod sapi_tts;
+mod stealth;
+mod window_chrome;
 mod epub_meta;
 mod folder_scan;
 mod fonts;
@@ -144,8 +146,12 @@ pub fn run() {
   // Windows/Linux 会把关联文件作为新进程参数传入；把它转交给已经运行的主实例。
   #[cfg(desktop)]
   let builder = tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+    // 再次启动轻阅: 把窗口找回来 (包括被摸鱼模式老板键藏起的窗口), 再处理要打开的文件
+    stealth::reveal(app);
     queue_open_files(app, supported_paths(args));
-  }));
+  }))
+  // 摸鱼模式的老板键 (stealth.rs)
+  .plugin(tauri_plugin_global_shortcut::Builder::new().build());
   #[cfg(not(desktop))]
   let builder = tauri::Builder::default();
 
@@ -154,6 +160,7 @@ pub fn run() {
     .manage(agent::ContextState::default())
     .manage(agent::AgentSupervisor::default())
     .manage(babeldoc::BabeldocState::default())
+    .manage(stealth::StealthState::default())
     .invoke_handler(tauri::generate_handler![
       diagnostics::diagnostics_append,
       diagnostics::diagnostics_read_logs,
@@ -180,6 +187,9 @@ pub fn run() {
       edge_tts::edge_tts_synthesize,
       sapi_tts::sapi_tts_voices,
       sapi_tts::sapi_tts_synthesize,
+      stealth::stealth_enter,
+      window_chrome::window_chrome,
+      stealth::stealth_exit,
       fonts::list_system_fonts,
       folder_scan::folder_scan,
       http_upload::http_upload,
@@ -243,6 +253,11 @@ pub fn run() {
         }
       }
       diagnostics::install(app.handle())?;
+      // Windows: 无系统标题栏 + 圆角 (与 macOS 对齐), 超出工作区的窗口缩进来
+      #[cfg(desktop)]
+      if let Some(window) = app.get_webview_window("main") {
+        window_chrome::setup(&window);
+      }
       // Windows/Linux 冷启动时，关联文件路径直接出现在进程参数中。
       queue_open_files(app.handle(), supported_paths(std::env::args().skip(1)));
       Ok(())

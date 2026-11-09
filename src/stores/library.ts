@@ -15,6 +15,9 @@ const resolveCover = createCoverResolver({
   regenerate: async book => (await import('../services/importer')).regenerateCover(book),
 })
 
+/** 本次运行里各书最后一次保存的进度 (见 saveProgress / refresh) */
+const lastSavedProgress = new Map<string, { location: string; progress: number; lastReadAt: number }>()
+
 export const useLibrary = defineStore('library', {
   state: () => ({
     books: [] as BookMeta[],
@@ -54,6 +57,11 @@ export const useLibrary = defineStore('library', {
         this.booklistBookIds = byList
       } else {
         this.booklistBookIds = Object.fromEntries(memberships)
+      }
+      // 本次运行里刚存的进度比列表新就以它为准 (列表可能是写入落盘前读的)
+      for (const book of books) {
+        const patch = lastSavedProgress.get(book.id)
+        if (patch && patch.lastReadAt > (book.lastReadAt ?? 0)) Object.assign(book, patch)
       }
       this.books = books
       this.booklists = booklists
@@ -191,11 +199,12 @@ export const useLibrary = defineStore('library', {
       if (booklist) booklist.updatedAt = Date.now()
     },
     async saveProgress(id: string, location: string, progress: number) {
-      const storage = await getStorage()
       const patch = { location, progress, lastReadAt: Date.now() }
-      await storage.updateBook(id, patch)
+      // 先改内存再落盘: 离开阅读页时补存的进度和藏书页的 refresh 并发, refresh 读到旧值会盖掉卡片进度 (R3 overall R3O-01)
       const book = this.books.find(b => b.id === id)
       if (book) Object.assign(book, patch)
+      lastSavedProgress.set(id, patch)
+      await (await getStorage()).updateBook(id, patch)
     },
     /** 累加阅读时长 (秒), 同时记入每日阅读记录 (at: 归到哪一天, 缺省为现在) */
     async addReadingTime(id: string, seconds: number, at?: number) {

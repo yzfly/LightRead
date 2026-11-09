@@ -179,7 +179,7 @@ function onClick(e: MouseEvent) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: calc(12px + var(--lr-safe-top)) var(--page-x) 12px;
+  padding: calc(12px + var(--lr-safe-top)) calc(var(--page-x) + var(--chrome-inset-right)) 12px var(--page-x);
 }
 .web-btn {
   margin-left: auto;

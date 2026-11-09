@@ -37,6 +37,11 @@ import { autoReadMotion, autoSpeedKey, stepAutoSpeed } from '../services/autoRea
 import { AutoScrollClock } from '../services/autoScroll'
 import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_STOPS, rateText } from '../services/ttsRate'
 import { toast } from '../services/toast'
+import { logEvent } from '../services/diagnostics'
+import { stealthBackground } from '../services/stealth'
+import { useStealth } from '../composables/useStealth'
+import { setWindowFullscreen } from '../services/windowChrome'
+import StealthStrip from '../components/StealthStrip.vue'
 import { t } from '../i18n'
 import { siteUrlForRepoPath } from '../services/siteLinks'
 import { matchesMQ, MQ } from '../composables/useMediaQuery'
@@ -106,6 +111,8 @@ const anyOverlayOpen = () =>
 
 /** 显示工具栏; autoHide 时若几秒内无交互且无面板打开则自动隐去 */
 function showBars(autoHide = false) {
+  // 摸鱼模式下工具栏一直收起, 只留正文 (顶部细条可拖动窗口 / 退出)
+  if (stealth.value) return
   barsVisible.value = true
   clearTimeout(barsTimer)
   if (autoHide) {
@@ -172,9 +179,8 @@ async function toggleFullscreen() {
   try {
     if (isTauri()) {
       const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      const win = getCurrentWindow()
-      const next = !(await win.isFullscreen())
-      await win.setFullscreen(next)
+      const next = !(await getCurrentWindow().isFullscreen())
+      await setWindowFullscreen(next)
       isFullscreen.value = next
     } else if (document.fullscreenElement) {
       await document.exitFullscreen()
@@ -192,6 +198,44 @@ async function toggleFullscreen() {
 const syncFullscreenState = () => {
   if (!isTauri()) isFullscreen.value = !!document.fullscreenElement
 }
+
+// ---- 摸鱼模式 (桌面): 无边框 + 半透明 + 老板键; 状态与窗口命令见 composables/useStealth ----
+const {
+  available: stealthAvailable,
+  active: stealth,
+  intro: stealthIntro,
+  bossKeyOk: stealthBossKeyOk,
+  dismissIntro: dismissStealthIntro,
+  set: setStealth,
+  autoEnter: autoEnterStealth,
+  handleKey: stealthKey,
+} = useStealth({
+  async beforeEnter() {
+    closeOverlays()
+    if (isFullscreen.value) await toggleFullscreen()
+    clearTimeout(barsTimer)
+    barsVisible.value = false
+  },
+  // 页眉 (书名 / 章节) 与页脚随之留白或恢复; 记下此刻的阅读位置, 窗口改完后核对
+  changed: on => {
+    // 退出时进入前的那个字还在眼前 (没往后读), 就回到它; 否则落脚页带出的前文会成为退出位置,
+    // 每进出一次往前退一截 (2026-11-08 Win10 第 2 轮:《呐喊》自序 5–6 页进出后回到 3–4 页)。
+    // 不比较页 CFI: 摸鱼中改窗口大小 / 调浓淡会重排, 页起点变了但读者没翻页 (同日 feature 验收 103–104 → 101–102)
+    const home = !on && stealthHome && anchorOnPage(stealthHome.cfi) ? stealthHome : null
+    if (!on && stealthHome) logEvent('info', 'stealth', `exit position: ${home ? 'back to entry anchor' : 'read on, keep current page'}`)
+    const cfi = home?.cfi || firstVisibleChar() || currentCfi.value
+    stealthAnchor = home ?? (cfi ? { cfi, index: view?.renderer?.getContents?.()[0]?.index, fraction: fraction.value } : null)
+    stealthHome = on ? stealthAnchor : null
+    updateMarginals()
+  },
+  windowChanged: keepPositionAfterWindowChange,
+  afterExit: () => showBars(true),
+  bossHidden() {
+    if (ttsState.value === 'playing') pauseTTS()
+    if (autoReading.value && !autoPaused.value) pauseAutoRead()
+    if (ambient.state.playing) ambient.stop()
+  },
+})
 
 // 打开目录时把当前章节滚到可视区中间
 watch(panel, async p => {
@@ -400,9 +444,20 @@ const readerLayout = computed(() => effectiveReaderLayout({
 const effectiveFlow = computed(() => readerLayout.value.flow)
 // 墨水屏等阅读模式会改写正文配色 (纯黑白)
 const themeColors = computed(() => resolveReaderColors(settings.readerPrefs.theme, appDark.value, lateModes.value?.readerStyle.value))
+// Windows 自绘标题栏在阅读页与正文同色 (components/WindowTitleBar.vue), 不然灰色一条压在白纸上
+watch(themeColors, c => {
+  const root = document.documentElement.style
+  root.setProperty('--reader-chrome-bg', c.bg)
+  root.setProperty('--reader-chrome-fg', c.fg)
+}, { immediate: true })
+onBeforeUnmount(() => {
+  document.documentElement.style.removeProperty('--reader-chrome-bg')
+  document.documentElement.style.removeProperty('--reader-chrome-fg')
+})
 // 正文主题铺满全屏 (含状态栏下方), 安卓系统栏图标按正文深浅切换
+const readerDark = computed(() => resolveReaderTheme(settings.readerPrefs.theme, appDark.value) === 'dark')
 watch(
-  () => resolveReaderTheme(settings.readerPrefs.theme, appDark.value) === 'dark',
+  readerDark,
   dark => setPageBarsDark(dark),
   { immediate: true },
 )
@@ -531,7 +586,8 @@ function updateMarginals() {
   const r = view?.renderer
   if (!r?.heads?.length || !r?.feet?.length) return
   // 沉浸等模式可要求页眉 / 页脚留白
-  const policy = modes.marginalsPolicy.value
+  // 摸鱼模式: 页眉 (书名 / 章节) 与页脚都留白
+  const policy = stealth.value ? { ...modes.marginalsPolicy.value, head: false, footLeft: false, footRight: false } : modes.marginalsPolicy.value
   r.heads.forEach((el: HTMLElement, i: number) => {
     el.textContent = i === 0 && policy.head ? (chapterLabel.value || meta.value?.title || '') : ''
   })
@@ -827,7 +883,101 @@ function interruptTTSForReposition() {
   listenDetached.value = true
 }
 
+/**
+ * 进出摸鱼会去边框、换窗口大小, 正文按新尺寸重排。foliate 重排时偶尔丢掉页内锚点, 落回本章开头
+ * (2026-11-08 Win10:《呐喊》自序进入后显示章首的版权说明, 章节号没变, 只比章节号的兜底没发现)。
+ * 所以窗口稳定后只要位置变了, 就跳回进入 / 退出前的那一处 (翻到包含它的那一页); 期间用户自己翻页则作罢。
+ */
+type StealthAnchor = { cfi: string; index?: number; fraction: number }
+let stealthAnchor: StealthAnchor | null = null
+/** 本次摸鱼进入前的锚点 (见 changed) */
+let stealthHome: StealthAnchor | null = null
+/** 这个 CFI 指向的字是否在当前页上 */
+function anchorOnPage(cfi: string): boolean {
+  const range = view?.lastLocation?.range as Range | undefined
+  const doc = range?.startContainer.ownerDocument
+  if (!view || !range || !doc) return false
+  try {
+    const { index, anchor } = view.resolveCFI(cfi)
+    if (index !== view.renderer?.getContents?.()[0]?.index) return false
+    // 正文在 iframe 里, 它的 Range 不是本窗口的 Range, instanceof 永远为假 (迭代 8 因此在 Win10 上一直判为「不在页上」)
+    const at = anchor(doc) as Range | Node
+    const [node, offset] = 'startContainer' in at ? [at.startContainer, at.startOffset] : [at, 0]
+    return range.comparePoint(node, offset) === 0
+  } catch (e) {
+    logEvent('warn', 'stealth', `anchor check failed: ${(e as Error).message}`)
+    return false
+  }
+}
+/**
+ * 当前页第一个可见字 (折叠成一点的 CFI)。foliate 的页范围可能从一个元素开头算起,
+ * 锚在第一个字上才确定是读者看到的那一句。取不到时返回 null, 退回整页 CFI。
+ */
+function firstVisibleChar(): string | null {
+  const range = view?.lastLocation?.range as Range | undefined
+  const index = view?.renderer?.getContents?.()[0]?.index
+  if (!view || !range || index == null) return null
+  try {
+    const doc = range.startContainer.ownerDocument
+    if (!doc) return null
+    const walker = doc.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT)
+    for (let node = walker.currentNode.nodeType === Node.TEXT_NODE ? walker.currentNode : walker.nextNode(); node; node = walker.nextNode()) {
+      if (!range.intersectsNode(node)) continue
+      const text = node.nodeValue ?? ''
+      let offset = node === range.startContainer ? range.startOffset : 0
+      while (offset < text.length && /\s/.test(text[offset])) offset++
+      if (offset >= text.length) continue
+      const at = doc.createRange()
+      at.setStart(node, offset)
+      at.collapse(true)
+      return view.getCFI(index, at)
+    }
+  } catch (e) {
+    logEvent('warn', 'stealth', `anchor from visible text failed: ${(e as Error).message}`)
+  }
+  return null
+}
+
+/**
+ * 进出摸鱼会去边框、换窗口大小, 正文按新尺寸重排, 窗口稳定后跳回进入 / 退出前看到的第一个字。
+ * 分栏排版只能翻到「含有这个字的那一页」, 这个字可能排在新页靠下, 页面上半是前文。
+ * 不再往后翻一页去「对齐」: 下一页从本页之后开始, 会把锚点那句和它后面的几行整段跳过
+ * (2026-11-08 Win10 第 2 轮: 《呐喊》自序 5–6 页进入后首句被跳过)。多看几行前文好过漏读。
+ */
+async function keepPositionAfterWindowChange() {
+  const anchor = stealthAnchor
+  stealthAnchor = null
+  if (!anchor || !view) return
+  const index = view.renderer?.getContents?.()[0]?.index
+  const moved = Math.abs(fraction.value - anchor.fraction)
+  if ((anchor.index != null && index != null && index !== anchor.index) || moved > 0.002) {
+    logEvent('warn', 'stealth', `position drift after window change: section ${anchor.index} -> ${index}, fraction ${anchor.fraction.toFixed(4)} -> ${fraction.value.toFixed(4)}, restored`)
+  }
+  if (currentCfi.value !== anchor.cfi) await view.goTo(anchor.cfi)
+}
+
+/**
+ * 摸鱼模式 + 分页排版: 滚轮向下 = 下一页 (同 PageDown), 向上 = 上一页。
+ * 普通阅读不改 (分页时滚轮本来不翻页); 触控板一次滑动会连发很多事件, 按时间节流成一页。
+ */
+let stealthWheelAt = 0
+function stealthWheel(e: WheelEvent) {
+  if (!stealth.value || readerLayout.value.flow === 'scrolled') return
+  if (Math.abs(e.deltaY) < 4 || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
+  const now = Date.now()
+  if (now - stealthWheelAt < 350) return
+  stealthWheelAt = now
+  turnPage(e.deltaY > 0 ? 'right' : 'left')
+}
+
+/** 摸鱼入口在「阅读模式」面板里: 先关面板再进入 */
+function enterStealthFromModes() {
+  modes.closePanel()
+  void setStealth(true)
+}
+
 function turnPage(dir: 'left' | 'right') {
+  stealthAnchor = null
   interruptTTSForReposition()
   hideBars()
   dir === 'left' ? view?.goLeft() : view?.goRight()
@@ -837,6 +987,8 @@ function handleKeydown(e: KeyboardEvent) {
   // 在输入框里打字 (跳页 / 搜索 / AI) 时, 方向键和空格属于输入框
   const el = e.target as HTMLElement | null
   if (e.key !== 'Escape' && el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
+  // 摸鱼模式的 Esc (正文 iframe 里的按键也走这里)
+  if (stealthKey(e)) return
   // 阅读模式快捷键 (M 面板 / Shift+T 打字机; 打字机运行中空格暂停等)
   if (modes.handleKey(e)) return
   if (dj.handleKey(e)) return
@@ -2230,6 +2382,8 @@ function onSectionLoad(e: CustomEvent) {
   doc.addEventListener('wheel', () => { if (autoReading.value) holdAutoScroll(1500) }, { passive: true })
   // 听书时读者自己滑动正文: 暂不跟随朗读句 (见 noteReaderSteer)
   doc.addEventListener('wheel', noteReaderSteer, { passive: true })
+  // 摸鱼模式常常只用鼠标: 分页排版下滚轮翻页
+  doc.addEventListener('wheel', stealthWheel, { passive: true })
   doc.addEventListener('touchmove', noteReaderSteer, { passive: true })
   doc.addEventListener('keydown', (e: KeyboardEvent) => {
     if (/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End| )$/.test(e.key)) noteReaderSteer()
@@ -2960,6 +3114,8 @@ onMounted(async () => {
     }
     loading.value = false
     if (flattenToc(toc.value).length <= 1) void applySmartToc()
+    // 设置了「打开图书时自动进入摸鱼模式」
+    autoEnterStealth()
   } catch (e: any) {
     console.error(e)
     error.value = e?.message ?? t('reader.cantOpenBook')
@@ -3001,10 +3157,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="reader" :class="[{ 'bars-on': barsVisible, 'no-side-nav': portraitView || autoReading }, modes.shellClass.value]" :style="{ background: themeColors.bg, color: themeColors.fg }">
+  <div
+    class="reader"
+    :class="[{ 'bars-on': barsVisible, 'no-side-nav': portraitView || autoReading, stealth }, modes.shellClass.value]"
+    :style="stealth
+      ? { background: stealthBackground(themeColors.bg, settings.stealth.bgOpacity), color: themeColors.fg, '--stealth-text': settings.stealth.textOpacity }
+      : { background: themeColors.bg, color: themeColors.fg }"
+  >
     <!-- 工具栏隐藏时: 鼠标移到上下边缘呼出 -->
-    <div v-if="!barsVisible" class="bar-peek top" @mouseenter="showBars()" />
-    <div v-if="!barsVisible" class="bar-peek bottom" @mouseenter="showBars()" />
+    <div v-if="!barsVisible && !stealth" class="bar-peek top" @mouseenter="showBars()" />
+    <div v-if="!barsVisible && !stealth" class="bar-peek bottom" @mouseenter="showBars()" />
+
+    <!-- 摸鱼模式: 窗口没有标题栏, 顶部细条拖动窗口; 悬停时露出浓淡与退出 -->
+    <StealthStrip v-if="stealth" :intro="stealthIntro" :boss-key-ok="stealthBossKeyOk" @exit="setStealth(false)" @dismiss-intro="dismissStealthIntro" />
 
     <!-- 全屏时右上角悬浮退出按钮 -->
     <button
@@ -3077,6 +3242,7 @@ onBeforeUnmount(() => {
           :class="{ 'auto-on': readingModeActive }"
           :title="t('readingMode.title')"
           :aria-label="t('readingMode.title')"
+          aria-keyshortcuts="M"
           @click="modes.togglePanel()"
         >
           <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1.8 4.4 5.4 3.1a.6.6 0 0 1 0 1l-5.4 3.1a.6.6 0 0 1-.9-.5V8.9a.6.6 0 0 1 .9-.5z"/></svg>
@@ -3092,7 +3258,9 @@ onBeforeUnmount(() => {
     </header>
 
     <!-- 正文 -->
-    <div ref="container" class="content" />
+    <!-- 正文 iframe 的配色方案与外层不一致时, 浏览器给 iframe 画不透明底 (夜读摸鱼时正文后一整块黑, 2026-11-08 Win10 第 2 轮);
+         外层跟随正文主题, 两边一致才保持透明 -->
+    <div ref="container" class="content" :style="{ colorScheme: readerDark ? 'dark' : 'light' }" />
 
     <div v-if="loading" class="state">{{ t('reader.opening') }}</div>
     <div v-if="error" class="state">
@@ -3101,10 +3269,10 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 翻页按钮 -->
-    <button v-if="!loading && !error" class="nav prev" :title="t('reader.prevPage')" @click="turnPage('left')">
+    <button v-if="!loading && !error && !stealth" class="nav prev" :title="t('reader.prevPage')" @click="turnPage('left')">
       <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M14.7 5.3a1 1 0 0 1 0 1.4L9.42 12l5.3 5.3a1 1 0 0 1-1.42 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.42 0z"/></svg>
     </button>
-    <button v-if="!loading && !error" class="nav next" :title="t('reader.nextPage')" @click="turnPage('right')">
+    <button v-if="!loading && !error && !stealth" class="nav next" :title="t('reader.nextPage')" @click="turnPage('right')">
       <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M9.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 0 1-1.4-1.4l5.29-5.3-5.3-5.3a1 1 0 0 1 0-1.4z"/></svg>
     </button>
 
@@ -3232,12 +3400,14 @@ onBeforeUnmount(() => {
       :effective-flow="effectiveFlow"
       :fixed-layout="fixedLayout"
       :tts-active="ttsState === 'playing'"
+      :stealth-available="stealthAvailable"
       v-model:auto-read-seconds="settings.autoReadSeconds"
       @start-auto="startAutoRead"
       @stop-auto="stopAutoRead"
       @toggle-auto="autoPaused ? resumeAutoRead() : pauseAutoRead()"
       @open-tts="openTTSPanel"
       @open-typography="openTypography"
+      @enter-stealth="enterStealthFromModes"
       @close="modes.closePanel()"
     >
       <template #top>
@@ -3674,6 +3844,13 @@ onBeforeUnmount(() => {
   color: var(--text);
 }
 /* 工具栏隐藏时的边缘呼出热区 */
+/* 摸鱼模式: 只剩正文; 文字可调淡; 顶部细条拖动窗口 */
+.reader.stealth .content {
+  opacity: var(--stealth-text, 1);
+}
+.reader.stealth .tts-mini {
+  display: none;
+}
 .bar-peek {
   position: absolute;
   left: 0;

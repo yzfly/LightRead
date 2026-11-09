@@ -32,6 +32,7 @@ import {
   type UpdateInfo, type DownloadOption,
 } from '../services/updater'
 import { t } from '../i18n'
+import { bossKeyLabel, shortcutFromEvent, stealthSupported, STEALTH_BG_MIN, STEALTH_TEXT_MIN } from '../services/stealth'
 import { providerById, chatStream } from '../services/ai'
 import AiProviderPicker from '../components/settings/AiProviderPicker.vue'
 import {
@@ -42,6 +43,36 @@ import {
 } from '../services/paperAgent.ts'
 
 const settings = useSettings()
+
+// ---- 摸鱼模式: 老板键用「点按后按下新组合键」录制, 格式与原生全局快捷键一致 ----
+const stealthAvailable = stealthSupported()
+const recording = ref(false)
+function onRecordKey(e: KeyboardEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+    stopRecording()
+    return
+  }
+  const key = shortcutFromEvent(e)
+  if (!key) {
+    // 只按了修饰键: 等后面的键; 按了不能用的键: 说明要怎样的组合, 继续录制
+    if (!['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock'].includes(e.key)) toast(t('stealth.bossKeyNeedMod'))
+    return
+  }
+  settings.stealth.bossKey = key
+  stopRecording()
+  toast(t('stealth.bossKeySaved', { key: bossKeyLabel(key) }))
+}
+function startRecording() {
+  recording.value = true
+  window.addEventListener('keydown', onRecordKey, true)
+}
+function stopRecording() {
+  recording.value = false
+  window.removeEventListener('keydown', onRecordKey, true)
+}
+onBeforeUnmount(stopRecording)
 const isAndroid = /Android/i.test(navigator.userAgent)
 const library = useLibrary()
 
@@ -1344,6 +1375,111 @@ const APPEARANCE_OPTIONS = [
         </div>
         <button class="btn" @click="settings.resetReader(); toast(t('settings.resetDone'), 'success')">{{ t('settings.restoreDefault') }}</button>
       </div>
+      <!-- 摸鱼模式 (桌面安装版): services/stealth.ts -->
+      <div v-if="stealthAvailable" class="stealth-settings">
+        <div class="stealth-head">
+          <div class="row-title">{{ t('stealth.title') }}</div>
+          <div class="row-desc">{{ t('stealth.desc') }}</div>
+        </div>
+        <label class="toggle-row">
+          <span class="toggle-text">
+            <span class="row-title">{{ t('stealth.autoEnter') }}</span>
+            <span class="row-desc">{{ t('stealth.autoEnterDesc') }}</span>
+          </span>
+          <span class="switch">
+            <input v-model="settings.stealth.autoEnter" type="checkbox" role="switch" :aria-checked="settings.stealth.autoEnter" />
+            <span class="switch-track" aria-hidden="true"></span>
+          </span>
+        </label>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">{{ t('stealth.bgOpacity') }}</div>
+            <div class="row-desc">{{ t('stealth.bgOpacityDesc') }}</div>
+          </div>
+          <div class="ss-range">
+            <input v-model.number="settings.stealth.bgOpacity" type="range" :min="STEALTH_BG_MIN" max="1" step="0.05" :aria-label="t('stealth.bgOpacity')" />
+            <span class="ss-value">{{ Math.round(settings.stealth.bgOpacity * 100) }}%</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">{{ t('stealth.textOpacity') }}</div>
+            <div class="row-desc">{{ t('stealth.textOpacityDesc') }}</div>
+          </div>
+          <div class="ss-range">
+            <input v-model.number="settings.stealth.textOpacity" type="range" :min="STEALTH_TEXT_MIN" max="1" step="0.05" :aria-label="t('stealth.textOpacity')" />
+            <span class="ss-value">{{ Math.round(settings.stealth.textOpacity * 100) }}%</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">{{ t('stealth.bossKey') }}</div>
+            <div class="row-desc">{{ t('stealth.bossKeyDesc') }}</div>
+          </div>
+          <div class="ss-key">
+            <button
+              type="button"
+              class="btn"
+              :class="{ recording }"
+              :aria-pressed="recording"
+              @click="recording ? stopRecording() : startRecording()"
+            >{{ recording ? t('stealth.bossKeyRecording') : (settings.stealth.bossKey ? bossKeyLabel(settings.stealth.bossKey) : t('stealth.bossKeyOff')) }}</button>
+            <button v-if="settings.stealth.bossKey && !recording" type="button" class="btn" @click="settings.stealth.bossKey = ''">{{ t('stealth.bossKeyClear') }}</button>
+          </div>
+        </div>
+        <label class="toggle-row">
+          <span class="toggle-text">
+            <span class="row-title">{{ t('stealth.disguise') }}</span>
+            <span class="row-desc">{{ t('stealth.disguiseDesc') }}</span>
+          </span>
+          <span class="switch">
+            <input v-model="settings.stealth.disguise" type="checkbox" role="switch" :aria-checked="settings.stealth.disguise" />
+            <span class="switch-track" aria-hidden="true"></span>
+          </span>
+        </label>
+        <div v-if="settings.stealth.disguise" class="row">
+          <div class="row-text">
+            <div class="row-title">{{ t('stealth.disguiseTitle') }}</div>
+          </div>
+          <input
+            v-model="settings.stealth.disguiseTitle"
+            class="input ss-title"
+            maxlength="80"
+            :placeholder="t('stealth.defaultTitle')"
+            :aria-label="t('stealth.disguiseTitle')"
+          />
+        </div>
+        <label class="toggle-row">
+          <span class="toggle-text">
+            <span class="row-title">{{ t('stealth.alwaysOnTop') }}</span>
+            <span class="row-desc">{{ t('stealth.alwaysOnTopDesc') }}</span>
+          </span>
+          <span class="switch">
+            <input v-model="settings.stealth.alwaysOnTop" type="checkbox" role="switch" :aria-checked="settings.stealth.alwaysOnTop" />
+            <span class="switch-track" aria-hidden="true"></span>
+          </span>
+        </label>
+        <label class="toggle-row">
+          <span class="toggle-text">
+            <span class="row-title">{{ t('stealth.skipTaskbar') }}</span>
+            <span class="row-desc">{{ t('stealth.skipTaskbarDesc') }}</span>
+          </span>
+          <span class="switch">
+            <input v-model="settings.stealth.skipTaskbar" type="checkbox" role="switch" :aria-checked="settings.stealth.skipTaskbar" />
+            <span class="switch-track" aria-hidden="true"></span>
+          </span>
+        </label>
+        <label class="toggle-row">
+          <span class="toggle-text">
+            <span class="row-title">{{ t('stealth.hideFromCapture') }}</span>
+            <span class="row-desc">{{ t('stealth.hideFromCaptureDesc') }}</span>
+          </span>
+          <span class="switch">
+            <input v-model="settings.stealth.hideFromCapture" type="checkbox" role="switch" :aria-checked="settings.stealth.hideFromCapture" />
+            <span class="switch-track" aria-hidden="true"></span>
+          </span>
+        </label>
+      </div>
     </section>
 
     <!-- AI 助手 -->
@@ -1775,6 +1911,48 @@ const APPEARANCE_OPTIONS = [
 </template>
 
 <style scoped>
+.stealth-settings {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.stealth-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+.ss-range {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.ss-range input {
+  width: 160px;
+}
+.ss-value {
+  min-width: 3em;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ss-key {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.ss-key .recording {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.ss-title {
+  width: 200px;
+  flex-shrink: 0;
+}
 .about-formats summary { min-height: 44px; display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-2); }
 .about-formats summary::before { content: '＋'; }
 .about-formats[open] summary::before { content: '−'; }
@@ -1809,8 +1987,12 @@ h1 {
   z-index: 3;
   display: flex;
   gap: 6px;
-  margin: 0 calc(-1 * var(--page-x)) 10px;
+  /* 吸顶后在 Windows 自绘窗口按钮下方: 右侧让开 (--chrome-inset-right, styles/main.css)。
+     用外边距收窄而不是内边距: 滚动容器只在内边距外沿裁切, 窄窗口时标签会滚进按钮下面 (2026-11-08 Win10「关于」压住最小化);
+     让出的那段用同色阴影补上底色, 页面内容不会从按钮后面透出来 */
+  margin: 0 calc(var(--chrome-inset-right) - var(--page-x)) 10px calc(-1 * var(--page-x));
   padding: 10px var(--page-x);
+  box-shadow: var(--chrome-inset-right) 0 0 var(--bg);
   overflow-x: auto;
   scrollbar-width: none;
   background: var(--bg);

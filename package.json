@@ -95,6 +95,9 @@
     "e2e:mobile-messages": "node scripts/e2e-mobile-messages.mjs",
     "test:zh-segment-wasm": "node --experimental-strip-types --test scripts/test-zh-segment-wasm.mjs",
     "test:translate": "node --experimental-strip-types --test scripts/test-translate.mjs",
+    "test:stealth": "node --experimental-strip-types --test scripts/test-stealth.mjs",
+    "e2e:window-chrome": "node scripts/e2e-window-chrome.mjs",
+    "e2e:stealth": "node scripts/e2e-stealth.mjs",
     "e2e:translate": "node scripts/e2e-translate.mjs"
   },
   "dependencies": {

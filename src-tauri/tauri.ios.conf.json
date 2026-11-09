@@ -1,4 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "version": "2.8.0"
+  "version": "2.8.0",
+  "app": {
+    "windows": [
+      {
+        "title": "LightRead 轻阅",
+        "transparent": false
+      }
+    ]
+  }
 }
