@@ -1,0 +1,50 @@
+name: Preview build (Windows)
+
+# 功能预览包: 推送到 preview/** 分支时只构建 Windows NSIS 安装包, 作为 Actions 产物上传,
+# 不建 Release、不打 tag, 不会被应用内更新器看到。用于真机验收未发版的功能。
+on:
+  push:
+    branches:
+      - 'preview/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-targets: false
+      - run: npm ci
+      # GitHub Release 下载偶发 504 (2026-11-08 连续三次): 原生库预先带重试下载, 打包 (NSIS 工具也从 Release 下载) 失败再试,
+      # 第二次只重新打包, 不重新编译
+      - name: 预下载 sherpa-onnx 原生库
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/sherpa"
+          curl -fL --retry 8 --retry-all-errors --retry-delay 20 -o "$RUNNER_TEMP/sherpa/sherpa-onnx-v1.13.3-win-x64-static-MT-Release-lib.tar.bz2" \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.3/sherpa-onnx-v1.13.3-win-x64-static-MT-Release-lib.tar.bz2
+          echo "SHERPA_ONNX_ARCHIVE_DIR=$RUNNER_TEMP/sherpa" >> "$GITHUB_ENV"
+      - name: 构建 NSIS 安装包
+        shell: bash
+        run: |
+          for i in 1 2 3; do npx tauri build --bundles nsis && exit 0; echo "retry $i"; sleep 30; done; exit 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lightread-windows-${{ github.sha }}
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 7
