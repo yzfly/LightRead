@@ -46,9 +46,11 @@ function repositoryVersion(tag, platform = 'desktop') {
   let version = desktopVersion
   if (platform !== 'desktop' && existsSync(`src-tauri/tauri.${platform}.conf.json`)) {
     const mobile = json(`src-tauri/tauri.${platform}.conf.json`)
-    // iOS 只许声明最低系统版本 (前端构建目标是 iOS 15, Tauri 默认 14); 其余 bundle 字段会改应用身份
+    // iOS 只许声明最低系统版本 (前端构建目标是 iOS 15, Tauri 默认 14) 和文档类型 (iOS 只认类型标识, 桌面那份按扩展名写的不生效);
+    // 其余 bundle 字段会改应用身份
     const bundle = platform === 'ios' && mobile.bundle ? { ...mobile.bundle, iOS: { ...mobile.bundle.iOS } } : mobile.bundle
     if (platform === 'ios' && bundle) {
+      delete bundle.fileAssociations
       delete bundle.iOS.minimumSystemVersion
       if (!Object.keys(bundle.iOS).length) delete bundle.iOS
     }

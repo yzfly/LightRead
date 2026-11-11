@@ -12,6 +12,121 @@
   "bundle": {
     "iOS": {
       "minimumSystemVersion": "15.0"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "pdf"
+        ],
+        "name": "PDF Document",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "contentTypes": [
+          "com.adobe.pdf"
+        ]
+      },
+      {
+        "ext": [
+          "epub"
+        ],
+        "name": "EPUB eBook",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "contentTypes": [
+          "org.idpf.epub-container"
+        ]
+      },
+      {
+        "ext": [
+          "mobi",
+          "azw",
+          "azw3"
+        ],
+        "name": "Mobipocket eBook",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "application/x-mobipocket-ebook",
+        "contentTypes": [
+          "com.yzfly.lightread.mobi"
+        ],
+        "exportedType": {
+          "identifier": "com.yzfly.lightread.mobi",
+          "conformsTo": [
+            "public.data",
+            "public.content"
+          ]
+        }
+      },
+      {
+        "ext": [
+          "fb2",
+          "fbz"
+        ],
+        "name": "FictionBook eBook",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "application/x-fictionbook+xml",
+        "contentTypes": [
+          "com.yzfly.lightread.fb2"
+        ],
+        "exportedType": {
+          "identifier": "com.yzfly.lightread.fb2",
+          "conformsTo": [
+            "public.data",
+            "public.content"
+          ]
+        }
+      },
+      {
+        "ext": [
+          "cbz"
+        ],
+        "name": "Comic Book Archive",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "application/vnd.comicbook+zip",
+        "contentTypes": [
+          "com.yzfly.lightread.cbz"
+        ],
+        "exportedType": {
+          "identifier": "com.yzfly.lightread.cbz",
+          "conformsTo": [
+            "public.data",
+            "public.content"
+          ]
+        }
+      },
+      {
+        "ext": [
+          "djvu",
+          "djv"
+        ],
+        "name": "DjVu Document",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "image/vnd.djvu",
+        "contentTypes": [
+          "com.yzfly.lightread.djvu"
+        ],
+        "exportedType": {
+          "identifier": "com.yzfly.lightread.djvu",
+          "conformsTo": [
+            "public.data",
+            "public.content"
+          ]
+        }
+      },
+      {
+        "ext": [
+          "txt"
+        ],
+        "name": "Text Document",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "contentTypes": [
+          "public.text"
+        ]
+      }
+    ]
   }
 }

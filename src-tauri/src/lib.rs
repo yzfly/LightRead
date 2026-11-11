@@ -104,9 +104,23 @@ fn read_open_file(
   if !file.is_file() || !is_supported_path(file) {
     return Err("无效或不支持的文件".into());
   }
-  std::fs::read(file)
-    .map(tauri::ipc::Response::new)
-    .map_err(|error| format!("读取文件失败: {error}"))
+  let bytes = std::fs::read(file).map_err(|error| format!("读取文件失败: {error}"))?;
+  // iOS「用轻阅打开」交来的是系统拷进 Documents/Inbox 的副本, 读完即删, 否则每打开一次多占一份空间
+  if is_ios_inbox_copy(file) {
+    state.0.lock().unwrap().allowed.remove(&path);
+    let _ = std::fs::remove_file(file);
+  }
+  Ok(tauri::ipc::Response::new(bytes))
+}
+
+fn is_ios_inbox_copy(path: &Path) -> bool {
+  cfg!(target_os = "ios") && is_inbox_path(path)
+}
+
+fn is_inbox_path(path: &Path) -> bool {
+  let mut parents = path.parent().into_iter().flat_map(Path::ancestors);
+  parents.next().and_then(Path::file_name) == Some("Inbox".as_ref())
+    && parents.next().and_then(Path::file_name) == Some("Documents".as_ref())
 }
 
 #[cfg(test)]
@@ -139,6 +153,15 @@ mod tests {
       assert!(is_supported_path(Path::new(name)), "{name}");
     }
     assert!(!is_supported_path(Path::new("archive.zip")));
+  }
+
+  #[test]
+  fn only_direct_children_of_documents_inbox_count_as_inbox_copies() {
+    use super::is_inbox_path;
+    assert!(is_inbox_path(Path::new("/var/mobile/Containers/Data/Application/X/Documents/Inbox/book.epub")));
+    assert!(!is_inbox_path(Path::new("/var/mobile/Containers/Data/Application/X/Documents/book.epub")));
+    assert!(!is_inbox_path(Path::new("/Users/me/Inbox/book.epub")));
+    assert!(!is_inbox_path(Path::new("/x/Documents/Inbox/sub/book.epub")));
   }
 }
 

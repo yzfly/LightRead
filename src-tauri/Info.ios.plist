@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- iOS 专属 Info.plist 条目, tauri ios build 时并入 gen/apple 的 Info.plist (gen/apple 不入库)。
-     文档类型 (「用轻阅打开」) 由 tauri.conf.json 的 fileAssociations 生成, 不在这里重复。 -->
+     文档类型 (「用轻阅打开」) 在 tauri.ios.conf.json 的 fileAssociations, 写在这里会被 Tauri 生成的那份盖掉。 -->
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
@@ -11,11 +11,10 @@
 	<array>
 		<string>audio</string>
 	</array>
-	<!-- 「文件」App 与数据线里能看到书库目录, 可直接拷书、取备份 -->
-	<key>UIFileSharingEnabled</key>
-	<true/>
+	<!-- 微信 / 文件 App / 隔空投送「用轻阅打开」: 系统先把文件拷进 Documents/Inbox 再交给应用
+	     (不声明就地打开, 否则拿到的是别的应用的受限路径, 原生层读不了); 读完由 read_open_file 删掉副本。 -->
 	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
+	<false/>
 	<!-- 金句卡片存相册: 只申请「添加」权限, 不读相册 -->
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>把金句卡片保存到相册。</string>

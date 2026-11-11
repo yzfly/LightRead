@@ -25,10 +25,12 @@
 ## iOS（2026-11-11 起，实验中，未发版）
 
 没有 iPhone 真机：在 MacAir（Xcode 26.6 + iOS 模拟器，源码副本 `~/workspace/lightread-ios-build`）用模拟器验收，做法见 [iOS 模拟器验收](docs/testing/ios-simulator.md)，设计与分阶段计划见 `docs/plans/ios-app.md`。
-- 只用 `npm run ios:sim`（`scripts/build-ios.mjs`）出模拟器包；`gen/apple` 不入库。iOS 专属内容在 `src-tauri/tauri.ios.conf.json`、`src-tauri/Info.ios.plist`、`src-tauri/plugins/ios-shell/`（Swift 原生壳，对应 Android 的 `MainActivity.kt`；网页经 `services/iosShell.ts` → 主程序 `ios_shell` 命令调用）。
+- 只用 `npm run ios:sim` 出模拟器包、`npm run ios:ipa` 出未签名真机包（都是 `scripts/build-ios.mjs`）；`gen/apple` 不入库。没有 Apple 开发者账号（2026-11-11 用户确认先不签名），IPA 由使用者自己重签。iOS 专属内容在 `src-tauri/tauri.ios.conf.json`、`src-tauri/Info.ios.plist`、`src-tauri/plugins/ios-shell/`（Swift 原生壳，对应 Android 的 `MainActivity.kt`；网页经 `services/iosShell.ts` → 主程序 `ios_shell` 命令调用）。
+- 「用轻阅打开」的文档类型写在 `tauri.ios.conf.json` 的 `fileAssociations`（iOS 只认类型标识；写进 `Info.ios.plist` 会被 Tauri 生成的那份盖掉）。系统把文件拷进 `Documents/Inbox`，`read_open_file` 读完删除。
 - 判断 iOS 用 `isIosApp()`（构建期常量 `__APP_PLATFORM__`），不要用 userAgent：iPad 的 WKWebView 自称 Macintosh。
 - iOS 没有应用内更新、音量键翻页、离线语音、CBR。状态栏深浅不能用窗口的 `overrideUserInterfaceStyle`（会改掉网页的 `prefers-color-scheme`）。
 - 遥控通道 `src/services/e2eDriver.ts` 只在 `LIGHTREAD_E2E_DRIVER` 构建里存在，能执行任意脚本，发版检查会拒绝它。
+- t9 从开发机直连不通时经 MacAir 中转（`ssh macair 'ssh t9 …'`，不支持跳板转发，传文件用 tar 管道）。
 - 真机、签名、TestFlight 都还没有（需要 Apple 开发者账号）；后台听书、大 PDF 内存、手势只能真机确认。
 
 ## 技术栈

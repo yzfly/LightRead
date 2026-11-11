@@ -5,7 +5,9 @@
 做法与首轮结果见 [iOS 模拟器验收](../testing/ios-simulator.md)。与下文的出入：
 
 - 模拟器验收改在 MacAir 本机做，没有走 GitHub Actions（CI workflow 未建）。
-- 原生壳已实现：状态栏深浅、沉浸、常亮、划词菜单、分享、存相册、触感、整页不回弹、左缘返回手势开关；内容进程恢复未做。
+- 原生壳已实现：状态栏深浅、沉浸、常亮、划词菜单、分享、存相册、触感、整页不回弹、左缘返回手势开关；内容进程恢复由 Tauri 运行时自带（终止即重新加载）。
+- 「用轻阅打开」已通：文档类型写在 `tauri.ios.conf.json`，系统把文件拷进 `Documents/Inbox`，导入后删除副本。没有声明就地打开，也不再把应用目录暴露给「文件」App（书库在 Application Support，暴露 Documents 没有用）。
+- 分发（2026-11-11 用户决定）：暂时没有 Apple 开发者账号，不签名；走方案 B，`npm run ios:ipa` 出未签名 IPA。阶段 3（TestFlight）搁置到有账号。
 - 状态栏深浅用根控制器的 `preferredStatusBarStyle`，没有用 3 节表里写的窗口外观覆盖（那会让「外观：跟随系统」失效）。
 - 阶段 0 的 WebKit 内核 e2e 未做。
 

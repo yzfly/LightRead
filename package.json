@@ -8,6 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "android:build": "node scripts/build-android.mjs",
     "ios:sim": "node scripts/build-ios.mjs",
+    "ios:ipa": "node scripts/build-ios.mjs --ipa",
     "test:book-sources": "node --experimental-strip-types --test scripts/test-catalog-errors.mjs scripts/test-open-library.mjs scripts/test-internet-archive.mjs scripts/test-philosophy-archive.mjs scripts/test-web-book-sources.mjs scripts/test-opds-download.mjs scripts/test-github-books.mjs scripts/test-book-query.mjs scripts/test-wendian.mjs",
     "test:archive": "node scripts/test-library-archive.mjs",
     "e2e:mobile": "node scripts/e2e-mobile.mjs",
