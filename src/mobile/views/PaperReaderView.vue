@@ -34,8 +34,11 @@ import {
   textRuns,
 } from '../../services/pdfium'
 import { initMupdf } from '../../services/mupdf'
+import { PdfRenderClient, paintRenderedPage } from '../../services/pdfRender/client'
+import { rasterPage } from '../../services/pdfRender/raster'
+import { PAGE_BITMAP_BUDGET, pageWindow } from '../../services/pdfRender/budget'
 import { isWasmCrash } from '../../services/wasmCrash'
-import { exportDiagnostics, requestCommunityFocus } from '../../services/diagnostics'
+import { exportDiagnostics, logEvent, requestCommunityFocus } from '../../services/diagnostics'
 import { importFile } from '../../services/importer'
 import { detectFormat } from '../../services/format'
 import { FONT_FAMILIES, HIGHLIGHT_COLORS, READER_THEME_CHOICES, resolveReaderColors } from '../../services/readerTheme'
@@ -129,6 +132,8 @@ let readerAlive = true
 let pdm: PdfiumDoc | null = null
 /** MuPDF 只负责可见位图；交互能力继续由 PDFium 提供。 */
 let renderBytes: Uint8Array | null = null
+/** 页面栅格化 Worker; 起不来时为 null, 改在主线程用 renderBytes 画 */
+let pageRenderer: PdfRenderClient | null = null
 /** 原始文件供打印、另存为与属性信息复用，不受渲染引擎消费影响。 */
 let sourcePdfBlob: Blob | null = null
 const sourcePdfVersion = ref('')
@@ -208,7 +213,13 @@ const scrollSpread = computed(() =>
 
 const SPREAD_GAP = 16
 const NORMAL_SCROLL_PADDING = 28
-const KEEP = 4
+/** 保留 / 预载窗口随一页位图的大小收放 (放大后一页上百 MB, 不能固定留 ±4 页) */
+function renderWindow(pageNum = currentPage.value, scale = curScale.value) {
+  const display = displaySizeOf(pageNum, scale)
+  const outputScale = Math.min(DPR(), MAX_DIM / display.w, MAX_DIM / display.h)
+  const bytes = display.w * outputScale * display.h * outputScale * 4
+  return pageWindow(bytes, PAGE_BITMAP_BUDGET.app, scrollSpread.value ? 2 : 1)
+}
 /** PDF 坐标是 72 pt/in，CSS 的基准分辨率是 96 px/in。 */
 const CSS_PX_PER_PT = 96 / 72
 /** 必须使用完整设备像素比；截到 2 会让高 DPI 屏把位图再次放大。 */
@@ -383,54 +394,39 @@ async function renderBitmapCanvas(pageNum: number, scale: number): Promise<HTMLC
   canvas.style.height = `${display.h}px`
 
   if (settings.pdf.renderer === 'mupdf' && !mupdfRenderFailed) {
-    let page: any = null
-    let pixmap: any = null
-    let device: any = null
+    const request = { page: pageNum - 1, targetW, targetH, pageW: dims.w, pageH: dims.h }
     try {
-      const mupdf = await initMupdf()
-      page = (await mupdfDoc()).loadPage(pageNum - 1)
-      // 用两个方向的精确目标比例，确保位图与 CSS×DPR 一一对应；页面原点非零时
-      // 先平移到 (0,0)，位图 bbox 固定为目标尺寸，多出的亚像素直接被裁掉。
-      const bounds: number[] = page.getBounds()
-      const scaleX = targetW / dims.w
-      const scaleY = targetH / dims.h
-      const ctm = mupdf.Matrix.concat(
-        mupdf.Matrix.translate(-bounds[0], -bounds[1]),
-        mupdf.Matrix.scale(scaleX, scaleY),
-      )
-      // 直接栅格化成不透明白底的 RGBA 位图，像素即可零拷贝喂给 ImageData，
-      // 省掉逐字节 RGB→RGBA 的 JS 循环 (DPR 2 整页 ≈ 20MB)。
-      pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, targetW, targetH], true)
-      pixmap.clear(255)
-      device = new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap)
-      page.run(device, ctm)
-      device.close()
-      const stride: number = pixmap.getStride()
-      const width: number = pixmap.getWidth()
-      const height: number = pixmap.getHeight()
-      if (stride !== width * 4) throw new Error(`unexpected pixmap stride ${stride} for width ${width}`)
-      canvas.width = width
-      canvas.height = height
-      const context = canvas.getContext('2d', { alpha: false })!
-      // getPixels() 是 wasm 堆上的视图 (非共享内存)；putImageData 同步拷贝完成后再释放 pixmap。
-      const pixels = pixmap.getPixels() as Uint8ClampedArray<ArrayBuffer>
-      context.putImageData(new ImageData(pixels, width, height), 0, 0)
+      if (pageRenderer) {
+        // 栅格化在 Worker 里做, 主线程只上屏一次; 正在看的页插队, 预载页排队
+        paintRenderedPage(canvas, await pageRenderer.render(request, { priority: pageNum === currentPage.value }))
+        canvas.dataset.thread = 'worker'
+      } else {
+        const view = rasterPage(await initMupdf(), await mupdfDoc(), request)
+        try {
+          canvas.width = view.width
+          canvas.height = view.height
+          // 像素是 wasm 堆上的视图 (非共享内存)；putImageData 同步拷贝完成后再释放
+          canvas.getContext('2d', { alpha: false })!
+            .putImageData(new ImageData(view.pixels as Uint8ClampedArray<ArrayBuffer>, view.width, view.height), 0, 0)
+        } finally {
+          view.release()
+        }
+      }
       canvas.dataset.renderer = 'mupdf'
       return canvas
     } catch (e) {
+      // 渲染途中离开了阅读页 (文档已关): 不是 MuPDF 坏了, 也不必回退, 交回空画布 (R3PRO-01)
+      if (!pdm) return canvas
       mupdfRenderFailed = true
+      pageRenderer?.close()
+      pageRenderer = null
       console.warn('MuPDF render failed; falling back to PDFium', e)
-    } finally {
-      // MuPDF 崩溃后释放也可能再次 trap; 这里抛错会跳过下面的 PDFium 回退
-      for (const item of [device, pixmap, page]) {
-        try {
-          item?.destroy?.()
-        } catch { /* 实例已不可用, 不再使用 */ }
-      }
+      logEvent('warn', 'pdf', `mupdf render failed page=${pageNum} ${targetW}x${targetH}, falling back to pdfium`, e)
     }
   }
 
-  const img = pdm!.renderToSize(pageNum - 1, targetW, targetH)
+  if (!pdm) return canvas
+  const img = pdm.renderToSize(pageNum - 1, targetW, targetH)
   canvas.width = img.width
   canvas.height = img.height
   canvas.getContext('2d')!.putImageData(img, 0, 0)
@@ -599,8 +595,9 @@ function renderPdmLinks(holder: HTMLElement, num: number) {
 }
 
 function evictFarPages(center: number) {
+  const { keep } = renderWindow(center)
   for (const num of [...renderedScale.keys()]) {
-    if (Math.abs(num - center) > KEEP) {
+    if (Math.abs(num - center) > keep) {
       const holder = holderOf(num)
       if (holder) {
         holder.querySelector('.p-canvas')?.replaceChildren()
@@ -635,9 +632,10 @@ function updateViewport() {
   const cur = pageAtCenter()
   if (cur !== currentPage.value) currentPage.value = cur
   const activeGroup = scrollGroupLayout.value.findIndex(group => group.pages.includes(cur))
+  const { ahead, behind } = renderWindow(cur)
   const nearby = scrollGroupLayout.value.slice(
-    Math.max(0, activeGroup - 1),
-    Math.min(scrollGroupLayout.value.length, activeGroup + 3),
+    Math.max(0, activeGroup - behind),
+    Math.min(scrollGroupLayout.value.length, activeGroup + ahead + 1),
   )
   // 当前页组立即渲染；相邻页组的预载放到后续宏任务里逐页进行，
   // 否则所有页面会挤在同一条微任务链里, 首页要等预载页全部栅格化后才能上屏。
@@ -2724,8 +2722,9 @@ async function renderMirPage(n: number) {
 }
 
 function mirEvict(center: number) {
+  const { keep } = renderWindow(center, mirScale.value)
   for (const n of [...mirRendered.keys()]) {
-    if (Math.abs(n - center) > KEEP) {
+    if (Math.abs(n - center) > keep) {
       mirHolderOf(n)?.querySelector('.mp-canvas')?.replaceChildren()
       mirRendered.delete(n)
     }
@@ -3678,8 +3677,15 @@ onMounted(async () => {
     // 流式阅读已下线；读取旧设置时也必须回到原版 PDF。
     settings.pdf.layout = 'original'
     pdm = await PdfiumDoc.open(fileData)
-    // PDFium 与 MuPDF 都把字节拷进各自的 wasm 堆, 这里不必再拷一份
-    renderBytes = settings.pdf.renderer === 'mupdf' ? new Uint8Array(fileData) : null
+    // PDFium 已把字节拷进自己的 wasm 堆; 这份缓冲直接转移给渲染 Worker (MuPDF 在那边再拷进它的堆),
+    // 主线程不再留第二份。Worker 起不来时缓冲没被转移, 留给主线程的 MuPDF。此后不要再读 fileData。
+    renderBytes = null
+    pageRenderer?.close()
+    pageRenderer = null
+    if (settings.pdf.renderer === 'mupdf') {
+      pageRenderer = PdfRenderClient.create(fileData)
+      if (!pageRenderer) renderBytes = new Uint8Array(fileData)
+    }
     pageCount.value = pdm.pages.length
     pageDims.value = pdm.pages.map(page => ({ w: page.w, h: page.h }))
     baseDims.value = pageDims.value[0] ?? { w: 612, h: 792 }
@@ -3779,6 +3785,8 @@ onBeforeUnmount(() => {
   pdm = null
   mupdfDocPromise?.then(doc => doc?.destroy?.()).catch(() => {})
   mupdfDocPromise = null
+  pageRenderer?.close()
+  pageRenderer = null
   renderBytes = null
   sourcePdfBlob = null
 })

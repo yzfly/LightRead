@@ -99,6 +99,7 @@ npm run test:folder-pick / e2e:folder-pick   # 选择文件夹导入 / 上传: �
 npm run e2e:continuous-scroll   # 跨章连续滚动: 逐帧触摸 + 惯性跨章, 无回跳 / 预载 / 插入上方不跳 (设计见 docs/continuous-scroll.md)
 npm run test:plain-text      # 通用纯文本: 源码/配置/日志/无扩展名文件识别 · 内容嗅探 · 代码视图 (行号/分块), 按 txt 入库 (src/services/plainText.ts)
 npm run test:pdf-reflow / e2e:pdf-reflow # App PDF 重排契约／双形态浏览器测试（App 预览加 E2E_MOBILE=1）
+npm run test:pdf-render     # PDF 页面渲染: Worker 里栅格化 (services/pdfRender, 桌面与 App 共用) 的排队 / 插队 / 崩溃后回退 PDFium + 位图内存预算 (放大后少留页)
 npm run test:convert-epub    # 格式转换: MOBI/AZW3/FB2/TXT → EPUB 3 (OPF/nav/资源改写)
 npm run test:transfer / test:qr   # 互传: 三种通道 (账号 / WebDAV / 取件码) 纯逻辑; 无依赖二维码编码
 npm run test:booklists / e2e:booklists   # 书单: 待找匹配·自动归入·分享导入·推荐书单校验; 浏览→找书→加入→分享→导入 (node scripts/build-booklists.mjs 用 Wikidata 重建奖项书单)

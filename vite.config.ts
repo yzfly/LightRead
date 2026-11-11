@@ -99,8 +99,7 @@ export default defineConfig({
     },
   },
   worker: {
-    // 目前没有模块 Worker (DjVu.js 的 Worker 由函数源码拼成 Blob, 走主包降级结果);
-    // 显式写明, 以后新增 `new Worker(new URL(..., import.meta.url))` 时沿用同一目标的 ES 模块产物
+    // 模块 Worker (重点词、PDF 重排、PDF 页面渲染) 与主包同一构建目标, 输出 ES 模块
     format: 'es',
   },
   // 开发模式不预构建 foliate-js: 预构建产物里 view.js 的 ./paginator.js 不经过上面的 fork 重定向

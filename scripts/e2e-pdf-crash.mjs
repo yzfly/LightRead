@@ -112,12 +112,17 @@ assert.equal(result.sessionHasCrash, true)
 assert.equal(result.sessionHasRetry, true)
 console.log('ok  引擎: 崩溃后退化 + 新实例恢复 + 静默损坏重试 + 普通错误不换实例 + 诊断包')
 
-// MuPDF 崩溃时阅读器要回退 PDFium, 释放时再次 trap 也不能变成错误页
-await page.evaluate(async () => {
-  const mupdf = await (await import('/src/services/mupdf.ts')).initMupdf()
-  const boom = () => { throw new WebAssembly.RuntimeError('memory access out of bounds') }
-  mupdf.Pixmap.prototype.clear = boom
-  mupdf.Pixmap.prototype.destroy = boom
+// MuPDF 崩溃时阅读器要回退 PDFium, 不能变成错误页 (释放时再次 trap 的处理见 npm run test:pdf-render)
+// 页面栅格化在 Worker 里: 让渲染 Worker 对每个 render 请求都回一条崩溃错误
+await page.evaluate(() => {
+  const send = Worker.prototype.postMessage
+  Worker.prototype.postMessage = function (msg, ...rest) {
+    if (msg?.type === 'render') {
+      setTimeout(() => this.onmessage?.({ data: { id: msg.id, type: 'error', message: 'memory access out of bounds' } }), 0)
+      return
+    }
+    return send.call(this, msg, ...rest)
+  }
 })
 await page.setInputFiles('input[type=file][multiple]', fixture)
 await page.locator('.book-card').filter({ hasText: 'crash-fixture' }).first().click({ timeout: 30000 })

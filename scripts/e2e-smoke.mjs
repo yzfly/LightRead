@@ -419,6 +419,7 @@ await step('PDF 画布按设备像素显示且文字无彩色雾边', async () =
       dpr: window.devicePixelRatio,
       colored,
       renderer: canvas.dataset.renderer,
+      thread: canvas.dataset.thread,
     }
   })
   if (!quality) throw new Error('找不到 PDF canvas')
@@ -426,6 +427,7 @@ await step('PDF 画布按设备像素显示且文字无彩色雾边', async () =
     throw new Error(`画布发生二次缩放: ${quality.bitmapToCss.toFixed(4)} / DPR ${quality.dpr}`)
   }
   if (quality.renderer !== 'mupdf') throw new Error(`清晰渲染引擎未启用: ${quality.renderer || 'unknown'}`)
+  if (quality.thread !== 'worker') throw new Error('PDF 页面没有在 Worker 里栅格化 (退回了主线程)')
   if (quality.colored) throw new Error(`文字存在 ${quality.colored} 个 LCD 彩色雾边像素`)
 })
 

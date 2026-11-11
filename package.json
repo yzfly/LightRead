@@ -20,6 +20,7 @@
     "test:plain-text": "node --experimental-strip-types --test scripts/test-plain-text.mjs",
     "test:convert-epub": "node --experimental-strip-types --test scripts/test-convert-epub.mjs",
     "test:pdf-reflow": "node --experimental-strip-types --test scripts/test-pdf-reflow.mjs",
+    "test:pdf-render": "node --experimental-strip-types --test scripts/test-pdf-render.mjs",
     "e2e:pdf-reflow": "node scripts/e2e-pdf-reflow.mjs",
     "e2e:convert-epub": "node scripts/e2e-convert-epub.mjs",
     "test:opds-library": "node --experimental-strip-types --test scripts/test-opds-library.mjs",
