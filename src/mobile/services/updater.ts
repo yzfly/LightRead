@@ -8,6 +8,7 @@
  *    (src-tauri/src/app_update.rs), 校验后经 MainActivity 的 window.LightReadUpdater 拉起系统安装器
  *  - 网页版下载安装包前快速探测 GitHub, 慢或不通就打开 GitCode 镜像
  */
+import { isIosApp } from '../../services/iosShell.ts'
 import { isTauri } from '../../storage/types'
 import { fetchRemote, remoteProxy } from '../../services/net'
 import { t } from '../../i18n'
@@ -81,6 +82,12 @@ const INCOMPLETE_CACHE_TTL = 60_000
 const FOREGROUND_CHECK_INTERVAL = 60_000
 
 export async function checkUpdate(force = false): Promise<UpdateInfo> {
+  // iOS 不提示更新: GitHub Release 里的是 APK, 装不了; 版本由 TestFlight / App Store 推送
+  if (isIosApp()) return { ...(await checkRelease(force)), hasUpdate: false }
+  return checkRelease(force)
+}
+
+async function checkRelease(force: boolean): Promise<UpdateInfo> {
   if (!force) {
     try {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) ?? '')
@@ -456,8 +463,8 @@ function androidUpdater(): AndroidUpdaterBridge | null {
   return (globalThis as { LightReadUpdater?: AndroidUpdaterBridge }).LightReadUpdater ?? null
 }
 
-/** 支持应用内下载安装: 桌面端, 以及带安装桥的安卓应用 */
-export const canInAppInstall = () => isTauri() && (!isAndroid() || androidUpdater() !== null)
+/** 支持应用内下载安装: 桌面端, 以及带安装桥的安卓应用。iOS 只能由 TestFlight / App Store 更新 */
+export const canInAppInstall = () => isTauri() && !isIosApp() && (!isAndroid() || androidUpdater() !== null)
 
 export interface DownloadProgress {
   /** 0-1, 无 content-length 时为 null */

@@ -25,3 +25,6 @@ if (isTauri()) {
 
 installAndroidSafeArea()
 createApp(App).use(createPinia()).use(router).mount('#app')
+
+// 模拟器验收的遥控通道: 正式构建里常量为空串, 这一行连同模块都被摇掉
+if (typeof __E2E_DRIVER__ !== 'undefined' && __E2E_DRIVER__) void import('../services/e2eDriver').then(m => m.startE2eDriver(__E2E_DRIVER__))

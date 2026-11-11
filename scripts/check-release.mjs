@@ -42,10 +42,17 @@ function repositoryVersion(tag, platform = 'desktop') {
     'src-tauri/tauri.conf.json': config.version,
   }, platform === 'desktop' ? tag : undefined)
   assert.ok(['desktop', 'android', 'ios'].includes(platform), 'unknown release platform')
+  assert.ok(!process.env.LIGHTREAD_E2E_DRIVER, 'LIGHTREAD_E2E_DRIVER must not be set for a release build (it bundles the simulator remote-control channel)')
   let version = desktopVersion
   if (platform !== 'desktop' && existsSync(`src-tauri/tauri.${platform}.conf.json`)) {
     const mobile = json(`src-tauri/tauri.${platform}.conf.json`)
-    assert.ok(!mobile.identifier && !mobile.bundle, 'mobile version config must not override application identity')
+    // iOS 只许声明最低系统版本 (前端构建目标是 iOS 15, Tauri 默认 14); 其余 bundle 字段会改应用身份
+    const bundle = platform === 'ios' && mobile.bundle ? { ...mobile.bundle, iOS: { ...mobile.bundle.iOS } } : mobile.bundle
+    if (platform === 'ios' && bundle) {
+      delete bundle.iOS.minimumSystemVersion
+      if (!Object.keys(bundle.iOS).length) delete bundle.iOS
+    }
+    assert.ok(!mobile.identifier && (!bundle || !Object.keys(bundle).length), 'mobile version config must not override application identity')
     version = validateVersions({ 'package.json': mobile.version }, tag?.replace(/^app-/, ''))
   }
   // 桌面与 App 分开发版: 桌面 vX.Y.Z (package.json 等), App app-vX.Y.Z (tauri.<platform>.conf.json)

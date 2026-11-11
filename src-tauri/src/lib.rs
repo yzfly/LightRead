@@ -14,6 +14,7 @@ mod epub_meta;
 mod folder_scan;
 mod fonts;
 mod http_upload;
+mod ios_shell;
 // 不在 Windows 编译: mock 运行时会链接菜单代码, 它导入 Common Controls v6 的函数, 而测试 exe 没有应用清单,
 // 加载时绑定到系统的 comctl32 v5, 整个测试程序以 STATUS_ENTRYPOINT_NOT_FOUND 启动失败 (v2.2.0 CI 实测)。
 // 契约只校验 IPC 参数映射, 与平台无关, Linux / macOS 覆盖即可。
@@ -163,6 +164,7 @@ pub fn run() {
     .manage(stealth::StealthState::default())
     .invoke_handler(tauri::generate_handler![
       diagnostics::diagnostics_append,
+      ios_shell::ios_shell,
       diagnostics::diagnostics_read_logs,
       diagnostics::diagnostics_system_info,
       take_open_files,
@@ -235,7 +237,11 @@ pub fn run() {
     .plugin(tauri_plugin_fs::init())
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_dialog::init())
-    .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_opener::init());
+  // iOS 原生壳 (plugins/ios-shell): 状态栏 / 沉浸 / 分享 / 存相册
+  #[cfg(target_os = "ios")]
+  let app = app.plugin(tauri_plugin_lightread_shell::init());
+  let app = app
     .setup(|app| {
       // 老版本 (≤0.2.2) 的 PWA Service Worker 把旧界面缓存在 WebView2 数据目录;
       // WebView2 不把 SW 脚本更新请求交给 tauri.localhost 协议拦截器 (走真实网络

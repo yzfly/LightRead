@@ -1,5 +1,9 @@
 /** 构建期由 vite define 注入的应用版本号 (取自 package.json) */
 declare const __APP_VERSION__: string
+/** 构建平台 (TAURI_ENV_PLATFORM): android / ios / linux / macos / windows; 网页版为 web */
+declare const __APP_PLATFORM__: string
+/** 模拟器验收遥控端地址 (LIGHTREAD_E2E_DRIVER); 正式构建为空串 */
+declare const __E2E_DRIVER__: string
 
 // foliate-js 无类型定义, 按需声明
 declare module 'foliate-js/view.js' {

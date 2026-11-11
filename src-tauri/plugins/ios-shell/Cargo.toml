@@ -1,0 +1,15 @@
+[package]
+name = "tauri-plugin-lightread-shell"
+version = "0.1.0"
+description = "LightRead iOS 原生壳: 状态栏 / 沉浸 / 常亮 / 划词菜单 / 分享 / 存相册"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+links = "tauri-plugin-lightread-shell"
+publish = false
+
+[dependencies]
+tauri = { version = "2.11.3" }
+serde_json = "1.0"
+
+[build-dependencies]
+tauri-plugin = { version = "2.6.3", features = ["build"] }

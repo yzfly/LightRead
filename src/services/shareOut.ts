@@ -2,19 +2,30 @@
  * 把书摘交出应用: 存文件、存相册、系统分享、复制图片. 各平台的差异集中在这里:
  *  - Android App: window.LightReadShare (src-tauri/android/MainActivity.kt) 存相册 / 拉起系统分享;
  *    Android 9 及以下存相册退回系统「另存为」
+ *  - iOS App: 原生壳 (services/iosShell.ts) 存相册 / 系统分享面板, 接口与 Android 桥相同
  *  - 桌面: 系统另存为对话框; 复制图片走剪贴板
  *  - 网页: 浏览器下载; 支持时用 Web Share
  */
 import { isTauri } from '../storage/types'
+import { iosShell, isIosApp } from './iosShell'
 
-interface AndroidShareBridge {
-  saveImage(base64: string, name: string): string
-  shareFile(base64: string, name: string, mime: string, title: string): string
-  shareText(text: string, subject: string, title: string): string
+/** 结果: ok / cancelled (仅 iOS, 用户关掉分享面板) / unsupported / denied / error; Android 同步返回, iOS 异步 */
+interface NativeShareBridge {
+  saveImage(base64: string, name: string): string | Promise<string>
+  shareFile(base64: string, name: string, mime: string, title: string): string | Promise<string>
+  shareText(text: string, subject: string, title: string): string | Promise<string>
 }
 
-function bridge(): AndroidShareBridge | null {
-  return (globalThis as { LightReadShare?: AndroidShareBridge }).LightReadShare ?? null
+const iosResult = (r: { result?: string }) => r.result ?? 'error'
+const iosBridge: NativeShareBridge = {
+  saveImage: async base64 => iosResult(await iosShell('saveImage', { base64 })),
+  shareFile: async (base64, name) => iosResult(await iosShell('shareFile', { base64, name })),
+  shareText: async text => iosResult(await iosShell('shareText', { text })),
+}
+
+function bridge(): NativeShareBridge | null {
+  if (isIosApp()) return iosBridge
+  return (globalThis as { LightReadShare?: NativeShareBridge }).LightReadShare ?? null
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {
@@ -54,11 +65,11 @@ export async function saveFileAs(blob: Blob, fileName: string, filter: { name: s
 
 export type SaveImageResult = 'gallery' | 'file' | 'cancelled'
 
-/** 存图片: Android 进相册, 其余平台另存为 */
+/** 存图片: Android / iOS 进相册, 其余平台另存为 */
 export async function saveImage(blob: Blob, fileName: string): Promise<SaveImageResult> {
   const b = bridge()
   if (b) {
-    const r = b.saveImage(await blobToBase64(blob), fileName)
+    const r = await b.saveImage(await blobToBase64(blob), fileName)
     if (r === 'ok') return 'gallery'
     if (r !== 'unsupported') throw new Error('save image failed')
   }
@@ -84,7 +95,9 @@ export function canShareText(): boolean {
 export async function shareFile(blob: Blob, fileName: string, mime: string, title: string): Promise<boolean> {
   const b = bridge()
   if (b) {
-    if (b.shareFile(await blobToBase64(blob), fileName, mime, title) !== 'ok') throw new Error('share failed')
+    const r = await b.shareFile(await blobToBase64(blob), fileName, mime, title)
+    if (r === 'cancelled') return false
+    if (r !== 'ok') throw new Error('share failed')
     return true
   }
   try {
@@ -99,7 +112,9 @@ export async function shareFile(blob: Blob, fileName: string, mime: string, titl
 export async function shareText(text: string, subject: string, title: string): Promise<boolean> {
   const b = bridge()
   if (b) {
-    if (b.shareText(text, subject, title) !== 'ok') throw new Error('share failed')
+    const r = await b.shareText(text, subject, title)
+    if (r === 'cancelled') return false
+    if (r !== 'ok') throw new Error('share failed')
     return true
   }
   try {
@@ -137,6 +152,7 @@ export async function copyText(text: string): Promise<void> {
   }
 }
 
+/** 有原生分享桥 (存相册 / 系统分享面板) 的 App: Android 与 iOS */
 export function isAndroidApp(): boolean {
   return !!bridge()
 }

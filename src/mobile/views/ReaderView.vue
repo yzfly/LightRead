@@ -525,6 +525,16 @@ watch(
   { immediate: true },
 )
 
+/**
+ * 书页所在的 iframe 与宿主的 color-scheme 不一致时 (应用浅色 + 正文夜间, 或反过来), 浏览器会给 iframe
+ * 垫一层不透明底 (深色为纯黑), 盖住正文主题的底色, 与上下安全区的颜色接不上。让 foliate-view 的
+ * color-scheme 跟随正文主题 (该属性可继承, 能进到渲染器的 shadow DOM), iframe 才保持透明。
+ */
+function syncViewColorScheme() {
+  if (view) view.style.colorScheme = resolveReaderTheme(settings.readerPrefs.theme, appDark.value) === 'dark' ? 'dark' : 'light'
+}
+watch(() => resolveReaderTheme(settings.readerPrefs.theme, appDark.value), syncViewColorScheme)
+
 /** 当前选中的自定义字体 (settings.readerPrefs.fontFamily 为 custom:Name 时) */
 function selectedCustomFont() {
   const m = settings.readerPrefs.fontFamily.match(/^custom:(.+)$/)
@@ -3262,6 +3272,7 @@ onMounted(async () => {
     view = document.createElement('foliate-view')
     view.style.width = '100%'
     view.style.height = '100%'
+    syncViewColorScheme()
     container.value!.append(view)
 
     view.addEventListener('relocate', onRelocate)

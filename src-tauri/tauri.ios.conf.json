@@ -8,5 +8,10 @@
         "transparent": false
       }
     ]
+  },
+  "bundle": {
+    "iOS": {
+      "minimumSystemVersion": "15.0"
+    }
   }
 }

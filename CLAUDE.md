@@ -22,6 +22,15 @@
 
 完整验收先设计测试计划与能力清单，再自顶向下逐项点击每个栏目、窗口、功能和按钮。阅读样本用《理想国》和 K30 已有书籍，不以短合成文本代替长文验收；不为节省耗时省略检查。逐项记录实际结果、证据、缺陷和受阻条件，遵循 [K30 验收约定](docs/testing/k30-ui-acceptance.md)。
 
+## iOS（2026-11-11 起，实验中，未发版）
+
+没有 iPhone 真机：在 MacAir（Xcode 26.6 + iOS 模拟器，源码副本 `~/workspace/lightread-ios-build`）用模拟器验收，做法见 [iOS 模拟器验收](docs/testing/ios-simulator.md)，设计与分阶段计划见 `docs/plans/ios-app.md`。
+- 只用 `npm run ios:sim`（`scripts/build-ios.mjs`）出模拟器包；`gen/apple` 不入库。iOS 专属内容在 `src-tauri/tauri.ios.conf.json`、`src-tauri/Info.ios.plist`、`src-tauri/plugins/ios-shell/`（Swift 原生壳，对应 Android 的 `MainActivity.kt`；网页经 `services/iosShell.ts` → 主程序 `ios_shell` 命令调用）。
+- 判断 iOS 用 `isIosApp()`（构建期常量 `__APP_PLATFORM__`），不要用 userAgent：iPad 的 WKWebView 自称 Macintosh。
+- iOS 没有应用内更新、音量键翻页、离线语音、CBR。状态栏深浅不能用窗口的 `overrideUserInterfaceStyle`（会改掉网页的 `prefers-color-scheme`）。
+- 遥控通道 `src/services/e2eDriver.ts` 只在 `LIGHTREAD_E2E_DRIVER` 构建里存在，能执行任意脚本，发版检查会拒绝它。
+- 真机、签名、TestFlight 都还没有（需要 Apple 开发者账号）；后台听书、大 PDF 内存、手势只能真机确认。
+
 ## 技术栈
 
 - 前端: Vue 3 `<script setup>` + TypeScript + Vite 8 + Pinia + vue-router (hash 路由，兼容 Tauri file 协议)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isIosApp } from '../../services/iosShell'
 import { askConfirm } from '../../services/confirm.ts'
 import AppSelect from '../../components/AppSelect.vue'
 import AppModal from '../../components/AppModal.vue'
@@ -42,6 +43,7 @@ import {
 
 const settings = useSettings()
 const isAndroid = /Android/i.test(navigator.userAgent)
+const isIos = isIosApp()
 const library = useLibrary()
 
 const storageKind = ref('')
@@ -1036,7 +1038,7 @@ const APPEARANCE_OPTIONS = [
       <div class="pl-group">
         <button type="button" class="pl-row" @click="openPhonePage('about')">
           <img class="pl-app-icon" src="/icon-192.png" alt="" />
-          <span class="pl-text"><span class="pl-title">LightRead 轻阅</span><span class="pl-desc">{{ !isTauri() ? t('settings.webVersion') : isAndroid ? t('settings.androidVersion') : t('settings.desktopVersion') }} · v{{ CURRENT_VERSION }}</span></span>
+          <span class="pl-text"><span class="pl-title">LightRead 轻阅</span><span class="pl-desc">{{ !isTauri() ? t('settings.webVersion') : isIos ? t('settings.iosVersion') : isAndroid ? t('settings.androidVersion') : t('settings.desktopVersion') }} · v{{ CURRENT_VERSION }}</span></span>
           <span v-if="updateInfo?.hasUpdate" class="pl-badge">{{ t('update.newVersion') }}</span>
           <span v-else class="pl-value">{{ t('update.check') }}</span><svg class="pl-chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 6 6 6-6 6"/></svg>
         </button>
@@ -1590,7 +1592,7 @@ const APPEARANCE_OPTIONS = [
           <div class="app-name">
             LightRead 轻阅
             <span class="version-chip">v{{ CURRENT_VERSION }}</span>
-            <span class="env-chip">{{ !isTauri() ? t('settings.webVersion') : isAndroid ? t('settings.androidVersion') : t('settings.desktopVersion') }}</span>
+            <span class="env-chip">{{ !isTauri() ? t('settings.webVersion') : isIos ? t('settings.iosVersion') : isAndroid ? t('settings.androidVersion') : t('settings.desktopVersion') }}</span>
           </div>
           <div class="app-tagline">{{ t('settings.tagline') }}</div>
         </div>

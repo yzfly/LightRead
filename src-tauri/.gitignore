@@ -4,3 +4,4 @@
 /gen/schemas
 # tauri android init 生成 (CI 每次重新生成)
 /gen/android
+/gen/apple

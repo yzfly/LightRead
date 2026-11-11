@@ -458,6 +458,7 @@ export default {
   'manual.toc': '手册目录',
   'settings.desktopVersion': '桌面版',
   'settings.androidVersion': '安卓版',
+  'settings.iosVersion': 'iOS 版',
   'settings.webVersion': '网页版',
   'settings.tagline': '开源阅读器，陪你读书、读论文',
   'settings.aboutFormatsShort': "支持的文件格式",

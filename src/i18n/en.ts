@@ -445,6 +445,7 @@ export default {
   'manual.toc': 'Manual contents',
   'settings.desktopVersion': 'Desktop',
   'settings.androidVersion': 'Android',
+  'settings.iosVersion': 'iOS',
   'settings.webVersion': 'Web',
   'settings.tagline': "An open-source reader for books and papers",
   'settings.aboutFormatsShort': "Supported file formats",

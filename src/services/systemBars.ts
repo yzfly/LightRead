@@ -1,10 +1,13 @@
-// 安卓系统栏适配, 依赖 MainActivity 注入的 window.LightReadInsets (其他平台无此对象, 全部空操作)。
+// 系统栏适配。安卓依赖 MainActivity 注入的 window.LightReadInsets; iOS 走原生壳 (services/iosShell.ts);
+// 其他平台两者都没有, 全部空操作。iOS 的安全区由 WKWebView 的 env(safe-area-inset-*) 直接给出, 不需要桥。
 //
 // 1. 安全区: edge-to-edge 下网页铺到状态栏 / 导航栏之下, 靠 env(safe-area-inset-*) 让位。
 //    旧版 Android System WebView (如 Android 12 + Chromium 135) 不上报这些值, env() 恒为 0,
 //    页面会顶到状态栏、底栏被手势条遮挡。这里取原生上报尺寸与 env() 的较大者写入 --lr-safe-*。
 // 2. 系统栏图标深浅: 默认跟随手机系统, 应用选了与系统不同的外观 (或阅读页用夜间正文) 时
 //    图标会与背景同色看不清, 按页面实际深浅通知原生端切换。
+
+import { iosShellQuiet, isIosApp } from './iosShell'
 
 type Side = 'top' | 'right' | 'bottom' | 'left'
 const SIDES: Side[] = ['top', 'right', 'bottom', 'left']
@@ -54,6 +57,7 @@ let pageDark: boolean | null = null
 
 function syncBars() {
   bridge()?.setBarsDark(pageDark ?? appDark)
+  iosShellQuiet('setBarsDark', { on: pageDark ?? appDark })
 }
 
 /** 应用外观 (浅色 / 深色) 变化时调用 */
@@ -68,16 +72,21 @@ export function setPageBarsDark(dark: boolean | null) {
   syncBars()
 }
 
-/** 沉浸阅读: 安卓隐藏状态栏与导航栏 (边缘滑动临时呼出); 其他平台空操作 */
+/** 沉浸阅读: 安卓隐藏状态栏与导航栏 (边缘滑动临时呼出), iOS 隐藏状态栏并让主屏幕指示条淡出; 其他平台空操作 */
 export function setSystemBarsHidden(hidden: boolean) {
+  iosShellQuiet('setImmersive', { on: hidden })
   try { bridge()?.setImmersive?.(hidden) } catch { /* 旧原生壳 */ }
 }
 
 /**
- * 阅读时屏幕常亮。安卓走原生 FLAG_KEEP_SCREEN_ON; 网页 / 桌面用 Screen Wake Lock API (支持时)。
+ * 阅读时屏幕常亮。安卓走原生 FLAG_KEEP_SCREEN_ON, iOS 走 isIdleTimerDisabled; 网页 / 桌面用 Screen Wake Lock API (支持时)。
  */
 let wakeLock: { release(): Promise<void> } | null = null
 export async function setKeepScreenOn(on: boolean) {
+  if (isIosApp()) {
+    iosShellQuiet('setKeepScreenOn', { on })
+    return
+  }
   const b = bridge()
   if (b?.setKeepScreenOn) {
     try { b.setKeepScreenOn(on) } catch { /* 忽略 */ }
@@ -109,8 +118,9 @@ export function setVolumeKeyHandler(handler: ((key: VolumeKey) => void) | null) 
 
 /**
  * 阅读页传 false: 系统选字菜单 (复制 / 全选 / 网页搜索…) 不再和划线工具条一起弹出;
- * 输入框获得焦点时、离开阅读页时传 true, 保留粘贴等系统菜单。只有安卓 App 生效.
+ * 输入框获得焦点时、离开阅读页时传 true, 保留粘贴等系统菜单。只有安卓 / iOS App 生效.
  */
 export function setNativeSelectionMenu(on: boolean) {
+  iosShellQuiet('setSelectionMenu', { on })
   try { bridge()?.setSelectionMenu?.(on) } catch { /* 旧原生壳 */ }
 }
