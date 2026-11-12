@@ -3,5 +3,8 @@
 # 放在仓库根目录: 从根目录 (`cargo test --manifest-path src-tauri/Cargo.toml`) 或 src-tauri 里调用都能读到。
 [env]
 CXXFLAGS_x86_64_pc_windows_msvc = "/MT"
-# 本机模型引擎 llama.cpp (cmake 现编) 同理: 让它也用静态 CRT。只对 MSVC 生效。
+# 本机模型引擎 llama.cpp (cmake 现编) 同理, 也要静态 CRT。它的 CMake 工程启用了 CMP0091,
+# 运行库由 CMAKE_MSVC_RUNTIME_LIBRARY 决定 (只加 /MT 会被默认的 /MD 盖掉, v2.10.0 的 CI 因此 LNK2038);
+# llama-cpp-sys-2 的构建脚本会把 CMAKE_ 开头的环境变量原样传给 CMake。两项都只对 MSVC 生效。
 LLAMA_STATIC_CRT = "1"
+CMAKE_MSVC_RUNTIME_LIBRARY = "MultiThreaded"
