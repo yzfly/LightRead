@@ -3,3 +3,5 @@
 # 放在仓库根目录: 从根目录 (`cargo test --manifest-path src-tauri/Cargo.toml`) 或 src-tauri 里调用都能读到。
 [env]
 CXXFLAGS_x86_64_pc_windows_msvc = "/MT"
+# 本机模型引擎 llama.cpp (cmake 现编) 同理: 让它也用静态 CRT。只对 MSVC 生效。
+LLAMA_STATIC_CRT = "1"

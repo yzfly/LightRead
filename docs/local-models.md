@@ -88,6 +88,7 @@ macOS 上两者共存已实测正常。Windows 没有验证，如果出现同类
 
 - 需要 `cmake` 和 `libclang`（生成绑定）。`npm run android:build` 没设 `LIBCLANG_PATH` 时用 NDK 自带的那份。
 - 引擎只在 macOS / Windows / Android 编进去：`src-tauri/build.rs` 给出 `llm_engine`，`Cargo.toml` 的依赖表与它一致。`--no-default-features` 得到不带引擎的包。
+- Windows：预编译的 sherpa-onnx 是静态 CRT（/MT），llama.cpp 必须一致，否则链接报 LNK2038；仓库根的 `.cargo/config.toml` 设了 `LLAMA_STATIC_CRT=1`。
 - 绑定库 `llama-cpp-2` 固定在 `=0.1.161`：C 接口随 llama.cpp 变，升级后要重跑真实模型测试。
 - Android 静态链接 C++ 运行库，APK 不需要 `libc++_shared.so`。llama.cpp 是否按优化模式编译取决于 Cargo 的 `DEBUG`；`android:build` 固定 `CARGO_PROFILE_DEV_DEBUG=0`，所以是优化版。
 - t9 上：`cmake` 在 `~/.local/bin`；crates.io 直连不通，用 `--config 'source.crates-io.replace-with="rsproxy"' --config 'source.rsproxy.registry="sparse+https://rsproxy.cn/index/"'`。
