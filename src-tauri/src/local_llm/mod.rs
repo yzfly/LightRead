@@ -84,7 +84,8 @@ const HY_MT2: ModelSpec = ModelSpec {
 
 /// 通义 Qwen3-TTS 12Hz 1.7B Base (Apache-2.0): 主干 Q4_K_M + 声码器 (mmproj) Q8_0, llama.cpp 官方转换。
 /// 2026-11-12 在 M5 MacBook Air 实测 (Metal, 上下文 2048): 合成速度约为播放速度的 2 倍, 内存峰值 3.2GB;
-/// 仅处理器时约与播放速度持平, 所以只在内存与核数都宽裕的电脑上提供, 下载后再按实测速度决定用不用。
+/// 仅处理器时跟不上朗读 (M5 约持平, Windows 4 核 CI 机器 0.4 倍), 所以只在有显卡加速的构建上提供
+/// (目前是 Apple 芯片的 Mac; Windows 要等 Vulkan 构建), 下载后再按实测速度决定用不用。
 /// 手机暂不提供 (更小的 0.6B 还没有可用的 llama.cpp 转换)。
 /// 大小与摘要取自 Hugging Face ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF 的 ca27d74 版本。
 const QWEN3_TTS: ModelSpec = ModelSpec {
@@ -95,6 +96,8 @@ const QWEN3_TTS: ModelSpec = ModelSpec {
         download: 1_035_965_280 + 446_422_912,
         memory: 3_500 << 20,
         mobile_ok: false,
+        // 仅处理器时远跟不上朗读: Windows CI 机器 (4 核) 实测只有播放速度的 0.4 倍
+        needs_gpu: true,
         desktop_min_ram: 11_500 << 20,
         desktop_min_ram_gb: 12,
         desktop_min_cores: 8,
@@ -339,6 +342,8 @@ fn this_device(root: &Path) -> Device {
         avx2,
         mobile: MOBILE,
         free_disk: crate::tts_device::free_disk(root),
+        // 编译期就能确定, 不必为了回答状态去初始化引擎
+        gpu: cfg!(any(all(target_os = "macos", target_arch = "aarch64"), feature = "local-llm-vulkan")),
     }
 }
 

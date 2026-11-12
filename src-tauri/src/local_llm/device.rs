@@ -20,6 +20,8 @@ pub(crate) struct Device {
     pub avx2: Option<bool>,
     pub mobile: bool,
     pub free_disk: Option<u64>,
+    /// 这个构建能把计算放到显卡 (Apple 芯片的 Metal, 或开了 Vulkan 的构建)
+    pub gpu: bool,
 }
 
 /// 一个模型对设备的要求
@@ -31,6 +33,8 @@ pub(crate) struct Requirements {
     pub memory: u64,
     /// 手机上是否提供
     pub mobile_ok: bool,
+    /// 只在有显卡加速的构建上提供 (仅处理器时跟不上)
+    pub needs_gpu: bool,
     /// 桌面的最低总内存与线程数 (0 = 用通用下限)
     pub desktop_min_ram: u64,
     pub desktop_min_ram_gb: u32,
@@ -40,7 +44,7 @@ pub(crate) struct Requirements {
 impl Requirements {
     /// 文本模型: 内存按文件大小与上下文估算, 其余用通用下限
     pub const fn text(download: u64, n_ctx: u32) -> Self {
-        Self { download, memory: memory_need(download, n_ctx), mobile_ok: true, desktop_min_ram: 0, desktop_min_ram_gb: 8, desktop_min_cores: 0 }
+        Self { download, memory: memory_need(download, n_ctx), mobile_ok: true, needs_gpu: false, desktop_min_ram: 0, desktop_min_ram_gb: 8, desktop_min_cores: 0 }
     }
 }
 
@@ -48,6 +52,8 @@ impl Requirements {
 pub(crate) enum Concern {
     /// 这类设备暂不提供 (手机上的大语音模型)
     NotOnMobile,
+    /// 需要显卡加速, 这个版本在这台设备上没有
+    NeedsGpu,
     LowMemory { have: u64, need_gb: u32 },
     WontFit { need: u64, ceiling: u64 },
     FewCores { have: usize, need: usize },
@@ -61,6 +67,8 @@ impl Concern {
         match (self, en) {
             (Concern::NotOnMobile, false) => "手机上暂不提供，目前只支持电脑".into(),
             (Concern::NotOnMobile, true) => "not available on phones yet, computers only".into(),
+            (Concern::NeedsGpu, false) => "需要显卡加速，目前只支持 Apple 芯片的 Mac".into(),
+            (Concern::NeedsGpu, true) => "needs GPU acceleration, currently Apple-silicon Macs only".into(),
             (Concern::LowMemory { have, need_gb }, false) => format!("内存 {} GB，至少需要 {need_gb} GB", gb(have)),
             (Concern::LowMemory { have, need_gb }, true) => format!("{} GB of memory, at least {need_gb} GB needed", gb(have)),
             (Concern::WontFit { need, ceiling }, false) => format!("模型约占 {} GB 内存，本机最多可用 {} GB", gb(need), gb(ceiling)),
@@ -92,6 +100,9 @@ pub(crate) fn assess(dev: &Device, req: &Requirements, installed: bool) -> Vec<C
     let mut out = Vec::new();
     if dev.mobile && !req.mobile_ok {
         return vec![Concern::NotOnMobile];
+    }
+    if req.needs_gpu && !dev.gpu {
+        return vec![Concern::NeedsGpu];
     }
     let (min_ram, min_ram_gb, min_cores) = if dev.mobile {
         (MOBILE_MIN_RAM, 6, MOBILE_MIN_CORES)
@@ -141,7 +152,7 @@ mod tests {
 
     const HY_MT: Requirements = Requirements::text(1_133_080_448, 4096);
     /// 语音模型: 只在 12GB 以上、8 线程以上的电脑上提供
-    const VOICE: Requirements = Requirements { download: 1_482_388_192, memory: 3_500 << 20, mobile_ok: false, desktop_min_ram: 11_500 << 20, desktop_min_ram_gb: 12, desktop_min_cores: 8 };
+    const VOICE: Requirements = Requirements { download: 1_482_388_192, memory: 3_500 << 20, mobile_ok: false, needs_gpu: true, desktop_min_ram: 11_500 << 20, desktop_min_ram_gb: 12, desktop_min_cores: 8 };
 
     fn dev(ram_gb: f64, cores: usize, mobile: bool) -> Device {
         Device {
@@ -151,6 +162,7 @@ mod tests {
             avx2: None,
             mobile,
             free_disk: Some(50 << 30),
+            gpu: true,
         }
     }
 
@@ -192,6 +204,12 @@ mod tests {
         let c = assess(&dev(7.8, 8, false), &VOICE, false);
         assert!(matches!(c[0], Concern::LowMemory { need_gb: 12, .. }), "{c:?}");
         assert_eq!(assess(&dev(16.0, 4, false), &VOICE, false), vec![Concern::FewCores { have: 4, need: 8 }]);
+        // 没有显卡加速的构建 (Windows、Intel Mac): 语音不提供, 翻译照常
+        let mut cpu_only = dev(32.0, 16, false);
+        cpu_only.gpu = false;
+        assert_eq!(assess(&cpu_only, &VOICE, false), vec![Concern::NeedsGpu]);
+        assert!(assess(&cpu_only, &VOICE, false)[0].describe(false).contains("Apple 芯片"));
+        assert!(assess(&cpu_only, &HY_MT, false).is_empty());
         // 通用下限照旧适用于普通模型
         assert!(assess(&dev(7.8, 4, false), &HY_MT, false).is_empty());
     }
