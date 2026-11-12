@@ -35,6 +35,7 @@ import { t } from '../i18n'
 import { bossKeyLabel, shortcutFromEvent, stealthSupported, STEALTH_BG_MIN, STEALTH_TEXT_MIN } from '../services/stealth'
 import { providerById, chatStream } from '../services/ai'
 import AiProviderPicker from '../components/settings/AiProviderPicker.vue'
+import LocalModelPack from '../components/LocalModelPack.vue'
 import {
   paperAgentRuntimeAvailable,
   paperAgentEngineStatus,
@@ -1520,6 +1521,7 @@ const APPEARANCE_OPTIONS = [
         <button v-if="aiDocsUrl" type="button" class="link-btn" @click="download(aiDocsUrl)">{{ t('settings.aiGetKey') }}</button>
       </div>
       <div v-if="aiTestResult" class="dav-info ai-result" role="status">{{ aiTestResult }}</div>
+      <LocalModelPack />
     </section>
 
     <section

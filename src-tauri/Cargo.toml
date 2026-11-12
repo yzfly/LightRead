@@ -12,6 +12,14 @@ rust-version = "1.87.0"
 name = "lightread_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["local-llm"]
+# 本机模型 (llama.cpp, src/local_llm): 离线翻译与本机语音。构建需要 cmake 与 libclang;
+# 只对 macOS / Windows / Android 生效 (见下方依赖表); 关掉它 (--no-default-features) 得到不带引擎的包。
+local-llm = ["dep:llama-cpp-2"]
+# Windows 用显卡 (Vulkan); 构建机要装 Vulkan SDK, 默认不开。macOS (Apple 芯片) 自带 Metal, 不需要它。
+local-llm-vulkan = ["local-llm", "llama-cpp-2/vulkan"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
@@ -66,6 +74,17 @@ tar = "0.4.46"
 tauri-plugin-single-instance = "2"
 # 摸鱼模式老板键 (stealth.rs)
 tauri-plugin-global-shortcut = "2"
+
+# 本机模型引擎 llama.cpp (src/local_llm), 只进 macOS / Windows / Android (与 build.rs 的 llm_engine 一致;
+# Linux 桌面与 sherpa-onnx 的静态库冲突, iOS 未验证, 原因见 src/local_llm/mod.rs)。
+# 版本固定: 绑定的 C 接口随 llama.cpp 变, 升级要重跑真实模型测试。mtmd 含实验性的语音生成接口 (Qwen3-TTS)。
+# 不用 openmp (少一个运行库依赖, 用 llama.cpp 自己的线程池)。macOS (Apple 芯片) 自动带 Metal。
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["mtmd"], optional = true }
+
+# Android: C++ 运行库静态链接, APK 里不用再带 libc++_shared.so
+[target.'cfg(target_os = "android")'.dependencies]
+llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["mtmd", "android-static-stdcxx"], optional = true }
 
 # iOS 原生壳 (Swift), 与 Android 的 MainActivity.kt 对应
 [target.'cfg(target_os = "ios")'.dependencies]

@@ -34,6 +34,7 @@ import {
 import { t } from '../../i18n/index.ts'
 import { providerById, chatStream } from '../../services/ai.ts'
 import AiProviderPicker from '../../components/settings/AiProviderPicker.vue'
+import LocalModelPack from '../../components/LocalModelPack.vue'
 import {
   paperAgentRuntimeAvailable,
   paperAgentEngineStatus,
@@ -1389,6 +1390,7 @@ const APPEARANCE_OPTIONS = [
         <button v-if="aiDocsUrl" type="button" class="link-btn" @click="download(aiDocsUrl)">{{ t('settings.aiGetKey') }}</button>
       </div>
       <div v-if="aiTestResult" class="dav-info ai-result" role="status">{{ aiTestResult }}</div>
+      <LocalModelPack />
     </section>
 
     <section

@@ -99,6 +99,8 @@ export const SETTINGS_SYNC_SPEC: SettingsSpec = {
   aiApiKey: SECRET,
   aiModel: SYNC,
   translateTarget: SYNC,
+  /** 模型按设备下载, 用不用也按设备 */
+  localTranslate: LOCAL,
   zhConvert: SYNC,
   /** 摸鱼模式是工作电脑上的需求: 整组只属于本机 (家里的电脑不该一打开书就进摸鱼模式) */
   stealth: LOCAL,

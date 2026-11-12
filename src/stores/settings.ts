@@ -285,6 +285,8 @@ interface SettingsState {
   aiModel: string
   /** 划词翻译的目标语言; auto 为中文译英文、其他语言译成界面语言 (services/translateCore.ts) */
   translateTarget: TranslateTarget
+  /** 已下载本机翻译模型时优先用它 (不联网、不计次数); 关掉则只用在线翻译 */
+  localTranslate: boolean
   /** 正文简繁转换: 关闭 / 繁→简 / 简→繁 (本地 OpenCC, 见 services/zhConvert.ts) */
   zhConvert: ZhConvertMode
   /** 摸鱼模式 (桌面): 无边框 + 半透明 + 老板键, 见 services/stealth.ts */
@@ -373,6 +375,7 @@ const defaults: SettingsState = {
   aiApiKey: '',
   aiModel: 'deepseek-ai/DeepSeek-V4-Flash',
   translateTarget: 'auto',
+  localTranslate: true,
   zhConvert: 'off',
   stealth: {
     autoEnter: false,

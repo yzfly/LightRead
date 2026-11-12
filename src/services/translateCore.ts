@@ -99,3 +99,128 @@ export function translateMessages(req: TranslateRequest): { role: 'system' | 'us
     { role: 'user', content: req.text },
   ]
 }
+
+// ---- 本机翻译模型 (混元 Hy-MT2, 经 llama.cpp; services/localLlm.ts) ----
+
+/** 本机翻译用的模型 (src-tauri/src/local_llm/mod.rs 的登记表) */
+export const LOCAL_TRANSLATE_MODEL = 'hy-mt2-1.8b-q4'
+/** 低于这个速度 (token/秒) 算慢: 一段话要等十几秒, 有在线通道时改用在线 */
+export const LOCAL_TRANSLATE_SLOW_TPS = 6
+/** 一次送给本机模型的原文上限: 小模型逐段翻更稳, 也保证装得进 4096 的上下文 */
+export const LOCAL_TRANSLATE_PIECE_CHARS = 600
+
+/** 本机模型的状态里与路由有关的几项 (services/localLlm.ts 的 LocalModel) */
+export interface LocalTranslateModel {
+  installed: boolean
+  supported: boolean
+  crashed: boolean
+  tokensPerSecond: number | null
+}
+
+/**
+ * 这次用不用本机模型: 装好、设备带得动、没因闪退停用、设置里开着才用;
+ * 实测太慢时, 有在线通道就让给在线, 没有 (未登录也没填 Key) 仍用本机 —— 慢也比不能翻好。
+ */
+export function shouldTranslateLocally(model: LocalTranslateModel | undefined, enabled: boolean, onlineAvailable: boolean): boolean {
+  if (!model || !enabled || !model.installed || model.crashed || !model.supported) return false
+  const slow = model.tokensPerSecond !== null && model.tokensPerSecond < LOCAL_TRANSLATE_SLOW_TPS
+  return !(slow && onlineAvailable)
+}
+
+const LOCAL_LANG_ZH: Record<TranslateLang, string> = {
+  'zh-Hans': '中文',
+  'zh-Hant': '繁体中文',
+  en: '英语',
+  ja: '日语',
+  ko: '韩语',
+  fr: '法语',
+  de: '德语',
+  es: '西班牙语',
+  ru: '俄语',
+}
+
+const LOCAL_LANG_EN: Record<TranslateLang, string> = {
+  'zh-Hans': 'Chinese',
+  'zh-Hant': 'Traditional Chinese',
+  en: 'English',
+  ja: 'Japanese',
+  ko: 'Korean',
+  fr: 'French',
+  de: 'German',
+  es: 'Spanish',
+  ru: 'Russian',
+}
+
+/**
+ * 混元翻译模型的提示词 (模型卡片规定的两种写法, 不带系统提示):
+ * 原文或译文有一方是中文时用中文提示, 其他语言之间用英文提示。
+ */
+export function localTranslatePrompt(text: string, target: TranslateLang): string {
+  const zhSide = target === 'zh-Hans' || target === 'zh-Hant' || mostlyChinese(text)
+  return zhSide
+    ? `把下面的文本翻译成${LOCAL_LANG_ZH[target]}，不要额外解释。\n\n${text}`
+    : `Translate the following segment into ${LOCAL_LANG_EN[target]}, without additional explanation.\n\n${text}`
+}
+
+export interface TranslatePiece {
+  text: string
+  /** 这一段译完后接在译文后面的分隔 (段落之间换行; 同一段拆开的句子之间按译文语言决定是否空格) */
+  after: string
+}
+
+/**
+ * 把原文拆成逐段翻译的小块: 一个自然段一块; 超过 max 的段落在句末再拆。
+ * 空行保留为段落间的换行数。
+ */
+export function splitForLocalTranslate(text: string, target: TranslateLang, max = LOCAL_TRANSLATE_PIECE_CHARS): TranslatePiece[] {
+  const joiner = target === 'zh-Hans' || target === 'zh-Hant' || target === 'ja' ? '' : ' '
+  const out: TranslatePiece[] = []
+  const paragraphs = text.split(/(\n+)/)
+  for (let i = 0; i < paragraphs.length; i += 2) {
+    const para = paragraphs[i].trim()
+    const breaks = paragraphs[i + 1] ?? ''
+    if (!para) {
+      if (out.length && breaks) out[out.length - 1].after += breaks
+      continue
+    }
+    const parts = para.length <= max ? [para] : splitSentences(para, max)
+    parts.forEach((part, k) => out.push({ text: part, after: k === parts.length - 1 ? breaks : joiner }))
+  }
+  if (out.length) out[out.length - 1].after = ''
+  return out
+}
+
+/** 在句末标点处把长段落切成不超过 max 的几块; 没有句末标点的超长文字按 max 硬切 */
+function splitSentences(para: string, max: number): string[] {
+  // 句末: 中文句读, 或后面跟着空白的西文句点 (3.14、e.g.x 里的点不算); 紧随的引号括号归上一句
+  const sentences: string[] = []
+  let start = 0
+  for (let i = 0; i < para.length; i++) {
+    const ch = para[i]
+    const end = '。！？!?；;'.includes(ch) || (ch === '.' && (i + 1 === para.length || /\s/.test(para[i + 1])))
+    if (!end) continue
+    let j = i + 1
+    while (j < para.length && '"\'”’）)]。！？!?'.includes(para[j])) j++
+    while (j < para.length && /\s/.test(para[j])) j++
+    sentences.push(para.slice(start, j))
+    start = j
+    i = j - 1
+  }
+  if (start < para.length) sentences.push(para.slice(start))
+  const out: string[] = []
+  let cur = ''
+  const push = () => {
+    if (cur.trim()) out.push(cur.trim())
+    cur = ''
+  }
+  for (const s of sentences) {
+    if (cur.length + s.length > max) push()
+    if (s.length > max) {
+      for (let i = 0; i < s.length; i += max) out.push(s.slice(i, i + max).trim())
+      continue
+    }
+    cur += s
+  }
+  push()
+  return out.filter(Boolean)
+}

@@ -142,15 +142,15 @@ pub(crate) fn engine_path(path: &Path) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
-#[cfg(target_os = "linux")]
-fn total_memory() -> Option<u64> {
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(crate) fn total_memory() -> Option<u64> {
     let info = std::fs::read_to_string("/proc/meminfo").ok()?;
     let kb: u64 = info.lines().find(|l| l.starts_with("MemTotal:"))?.split_whitespace().nth(1)?.parse().ok()?;
     Some(kb * 1024)
 }
 
 #[cfg(target_os = "macos")]
-fn total_memory() -> Option<u64> {
+pub(crate) fn total_memory() -> Option<u64> {
     let mut size: u64 = 0;
     let mut len = std::mem::size_of::<u64>();
     let name = b"hw.memsize\0";
@@ -161,7 +161,7 @@ fn total_memory() -> Option<u64> {
 }
 
 #[cfg(windows)]
-fn total_memory() -> Option<u64> {
+pub(crate) fn total_memory() -> Option<u64> {
     #[repr(C)]
     struct MemoryStatusEx {
         length: u32,
@@ -183,14 +183,14 @@ fn total_memory() -> Option<u64> {
     (unsafe { GlobalMemoryStatusEx(&mut status) } != 0).then_some(status.total_phys)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-fn total_memory() -> Option<u64> {
+#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos", windows)))]
+pub(crate) fn total_memory() -> Option<u64> {
     None
 }
 
 /// 最近的已存在祖先目录所在磁盘的可用空间
 #[cfg(unix)]
-fn free_disk(path: &Path) -> Option<u64> {
+pub(crate) fn free_disk(path: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     let dir = path.ancestors().find(|p| p.exists())?;
     let c = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
@@ -199,7 +199,7 @@ fn free_disk(path: &Path) -> Option<u64> {
 }
 
 #[cfg(windows)]
-fn free_disk(path: &Path) -> Option<u64> {
+pub(crate) fn free_disk(path: &Path) -> Option<u64> {
     use std::os::windows::ffi::OsStrExt;
     #[link(name = "kernel32")]
     extern "system" {
@@ -213,7 +213,7 @@ fn free_disk(path: &Path) -> Option<u64> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn free_disk(_path: &Path) -> Option<u64> {
+pub(crate) fn free_disk(_path: &Path) -> Option<u64> {
     None
 }
 

@@ -22,7 +22,9 @@ mod ios_shell;
 mod ipc_contract_tests;
 mod library_files;
 mod library_import;
+mod local_llm;
 mod local_tts;
+mod model_download;
 mod diagnostics;
 mod tts_device;
 mod txt_epub;
@@ -251,6 +253,13 @@ pub fn run() {
       local_tts::local_tts_remove,
       local_tts::local_tts_warmup,
       local_tts::local_tts_synthesize,
+      local_llm::local_llm_status,
+      local_llm::local_llm_download,
+      local_llm::local_llm_remove,
+      local_llm::local_llm_clear_crash,
+      local_llm::local_llm_generate,
+      local_llm::local_llm_cancel,
+      local_llm::local_llm_unload,
       babeldoc::babeldoc_status,
       babeldoc::babeldoc_translate,
       babeldoc::babeldoc_cancel,
@@ -301,6 +310,7 @@ pub fn run() {
     // 正常退出时正在朗读不算闪退
     if matches!(&event, tauri::RunEvent::Exit) {
       local_tts::clear_crash_marker_on_exit(app_handle);
+      local_llm::clear_crash_marker_on_exit(app_handle);
     }
     // macOS/移动端通过系统 Opened 事件交付关联文件；冷启动事件同样先进入队列。
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]

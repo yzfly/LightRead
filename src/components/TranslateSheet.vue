@@ -1,18 +1,21 @@
 <script setup lang="ts">
 /**
  * 划词翻译面板 (两端阅读页共用; App 里 AppModal 是底部面板)。
- * 路由见 services/translate.ts: 自己的 AI 服务 / 账号每日免费额度 / 未登录时引导登录或填 Key;
+ * 路由见 services/translate.ts: 本机翻译模型 / 自己的 AI 服务 / 账号每日免费额度 / 未登录时引导登录或填 Key;
+ * 还没下载本机模型而设备带得动时, 面板底部给出下载入口 (LocalModelPack)。
  * Android 上另外列出本机能处理文字的翻译应用。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppModal from './AppModal.vue'
 import AppSelect from './AppSelect.vue'
+import LocalModelPack from './LocalModelPack.vue'
 import { t } from '../i18n'
 import { useSettings } from '../stores/settings'
 import { toast } from '../services/toast'
 import { copyText } from '../services/shareOut'
 import { providerById } from '../services/ai'
+import { refreshLocalLlm } from '../services/localLlm'
 import { listTextApps, openInTextApp, translateRoute, translateText, TranslateError, type TextApp, type TranslateErrorCode } from '../services/translate'
 import { ACCOUNT_TRANSLATE_DAILY, resolveTarget, TRANSLATE_MAX_CHARS, TRANSLATE_TARGETS, langName, type TranslateTarget } from '../services/translateCore'
 
@@ -44,6 +47,7 @@ const target = computed({
 
 /** 面板底部的来源说明 */
 const routeNote = computed(() => {
+  if (route.value === 'local') return t('translate.viaLocal')
   if (route.value === 'own') return t('translate.viaOwn', { name: providerById(settings.aiProvider).label })
   if (route.value === 'account') {
     return remaining.value === null ? t('translate.viaAccount') : t('translate.viaAccountLeft', { n: remaining.value })
@@ -70,7 +74,13 @@ async function run() {
       target: resolveTarget(source.value, settings.translateTarget, settings.language === 'en' ? 'en' : 'zh'),
       ...(props.book ? { book: props.book } : {}),
     }
-    for await (const chunk of translateText(req, { signal: ctrl.signal, onRemaining: n => { remaining.value = n } })) {
+    const stream = translateText(req, {
+      signal: ctrl.signal,
+      onRemaining: n => { remaining.value = n },
+      // 本机翻译出错回退到在线时, 来源说明跟着变
+      onRoute: r => { if (abort === ctrl) route.value = r },
+    })
+    for await (const chunk of stream) {
       if (ctrl.signal.aborted) return
       result.value += chunk
     }
@@ -120,8 +130,10 @@ function goSettings(section: 'sync' | 'ai') {
 }
 
 watch(() => settings.translateTarget, () => { void run() })
-onMounted(() => {
+onMounted(async () => {
   apps.value = listTextApps()
+  // 先问一次本机模型的状态 (本地调用, 很快), 路由才知道能不能在本机翻
+  await refreshLocalLlm()
   void run()
 })
 onBeforeUnmount(() => abort?.abort())
@@ -170,6 +182,8 @@ onBeforeUnmount(() => abort?.abort())
           <button v-for="app in apps" :key="`${app.pkg}/${app.cls}`" class="btn btn-sm" @click="openApp(app)">{{ app.label }}</button>
         </div>
       </div>
+
+      <LocalModelPack compact @ready="run" />
 
       <p v-if="routeNote" class="ts-note">{{ routeNote }}</p>
     </div>

@@ -79,8 +79,8 @@ npm run test:key-words       # 点睛重点词: 本书新词发现 / 自信息 +
 npm run test:terminology     # 术语来源完整性 / 22 类路由 / 原文跨度 / 边界与预算
 npm run test:concept-recognition # 生产完整概念边界 / 智能碎片扩展 / 失败回退
 npm run test:auto-scroll     # 多刷新率速度 / 卡帧与调速 / 亚像素累计
-npm run test:translate       # 划词翻译 (目标语言 / 校验 / relay /v1/translate 按账号每日 100 次 / 账号校验缓存) + 正文简繁转换 (OpenCC 等长替换, CFI 不变)
-E2E_BASE=http://localhost:<端口> npm run e2e:translate   # 选中本段 → 翻译 (未登录引导 / 账号额度 / 超额) → 简繁往返; E2E_MOBILE=1 测 App 并校验顶栏与浮动听书胶囊按钮一致 (components/ListenCapsule.vue)
+npm run test:translate       # 划词翻译 (目标语言 / 校验 / relay /v1/translate 按账号每日 100 次 / 账号校验缓存) + 正文简繁转换 (OpenCC 等长替换, CFI 不变) + 本机翻译模型 (提示词 / 逐段拆分 / 用不用本机的规则)
+E2E_BASE=http://localhost:<端口> npm run e2e:translate   # 选中本段 → 翻译 (未登录引导 / 账号额度 / 超额) → 简繁往返 → 本机翻译模型 (下载入口 / 进度 / 本机出译文, 原生层用替身); E2E_MOBILE=1 测 App 并校验顶栏与浮动听书胶囊按钮一致 (components/ListenCapsule.vue)
 npm run test:stealth         # 摸鱼模式 (桌面): 老板键录制 / 校验 / 显示, 半透明底色, 传给原生层的选项, 透明窗口配置 (App 窗口保持不透明); 原生窗口命令见 cargo test stealth (src-tauri/src/stealth.rs)
 E2E_BASE=http://localhost:<端口> npm run e2e:stealth   # 模拟桌面 IPC: 网页版无入口 → 从「阅读模式」面板进入 (面板内可调浓淡与隐蔽开关) → 只剩正文 + 半透明 → 透明度 / 伪装即时生效 → 老板键事件 → Esc 退出 → 打开图书自动进入 → PDF 阅读页 (入口在「视图」, 页外底色透明, 整页按浓淡淡化) → 设置页录制老板键; 两个阅读页共用 composables/useStealth + components/StealthStrip
 E2E_BASE=http://localhost:<端口> npm run e2e:window-chrome   # Windows 自绘窗口 (与 macOS 对齐: 无系统标题栏 / 无深色细边框 / 圆角; 非阅读页为 2026-11-08 用户选定的原型 B「侧栏到顶」, docs/prototypes/windows-shell): 侧栏到顶 + 按钮浮在右上且不压页面标题行, 顶行空白拖动 / 双击最大化, 标题栏按钮 → 窗口命令, 阅读页保留标题条, 最大化去圆角, 摸鱼收起; 原生侧 cargo test window_chrome (src-tauri/src/window_chrome.rs, tauri.windows.conf.json)
@@ -107,6 +107,7 @@ npm run e2e:transfer         # 互传端到端: 本地 wrangler sync-server + �
 npm run e2e:convert-epub / e2e:library-upload / e2e:book-sources   # 对应功能的浏览器端到端 (需先 build + preview)
 (cd sync-server && node --test test/api.test.mjs)                  # 账号后端契约 (wrangler 本地运行时)
 cargo test --manifest-path src-tauri/Cargo.toml agent   # 论文 Agent 原生契约
+cargo test --manifest-path src-tauri/Cargo.toml --lib -- local_llm model_download   # 本机模型: 设备评估 / 模型登记表 / 闪退降级 / 下载续传; 真实模型测试见 docs/local-models.md
 cargo test --manifest-path src-tauri/Cargo.toml ipc_contract   # 书库原生命令 IPC 契约: 藏书包原生导出/导入、换书库文件夹、改名 (前端实际 JSON 参数)
 npm run test:zh-segment-wasm   # 中文分词核心 Rust/wasm 与 JS 逐位一致 + 整条重点词管线不变; 改 wasm/zh-segment 后先 scripts/build-zh-segment-wasm.sh
 node scripts/gen-epub-meta-golden.mjs   # 升级 foliate-js / 改导入取元数据规则后: 重生成 Rust 原生 EPUB 元数据的期望, 再跑 cargo test epub_meta
@@ -139,7 +140,7 @@ src/
   i18n/                zh.ts (默认, 缺失回退来源) en.ts; t(key, params) 纯函数, key 为 'area.name' 字符串
   styles/main.css      设计令牌 + 全局组件类 (.btn .input .card .tag .segmented .modal .toast .empty .skeleton)
 scripts/               e2e-smoke.mjs e2e-full.mjs perf.mjs 各类 node --test 契约测试
-src-tauri/src/         Rust 命令: agent/ babeldoc calibre edge_tts local_tts fonts
+src-tauri/src/         Rust 命令: agent/ babeldoc calibre edge_tts local_tts local_llm/ fonts
 sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jiangshu.ai), API 见 docs/account-api.md
 ```
 
@@ -147,6 +148,7 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 
 - **能用 Rust 就用 Rust（2026-10-22 用户要求）**：文件读写、哈希、下载、格式解析等重活优先写成 `src-tauri/src/` 的原生命令，提升质量与性能；前端只做界面和编排。安卓 WebView 的 IPC 会把字节数组序列化成 JSON 数字数组，大文件不要整本经 `plugin-fs` 进出 JS（导入走 `library_file_write_chunk`，同步走 `library_file_download` / `library_file_sha256`，见 issue #14）。网页版没有原生层，保留 JS 实现作回退。哪些已原生、哪些留在 JS 及实测依据见 `docs/rust-native-audit.md`，新增候选先对照它。
 - **诊断日志（2026-11-06 用户要求）**：桌面与 App 写本机滚动日志 (`src-tauri/src/diagnostics.rs`，`lightread.log` 1MB 一份、留 4 份历史)，前端错误经 `services/diagnostics.ts` 写入，网页版只留内存缓冲。写入和导出各脱敏一次（规则在 `diagnosticsCore.ts`，加规则同时加测试）。**不自动上传**（2026-11-06 用户确认一键上传先不做），反馈主入口是读者微信群：入口在关于页读者群模块（`AboutLinks` → `DiagnosticsPanel`），用户导出 zip 后发到群里，GitHub 只作次要入口。新功能的失败路径用 `logEvent` 记录；不记录书籍正文、划线和设置内容。
+- **本机模型（2026-11-12，见 `docs/local-models.md`）**：llama.cpp 链接进原生层（`src-tauri/src/local_llm/`），现在用于离线翻译（混元 Hy-MT2 1.8B，用户在应用里下载，不随包分发），之后的本机语音也走这里。引擎只进 macOS / Windows / Android（`build.rs` 的 `llm_engine`）；Linux 桌面不带，因为它与预编译的 sherpa-onnx 静态库在 `std::regex` 上冲突，加载模型即崩溃。新增模型在 `local_llm/mod.rs` 的登记表里写死大小与 SHA-256，下载前先过 `device.rs` 的设备评估，带不动的设备不出现入口。构建需要 `cmake` 与 `libclang`；`llama-cpp-2` 版本固定，升级后重跑真实模型测试。Windows 构建与 Android 真机都还没有验证。
 - **wasm 实例崩溃后不能复用（2026-11-06）**：abort / trap 后实例状态不可信，之后任何文件都只会报 `memory access out of bounds`。PDFium 的处理在 `services/pdfium.ts`（`retireModule` + 打开重试一次），崩溃判定在 `services/wasmCrash.ts`；清理调用（`destroy` / `close`）放在 `finally` 里时必须自带 try，否则会盖掉回退路径。
 - **样式档位（2026-10-26 用户确认收敛方案，见 `docs/design/style-convergence.md`）**：新写或改动的界面只用 `--fs-caption/small/body/subtitle/title/display`、`--fw-regular/medium/semibold`、`--radius-xs/sm/(默认)/lg/pill`、`--space-*`、`--shadow-1/2/3`，不写新的裸 px；`npm run check:style-tokens` 在发版 preflight 里只许裸值减少。桌面藏书页已按用户选定的「书桌」原型（B）改版：继续阅读卡含今日 / 本周、书单像标签页、书卡只有封面 + 短书名 + 「进度 · 作者」，操作收进「⋯」菜单（菜单项保留 `.action.*` 类名并始终在 DOM 里）；其余桌面页面按方案逐页替换。
 - **样式只用语义令牌**（`--bg --card --surface-2 --text --text-2 --text-3 --border --brand --brand-light --danger --success …`），不要在组件里写裸色值。深色模式通过 `<html data-theme="dark">` 重定义令牌实现，由 `services/appearance.ts` 依据 `settings.appearance` (system/light/dark) 写入。

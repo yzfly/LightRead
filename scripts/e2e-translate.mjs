@@ -191,6 +191,76 @@ try {
     })
   }
 
+  await step('offline model: offered when not signed in, downloads with progress, then translates on device', async () => {
+    // 退出登录: 没有在线通道; 之后装上原生层替身 (页面已用网页存储启动, 只有本机模型的命令走替身)
+    await p.evaluate(() => localStorage.removeItem('lightread-account'))
+    await p.reload()
+    await p.waitForFunction(() => document.querySelector('foliate-view')?.renderer?.getContents?.().length)
+    await p.waitForTimeout(500)
+    await p.evaluate(() => {
+      const callbacks = new Map()
+      let id = 0
+      const model = { id: 'hy-mt2-1.8b-q4', kind: 'translate', size: 1133080448, installed: false, downloaded: 0, running: false, supported: true, reasons: [], crashed: false, tokensPerSecond: null, gpu: null }
+      const wait = ms => new Promise(r => setTimeout(r, ms))
+      let progressHandler = null
+      window.__llm = { calls: [], model }
+      window.__TAURI_INTERNALS__ = {
+        transformCallback(cb) { const i = ++id; callbacks.set(i, cb); return i },
+        unregisterCallback(i) { callbacks.delete(i) },
+        metadata: { currentWindow: { label: 'main' }, currentWebview: { windowLabel: 'main', label: 'main' } },
+        async invoke(cmd, args) {
+          if (cmd.startsWith('local_llm_')) { const { onEvent: _channel, ...rest } = args ?? {}; window.__llm.calls.push({ cmd, args: rest }) }
+          if (cmd === 'plugin:event|listen') { if (args.event === 'local-llm-progress') progressHandler = args.handler; return ++id }
+          if (cmd === 'local_llm_status') return { available: true, models: [{ ...model }] }
+          if (cmd === 'local_llm_download') {
+            model.running = true
+            for (const done of [0, 400 << 20, 900 << 20, model.size]) {
+              model.downloaded = done
+              callbacks.get(progressHandler)?.({ event: 'local-llm-progress', id: 1, payload: { model: model.id, downloaded: done, total: model.size, phase: done === model.size ? 'done' : 'downloading' } })
+              await wait(150)
+            }
+            Object.assign(model, { running: false, installed: true })
+            return null
+          }
+          if (cmd === 'local_llm_generate') {
+            const send = callbacks.get(args.onEvent.id)
+            const pieces = [' Justice ', 'is the advantage ', 'of the stronger.']
+            pieces.forEach((text, index) => send({ index, message: { type: 'piece', text } }))
+            // 统计走通道, 且可能晚于命令返回才到: 末尾的文字不能丢
+            setTimeout(() => send({ index: pieces.length, message: { type: 'done', tokens: 12, promptTokens: 30, loadMs: 900, promptMs: 300, genMs: 200, gpu: true, cancelled: false } }), 120)
+            model.tokensPerSecond = 60
+            model.gpu = true
+            return null
+          }
+          return null
+        },
+      }
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} }
+    })
+    const paraText = (await selectInParagraph(0, 0, 10)).slice(0, 10)
+    await p.locator(bar).getByRole('button', { name: '翻译', exact: true }).click()
+    const sheet = p.getByRole('dialog', { name: '翻译' })
+    await sheet.getByText('登录轻阅账号后每天可免费翻译 100 次', { exact: false }).waitFor()
+    await sheet.getByText('下载离线翻译模型（1.1 GB）后，不登录、不联网也能翻译。').waitFor()
+    await p.screenshot({ path: `${out}/translate-offline-offer.png` })
+    await sheet.getByRole('button', { name: '下载（1.1 GB）', exact: true }).click()
+    await sheet.getByRole('progressbar').waitFor()
+    await sheet.getByText(/正在下载 \d+%/).waitFor()
+    // 下完自动开始翻译, 来源说明换成本机
+    await sheet.getByText('Justice is the advantage of the stronger.').waitFor()
+    await sheet.getByText('本机翻译 · 不联网').waitFor()
+    assert.equal(await sheet.getByRole('button', { name: /下载/ }).count(), 0, 'offer disappears once installed')
+    const calls = await p.evaluate(() => window.__llm.calls)
+    assert.deepEqual(calls.find(c => c.cmd === 'local_llm_download').args, { model: 'hy-mt2-1.8b-q4', proxy: null, preferCn: true })
+    const gen = calls.find(c => c.cmd === 'local_llm_generate').args
+    assert.equal(gen.model, 'hy-mt2-1.8b-q4')
+    assert.equal(gen.prompt, `把下面的文本翻译成英语，不要额外解释。\n\n${paraText}`)
+    assert.ok(gen.maxTokens >= 256 && Number.isSafeInteger(gen.requestId))
+    assert.equal(translateBodies.length, 2, 'on-device translation never calls the network')
+    await p.screenshot({ path: `${out}/translate-offline-result.png` })
+    await p.keyboard.press('Escape')
+  })
+
   assert.deepEqual(errors, [])
   await writeFile(`${out}/results.json`, JSON.stringify({ ok: true, results }, null, 2))
 } catch (error) {

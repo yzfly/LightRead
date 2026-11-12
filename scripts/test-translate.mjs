@@ -4,6 +4,10 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import {
   ACCOUNT_TRANSLATE_DAILY,
+  LOCAL_TRANSLATE_PIECE_CHARS,
+  localTranslatePrompt,
+  shouldTranslateLocally,
+  splitForLocalTranslate,
   mostlyChinese,
   resolveTarget,
   sanitizeTranslate,
@@ -188,4 +192,58 @@ test('简繁转换: 词组转换, 结果与原文 UTF-16 等长 (CFI 偏移不�
   const t0 = performance.now()
   convertPreservingLength(big, s2t)
   assert.ok(performance.now() - t0 < 500)
+})
+
+// ---- 本机翻译模型 ----
+
+test('本机翻译: 提示词按模型卡片的两种写法, 原文原样放在末尾', () => {
+  assert.equal(
+    localTranslatePrompt('Justice is the advantage of the stronger.', 'zh-Hans'),
+    '把下面的文本翻译成中文，不要额外解释。\n\nJustice is the advantage of the stronger.',
+  )
+  assert.match(localTranslatePrompt('正义是强者的利益。', 'en'), /^把下面的文本翻译成英语，不要额外解释。\n\n正义/)
+  assert.match(localTranslatePrompt('正义是强者的利益。', 'zh-Hant'), /翻译成繁体中文/)
+  assert.equal(
+    localTranslatePrompt('La justice est', 'en'),
+    'Translate the following segment into English, without additional explanation.\n\nLa justice est',
+  )
+  assert.match(localTranslatePrompt('Justice', 'ja'), /^Translate the following segment into Japanese,/)
+})
+
+test('本机翻译: 一个自然段一块, 长段落在句末再拆, 分段原样接回', () => {
+  const two = splitForLocalTranslate('第一段。\n\n第二段。\n', 'en')
+  assert.deepEqual(two, [{ text: '第一段。', after: '\n\n' }, { text: '第二段。', after: '' }])
+  assert.deepEqual(splitForLocalTranslate('  \n\n ', 'en'), [])
+  assert.deepEqual(splitForLocalTranslate('only one', 'zh-Hans'), [{ text: 'only one', after: '' }])
+
+  const sentence = 'The value of pi is about 3.14 in most textbooks. '
+  const long = sentence.repeat(30).trim()
+  const pieces = splitForLocalTranslate(`${long}\nnext`, 'zh-Hans')
+  assert.ok(pieces.length > 2)
+  for (const p of pieces) {
+    assert.ok(p.text.length <= LOCAL_TRANSLATE_PIECE_CHARS, `piece too long: ${p.text.length}`)
+    assert.ok(!/3\.$/.test(p.text) && !/^14/.test(p.text), '小数点不是句末')
+  }
+  assert.equal(pieces.slice(0, -1).map(p => p.text).join(' ').replace(/ next$/, ''), long, '拆开再接起来不丢字')
+  assert.equal(pieces.at(-2).after, '\n', '段落之间保留换行')
+  assert.ok(pieces.slice(0, -2).every(p => p.after === ''), '译成中文时同一段的各块直接相接')
+  assert.equal(splitForLocalTranslate('甲。'.repeat(400), 'en')[0].after, ' ', '译成英文时各块之间空一格')
+
+  // 没有句末标点的超长文字按长度硬切, 不会整块送进模型
+  const blob = splitForLocalTranslate('字'.repeat(1500), 'en')
+  assert.deepEqual(blob.map(p => p.text.length), [600, 600, 300])
+})
+
+test('本机翻译: 装好且没停用才用; 实测太慢时有在线通道就让给在线', () => {
+  const ok = { installed: true, supported: true, crashed: false, tokensPerSecond: 60 }
+  assert.equal(shouldTranslateLocally(ok, true, true), true)
+  assert.equal(shouldTranslateLocally({ ...ok, tokensPerSecond: null }, true, true), true, '还没测过速度先用')
+  assert.equal(shouldTranslateLocally(undefined, true, true), false)
+  assert.equal(shouldTranslateLocally(ok, false, true), false, '设置里关掉')
+  assert.equal(shouldTranslateLocally({ ...ok, installed: false }, true, false), false)
+  assert.equal(shouldTranslateLocally({ ...ok, crashed: true }, true, false), false)
+  assert.equal(shouldTranslateLocally({ ...ok, supported: false }, true, false), false)
+  const slow = { ...ok, tokensPerSecond: 3 }
+  assert.equal(shouldTranslateLocally(slow, true, true), false, '慢且能在线: 用在线')
+  assert.equal(shouldTranslateLocally(slow, true, false), true, '慢但没有在线通道: 仍用本机')
 })
