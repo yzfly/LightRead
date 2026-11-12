@@ -1522,6 +1522,7 @@ const APPEARANCE_OPTIONS = [
       </div>
       <div v-if="aiTestResult" class="dav-info ai-result" role="status">{{ aiTestResult }}</div>
       <LocalModelPack />
+      <LocalModelPack kind="tts" />
     </section>
 
     <section

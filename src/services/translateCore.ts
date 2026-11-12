@@ -114,7 +114,7 @@ export interface LocalTranslateModel {
   installed: boolean
   supported: boolean
   crashed: boolean
-  tokensPerSecond: number | null
+  speed: number | null
 }
 
 /**
@@ -123,7 +123,7 @@ export interface LocalTranslateModel {
  */
 export function shouldTranslateLocally(model: LocalTranslateModel | undefined, enabled: boolean, onlineAvailable: boolean): boolean {
   if (!model || !enabled || !model.installed || model.crashed || !model.supported) return false
-  const slow = model.tokensPerSecond !== null && model.tokensPerSecond < LOCAL_TRANSLATE_SLOW_TPS
+  const slow = model.speed !== null && model.speed < LOCAL_TRANSLATE_SLOW_TPS
   return !(slow && onlineAvailable)
 }
 

@@ -240,7 +240,8 @@ interface SettingsState {
   /** PDF 打开方式: auto 文字版用电子书 (重排) 打开、扫描版与论文用原版; original 总是原版. 见 services/pdfReflow/viewMode.ts */
   pdfReflowDefault: 'auto' | 'original'
   /** 听书引擎: edge 在线神经音色 / local 本地离线神经音色 / system 系统语音 / cloud 自带 Key 的 API 语音 / sapi Windows SAPI 5 语音 */
-  ttsEngine: 'edge' | 'local' | 'system' | 'cloud' | 'sapi'
+  /** qwen: 本机语音模型 (Qwen3-TTS, 桌面; 需下载, 带不动的机器不提供) */
+  ttsEngine: 'edge' | 'local' | 'system' | 'cloud' | 'sapi' | 'qwen'
   /** 听书语速 (0.5 - 2) */
   ttsRate: number
   /** 系统语音音色名称, 空为自动匹配 (中文优先) */
@@ -249,6 +250,8 @@ interface SettingsState {
   edgeVoice: string
   /** 本地音色编号 (Kokoro 0-102) */
   localVoiceId: number
+  /** 本机语音模型的参考音色 (services/localVoiceCore.ts 的 QWEN_VOICES) */
+  qwenVoice: 'female' | 'male'
   /** SAPI 5 语音的令牌 id, 空为系统默认 */
   sapiVoice: string
   /** API 语音服务商 */
@@ -353,6 +356,7 @@ const defaults: SettingsState = {
   ttsVoice: '',
   edgeVoice: 'zh-TW-HsiaoChenNeural',
   localVoiceId: 50,
+  qwenVoice: 'female',
   sapiVoice: '',
   cloudTtsProvider: 'minimax',
   minimaxRegion: 'cn',

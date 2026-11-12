@@ -235,15 +235,15 @@ test('本机翻译: 一个自然段一块, 长段落在句末再拆, 分段原�
 })
 
 test('本机翻译: 装好且没停用才用; 实测太慢时有在线通道就让给在线', () => {
-  const ok = { installed: true, supported: true, crashed: false, tokensPerSecond: 60 }
+  const ok = { installed: true, supported: true, crashed: false, speed: 60 }
   assert.equal(shouldTranslateLocally(ok, true, true), true)
-  assert.equal(shouldTranslateLocally({ ...ok, tokensPerSecond: null }, true, true), true, '还没测过速度先用')
+  assert.equal(shouldTranslateLocally({ ...ok, speed: null }, true, true), true, '还没测过速度先用')
   assert.equal(shouldTranslateLocally(undefined, true, true), false)
   assert.equal(shouldTranslateLocally(ok, false, true), false, '设置里关掉')
   assert.equal(shouldTranslateLocally({ ...ok, installed: false }, true, false), false)
   assert.equal(shouldTranslateLocally({ ...ok, crashed: true }, true, false), false)
   assert.equal(shouldTranslateLocally({ ...ok, supported: false }, true, false), false)
-  const slow = { ...ok, tokensPerSecond: 3 }
+  const slow = { ...ok, speed: 3 }
   assert.equal(shouldTranslateLocally(slow, true, true), false, '慢且能在线: 用在线')
   assert.equal(shouldTranslateLocally(slow, true, false), true, '慢但没有在线通道: 仍用本机')
 })

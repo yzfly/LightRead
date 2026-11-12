@@ -65,7 +65,7 @@ npm run test:reader-pages / test:listen-eta   # 重排书页码 (实测+推算/�
 npm run test:cloud-tts       # API 语音 (MiniMax / 豆包): 音色目录 / 设置到请求的映射 / 错误分类; 原生请求见 cargo test cloud_tts
 npm run test:diagnostics     # 诊断日志: 脱敏 / 单行格式 / 环形缓冲 / 反馈链接 + wasm 崩溃判定
 E2E_BASE=http://localhost:<端口> npm run e2e:pdf-crash   # PDF 引擎崩溃自愈 (注入 trap): 退化不抛错 / 新实例恢复 / MuPDF 回退 PDFium / 诊断包; 需先起 vite dev
-npm run test:read-aloud      # 听书: 句子游标断句 + 播放管线 (分块/预取/无缝拼接/回退, 假时钟) + 音色目录
+npm run test:read-aloud      # 听书: 句子游标断句 + 播放管线 (分块/预取/无缝拼接/回退, 假时钟) + 音色目录 + 本机语音模型 (朗读语言 / 可用规则 / 不可用时回退在线)
 npm run test:reading-modes   # 阅读模式: 打字机出字节奏 / 断句 / 按行分组 (纯函数)
 npm run test:reading-focus   # 阅读焦点: 舒适区 25%–65% / 焦点线 38% / 长句 / 手动滚动后暂停跟随 (听书跟随与跳转落点, 纯函数)
 npm run test:reader-tap-zone # 轻点分区: 横屏左·中·右 / 竖屏上·中·下 / 自动阅读时无翻页区 (纯函数)
@@ -148,7 +148,7 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 
 - **能用 Rust 就用 Rust（2026-10-22 用户要求）**：文件读写、哈希、下载、格式解析等重活优先写成 `src-tauri/src/` 的原生命令，提升质量与性能；前端只做界面和编排。安卓 WebView 的 IPC 会把字节数组序列化成 JSON 数字数组，大文件不要整本经 `plugin-fs` 进出 JS（导入走 `library_file_write_chunk`，同步走 `library_file_download` / `library_file_sha256`，见 issue #14）。网页版没有原生层，保留 JS 实现作回退。哪些已原生、哪些留在 JS 及实测依据见 `docs/rust-native-audit.md`，新增候选先对照它。
 - **诊断日志（2026-11-06 用户要求）**：桌面与 App 写本机滚动日志 (`src-tauri/src/diagnostics.rs`，`lightread.log` 1MB 一份、留 4 份历史)，前端错误经 `services/diagnostics.ts` 写入，网页版只留内存缓冲。写入和导出各脱敏一次（规则在 `diagnosticsCore.ts`，加规则同时加测试）。**不自动上传**（2026-11-06 用户确认一键上传先不做），反馈主入口是读者微信群：入口在关于页读者群模块（`AboutLinks` → `DiagnosticsPanel`），用户导出 zip 后发到群里，GitHub 只作次要入口。新功能的失败路径用 `logEvent` 记录；不记录书籍正文、划线和设置内容。
-- **本机模型（2026-11-12，见 `docs/local-models.md`）**：llama.cpp 链接进原生层（`src-tauri/src/local_llm/`），现在用于离线翻译（混元 Hy-MT2 1.8B，用户在应用里下载，不随包分发），之后的本机语音也走这里。引擎只进 macOS / Windows / Android（`build.rs` 的 `llm_engine`）；Linux 桌面不带，因为它与预编译的 sherpa-onnx 静态库在 `std::regex` 上冲突，加载模型即崩溃。新增模型在 `local_llm/mod.rs` 的登记表里写死大小与 SHA-256，下载前先过 `device.rs` 的设备评估，带不动的设备不出现入口。构建需要 `cmake` 与 `libclang`；`llama-cpp-2` 版本固定，升级后重跑真实模型测试。Windows 构建与 Android 真机都还没有验证。
+- **本机模型（2026-11-12，见 `docs/local-models.md`）**：llama.cpp 链接进原生层（`src-tauri/src/local_llm/`），用于离线翻译（混元 Hy-MT2 1.8B）和听书的本机语音（Qwen3-TTS 1.7B，朗读引擎 `qwen`，只在 12 GB 以上的电脑上提供）；模型由用户在应用里下载，不随包分发。引擎只进 macOS / Windows / Android（`build.rs` 的 `llm_engine`）；Linux 桌面不带，因为它与预编译的 sherpa-onnx 静态库在 `std::regex` 上冲突，加载模型即崩溃。新增模型在 `local_llm/mod.rs` 的登记表里写死大小与 SHA-256，下载前先过 `device.rs` 的设备评估，带不动的设备不出现入口；下载后按实测速度决定用不用，不够快就自动走在线。应用退出时必须先释放模型（`local_llm::shutdown`，否则 Metal 后端在退出时 abort）。构建需要 `cmake` 与 `libclang`；`llama-cpp-2` / `llama-cpp-sys-2` 版本固定，升级后重跑真实模型测试。Windows 构建、Android 真机、装好的应用里的完整流程都还没有验证。
 - **wasm 实例崩溃后不能复用（2026-11-06）**：abort / trap 后实例状态不可信，之后任何文件都只会报 `memory access out of bounds`。PDFium 的处理在 `services/pdfium.ts`（`retireModule` + 打开重试一次），崩溃判定在 `services/wasmCrash.ts`；清理调用（`destroy` / `close`）放在 `finally` 里时必须自带 try，否则会盖掉回退路径。
 - **样式档位（2026-10-26 用户确认收敛方案，见 `docs/design/style-convergence.md`）**：新写或改动的界面只用 `--fs-caption/small/body/subtitle/title/display`、`--fw-regular/medium/semibold`、`--radius-xs/sm/(默认)/lg/pill`、`--space-*`、`--shadow-1/2/3`，不写新的裸 px；`npm run check:style-tokens` 在发版 preflight 里只许裸值减少。桌面藏书页已按用户选定的「书桌」原型（B）改版：继续阅读卡含今日 / 本周、书单像标签页、书卡只有封面 + 短书名 + 「进度 · 作者」，操作收进「⋯」菜单（菜单项保留 `.action.*` 类名并始终在 DOM 里）；其余桌面页面按方案逐页替换。
 - **样式只用语义令牌**（`--bg --card --surface-2 --text --text-2 --text-3 --border --brand --brand-light --danger --success …`），不要在组件里写裸色值。深色模式通过 `<html data-theme="dark">` 重定义令牌实现，由 `services/appearance.ts` 依据 `settings.appearance` (system/light/dark) 写入。

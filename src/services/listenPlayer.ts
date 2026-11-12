@@ -54,12 +54,14 @@ export interface ListenCallbacks {
 export type ListenState = 'idle' | 'playing' | 'paused' | 'buffering'
 
 /** 各引擎的预取参数: 离线推理占满 CPU, 只能一块一块来, 但尽量多攒; 在线可并发 */
-const PIPELINE: Record<'edge' | 'local' | 'cloud' | 'sapi', { concurrency: number; lookaheadSeconds: number; maxChunks: number }> = {
+const PIPELINE: Record<'edge' | 'local' | 'cloud' | 'sapi' | 'qwen', { concurrency: number; lookaheadSeconds: number; maxChunks: number }> = {
   edge: { concurrency: 2, lookaheadSeconds: 45, maxChunks: 8 },
   local: { concurrency: 1, lookaheadSeconds: 90, maxChunks: 12 },
   // 按字计费: 预取只够消除等待, 跳章时不为没听到的内容多付钱
   cloud: { concurrency: 2, lookaheadSeconds: 30, maxChunks: 4 },
   sapi: { concurrency: 1, lookaheadSeconds: 45, maxChunks: 6 },
+  // 本机语音模型占着显卡 / 处理器, 一块一块来; 少攒一些, 换音色或跳章时浪费得少
+  qwen: { concurrency: 1, lookaheadSeconds: 60, maxChunks: 6 },
 }
 /** 提前排进 AudioContext 时间线的秒数 (排上的音频不依赖 JS 定时器) */
 const SCHEDULE_AHEAD = 15
@@ -413,6 +415,8 @@ export class ListenPlayer {
     } finally {
       if (this.invalidateHook === hook) this.invalidateHook = null
       prefetcher.cancel()
+      // 本机语音模型: 已经发给原生层、还在合成的那一块也停下
+      engine.cancel?.()
     }
   }
 

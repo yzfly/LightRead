@@ -68,11 +68,13 @@ export interface ChunkProfile {
  * (2026-10-05 真机实测: 原先 120 字一块, 长段里每一两句就切一次, 每块独立合成都带「句终」语调,
  *  接缝处再裁静音 + 插停顿, 听感就是句与句之间卡一下。)
  */
-export const CHUNK_PROFILES: Record<'edge' | 'local' | 'cloud' | 'sapi', ChunkProfile> = {
+export const CHUNK_PROFILES: Record<'edge' | 'local' | 'cloud' | 'sapi' | 'qwen', ChunkProfile> = {
   edge: { firstMax: 60, target: 500, max: 600, minParagraph: 16 },
   local: { firstMax: 30, target: 100, max: 160, minParagraph: 12 },
   cloud: { firstMax: 60, target: 300, max: 400, minParagraph: 16 },
   sapi: { firstMax: 40, target: 200, max: 300, minParagraph: 12 },
+  // 本机语音模型: 一块十几秒 (合成约为播放速度的两倍), 首块更短好尽快出声; 上限保证装得进模型的上下文
+  qwen: { firstMax: 24, target: 70, max: 110, minParagraph: 12 },
 }
 
 /**

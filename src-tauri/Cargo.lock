@@ -2455,6 +2455,7 @@ dependencies = [
  "futures-util",
  "libc",
  "llama-cpp-2",
+ "llama-cpp-sys-2",
  "log",
  "regex",
  "reqwest 0.12.22",

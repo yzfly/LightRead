@@ -18,9 +18,12 @@
 pub(crate) mod device;
 #[cfg(llm_engine)]
 mod engine;
+mod stretch;
+#[cfg(llm_engine)]
+mod tts;
 
 use crate::model_download::{download_file, download_routes, normalize_proxy, Route};
-use device::Device;
+use device::{Device, Requirements};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,6 +35,8 @@ const ENGINE_BUILT: bool = cfg!(llm_engine);
 const MOBILE: bool = cfg!(any(target_os = "android", target_os = "ios"));
 const MODELS_DIR: &str = "llm-models";
 pub(crate) const CRASHED_ERROR: &str = "LOCAL_LLM_CRASHED";
+/// 朗读请求被取消 (翻页、停止): 前端不当作故障
+pub(crate) const CANCELLED_ERROR: &str = "LOCAL_LLM_CANCELLED";
 /// 桌面空闲 5 分钟、手机空闲 2 分钟后释放模型
 const IDLE_UNLOAD_MS: u64 = if MOBILE { 120_000 } else { 300_000 };
 /// 生成不少于这么多 token 才记录速度 (太短的不准)
@@ -48,8 +53,10 @@ pub(crate) struct ModelFile {
 
 pub(crate) struct ModelSpec {
     pub id: &'static str,
+    /// translate / tts
     pub kind: &'static str,
     pub n_ctx: u32,
+    pub req: Requirements,
     pub files: &'static [ModelFile],
 }
 
@@ -60,6 +67,7 @@ const HY_MT2: ModelSpec = ModelSpec {
     id: "hy-mt2-1.8b-q4",
     kind: "translate",
     n_ctx: 4096,
+    req: Requirements::text(1_133_080_448, 4096),
     files: &[ModelFile {
         name: "Hy-MT2-1.8B-Q4_K_M.gguf",
         size: 1_133_080_448,
@@ -74,7 +82,72 @@ const HY_MT2: ModelSpec = ModelSpec {
     }],
 };
 
-pub(crate) const MODELS: &[&ModelSpec] = &[&HY_MT2];
+/// 通义 Qwen3-TTS 12Hz 1.7B Base (Apache-2.0): 主干 Q4_K_M + 声码器 (mmproj) Q8_0, llama.cpp 官方转换。
+/// 2026-11-12 在 M5 MacBook Air 实测 (Metal, 上下文 2048): 合成速度约为播放速度的 2 倍, 内存峰值 3.2GB;
+/// 仅处理器时约与播放速度持平, 所以只在内存与核数都宽裕的电脑上提供, 下载后再按实测速度决定用不用。
+/// 手机暂不提供 (更小的 0.6B 还没有可用的 llama.cpp 转换)。
+/// 大小与摘要取自 Hugging Face ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF 的 ca27d74 版本。
+const QWEN3_TTS: ModelSpec = ModelSpec {
+    id: "qwen3-tts-1.7b-q4",
+    kind: "tts",
+    n_ctx: 2048,
+    req: Requirements {
+        download: 1_035_965_280 + 446_422_912,
+        memory: 3_500 << 20,
+        mobile_ok: false,
+        desktop_min_ram: 11_500 << 20,
+        desktop_min_ram_gb: 12,
+        desktop_min_cores: 8,
+    },
+    files: &[
+        ModelFile {
+            name: "Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+            size: 1_035_965_280,
+            sha256: "8d18c94acb2addd042f97da63c98be144eafa76d0d9495177eab65130cf85129",
+            urls_cn: &[
+                "https://modelscope.cn/models/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/master/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+                "https://hf-mirror.com/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+            ],
+            urls_global: &[
+                "https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
+            ],
+        },
+        ModelFile {
+            name: "mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+            size: 446_422_912,
+            sha256: "6fd65188839bcd6ecc91b277ad471e22a0edfada4699a0fe82f1165c18cfcce2",
+            urls_cn: &[
+                "https://modelscope.cn/models/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/master/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+                "https://hf-mirror.com/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+            ],
+            urls_global: &[
+                "https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
+            ],
+        },
+    ],
+};
+
+pub(crate) const MODELS: &[&ModelSpec] = &[&HY_MT2, &QWEN3_TTS];
+
+/// 本机语音的参考音色: Qwen3-TTS Base 按一段参考录音的音色朗读。
+/// 两段录音由离线语音 Kokoro 的两个推荐音色合成 (zf_001 / zm_010, 生成方法见
+/// local_tts 的 makes_reference_voices 测试), 随应用分发, 用到时写进模型目录。
+const VOICES: &[(&str, &[u8])] = &[
+    ("female", include_bytes!("../../voices/female.wav")),
+    ("male", include_bytes!("../../voices/male.wav")),
+];
+
+/// 参考音色文件的路径 (不存在或大小不对时写出); 未知的名字用第一个
+fn voice_file(root: &Path, name: &str) -> Result<PathBuf, String> {
+    let (name, bytes) = VOICES.iter().find(|(n, _)| *n == name).unwrap_or(&VOICES[0]);
+    let dir = root.join("voices");
+    let path = dir.join(format!("{name}.wav"));
+    if !std::fs::metadata(&path).is_ok_and(|m| m.len() == bytes.len() as u64) {
+        std::fs::create_dir_all(&dir).map_err(|e| format!("创建目录失败: {e}"))?;
+        std::fs::write(&path, bytes).map_err(|e| format!("写入参考音色失败: {e}"))?;
+    }
+    Ok(path)
+}
 
 fn spec(id: &str) -> Result<&'static ModelSpec, String> {
     MODELS.iter().copied().find(|m| m.id == id).ok_or_else(|| format!("未知的模型: {id}"))
@@ -186,18 +259,27 @@ impl Drop for CrashGuard {
     }
 }
 
-/// 应用正常退出时调用: 退出时恰好在推理的标记不算闪退
-pub fn clear_crash_marker_on_exit(app: &AppHandle) {
-    if ENGINE_BUSY.load(Ordering::SeqCst) {
-        if let Ok(root) = models_root(app) {
-            for m in MODELS {
-                let _ = std::fs::remove_file(marker_path(&root, m.id));
-            }
+/// 应用正常退出时调用:
+/// - 停下正在进行的推理并释放模型。llama.cpp 的 Metal 后端在进程退出时若还有模型没释放会直接 abort
+///   (`GGML_ASSERT([rsets->data count] == 0)`, 2026-11-12 MacAir 实测), 表现为「退出时闪退」;
+/// - 退出时恰好在推理的标记不算闪退。
+pub fn shutdown(app: &AppHandle) {
+    #[cfg(llm_engine)]
+    {
+        engine::cancel_all();
+        tts::cancel_all();
+        // 推理循环每个 token / 每帧检查一次取消, 很快就会放开锁
+        tts::unload(None);
+        engine::unload(None);
+    }
+    if let Ok(root) = models_root(app) {
+        for m in MODELS {
+            let _ = std::fs::remove_file(marker_path(&root, m.id));
         }
     }
 }
 
-/// 记录的速度: `<token/秒> <gpu|cpu>`
+/// 记录的速度: `<数值> <gpu|cpu>` (数值的含义随模型种类, 见 ModelStatus::speed)
 fn read_speed(root: &Path, id: &str) -> Option<(f32, bool)> {
     let text = std::fs::read_to_string(speed_path(root, id)).ok()?;
     let mut parts = text.split_whitespace();
@@ -251,6 +333,11 @@ fn this_device(root: &Path) -> Device {
     }
 }
 
+/// 内存不宽裕 (手机, 或不足 12GB 的电脑): 翻译模型与语音模型不同时留在内存里
+fn memory_is_tight(dev: &Device) -> bool {
+    dev.mobile || dev.ram.is_none_or(|ram| ram < 11_500 << 20)
+}
+
 // ---- 状态 ----
 
 #[derive(Serialize)]
@@ -269,8 +356,8 @@ pub struct ModelStatus {
     reasons: Vec<String>,
     /// 上次使用时应用意外退出, 已停用, 需用户确认再试
     crashed: bool,
-    /// 实测生成速度 (token/秒); 还没用过为空
-    tokens_per_second: Option<f32>,
+    /// 实测速度, 还没用过为空: 翻译模型是 token/秒, 语音模型是「合成速度 ÷ 播放速度」(大于 1 才跟得上朗读)
+    speed: Option<f32>,
     /// 实测时是否用了显卡
     gpu: Option<bool>,
 }
@@ -296,7 +383,7 @@ pub fn local_llm_status(app: AppHandle, lang: Option<String>) -> Result<LocalLlm
         .iter()
         .map(|m| {
             let is_installed = installed(&root, m);
-            let concerns = device::assess(&dev, m.total_size(), m.n_ctx, is_installed);
+            let concerns = device::assess(&dev, &m.req, is_installed);
             let speed = read_speed(&root, m.id);
             ModelStatus {
                 id: m.id,
@@ -308,7 +395,7 @@ pub fn local_llm_status(app: AppHandle, lang: Option<String>) -> Result<LocalLlm
                 supported: concerns.is_empty(),
                 reasons: concerns.iter().map(|c| c.describe(en)).collect(),
                 crashed: is_installed && settle_crash(&root, m.id) == CrashState::Crashed,
-                tokens_per_second: speed.map(|s| s.0),
+                speed: speed.map(|s| s.0),
                 gpu: speed.map(|s| s.1),
             }
         })
@@ -453,7 +540,10 @@ pub async fn local_llm_remove(app: AppHandle, model: String) -> Result<(), Strin
     let root = models_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(llm_engine)]
-        engine::unload(Some(spec.id));
+        {
+            engine::unload(Some(spec.id));
+            tts::unload(Some(spec.id));
+        }
         for path in [marker_path(&root, spec.id), cpu_only_path(&root, spec.id), speed_path(&root, spec.id)] {
             let _ = std::fs::remove_file(path);
         }
@@ -482,7 +572,10 @@ pub enum GenEvent {
 #[tauri::command]
 pub fn local_llm_cancel(request_id: u64) {
     #[cfg(llm_engine)]
-    engine::cancel(request_id);
+    {
+        engine::cancel(request_id);
+        tts::cancel(request_id);
+    }
     #[cfg(not(llm_engine))]
     let _ = request_id;
 }
@@ -491,7 +584,12 @@ pub fn local_llm_cancel(request_id: u64) {
 #[tauri::command]
 pub async fn local_llm_unload() -> Result<(), String> {
     #[cfg(llm_engine)]
-    tauri::async_runtime::spawn_blocking(|| engine::unload(None)).await.map_err(|e| format!("任务失败: {e}"))?;
+    tauri::async_runtime::spawn_blocking(|| {
+        engine::unload(None);
+        tts::unload(None);
+    })
+    .await
+    .map_err(|e| format!("任务失败: {e}"))?;
     Ok(())
 }
 
@@ -507,6 +605,9 @@ pub async fn local_llm_generate(
     on_event: tauri::ipc::Channel<GenEvent>,
 ) -> Result<(), String> {
     let spec = spec(&model)?;
+    if spec.kind != "translate" {
+        return Err("这个模型不能生成文字".into());
+    }
     let root = models_root(&app)?;
     if !installed(&root, spec) {
         return Err("模型还没有下载".into());
@@ -524,6 +625,7 @@ pub async fn local_llm_generate(
         threads: device::inference_threads(&dev),
         use_gpu: !cpu_only_path(&root, spec.id).exists(),
         request_id,
+        exclusive: memory_is_tight(&dev),
         // 混元翻译模型卡片推荐的采样参数
         sampling: engine::Sampling { temperature: 0.2, top_p: 0.6, top_k: 20, repeat_penalty: 1.05 },
     };
@@ -567,6 +669,77 @@ pub async fn local_llm_generate(
     Err("此版本不支持本机模型".into())
 }
 
+/// 用本机语音模型朗读一段文字, 返回 WAV (16-bit 单声道)。`voice` 是内置参考音色的名字;
+/// `rate` 是语速倍数 (模型按自然语速合成, 之后变速不变调)。
+#[cfg(llm_engine)]
+#[tauri::command]
+pub async fn local_llm_speak(
+    app: AppHandle,
+    model: String,
+    text: String,
+    lang: String,
+    voice: String,
+    rate: f32,
+    request_id: u64,
+) -> Result<tauri::ipc::Response, String> {
+    let spec = spec(&model)?;
+    if spec.kind != "tts" {
+        return Err("这个模型不能朗读".into());
+    }
+    let root = models_root(&app)?;
+    if !installed(&root, spec) {
+        return Err("语音模型还没有下载".into());
+    }
+    if settle_crash(&root, spec.id) == CrashState::Crashed {
+        return Err(CRASHED_ERROR.into());
+    }
+    let dev = this_device(&root);
+    let dir = model_dir(&root, spec.id);
+    let request = tts::TtsRequest {
+        model_id: spec.id.into(),
+        model_path: dir.join(spec.files[0].name),
+        mmproj_path: dir.join(spec.files[1].name),
+        speaker_path: Some(voice_file(&root, &voice)?),
+        text,
+        lang,
+        threads: device::inference_threads(&dev),
+        use_gpu: !cpu_only_path(&root, spec.id).exists(),
+        request_id,
+        exclusive: memory_is_tight(&dev),
+    };
+    let wav = run_engine_task(move || {
+        let _guard = CrashGuard::arm(&root, spec.id, request.use_gpu && engine::gpu_supported());
+        let (wav, stats) = tts::synthesize(&request)?;
+        if stats.cancelled {
+            return Err(CANCELLED_ERROR.into());
+        }
+        // 两秒以上的音频才记速度 (太短的不准): 合成速度 ÷ 播放速度
+        if stats.audio_ms >= 2000 && stats.gen_ms > 0 {
+            let factor = stats.audio_ms as f32 / stats.gen_ms as f32;
+            let old = read_speed(&root, spec.id).filter(|(_, gpu)| *gpu == stats.gpu).map(|s| s.0);
+            let _ = std::fs::write(speed_path(&root, spec.id), format!("{:.2} {}", blend_speed(old, factor), if stats.gpu { "gpu" } else { "cpu" }));
+        }
+        Ok(stretch::stretch_wav(wav, rate.clamp(0.5, 3.0)))
+    })
+    .await?;
+    schedule_idle_unload();
+    Ok(tauri::ipc::Response::new(wav))
+}
+
+#[cfg(not(llm_engine))]
+#[tauri::command]
+pub async fn local_llm_speak(
+    _app: AppHandle,
+    _model: String,
+    _text: String,
+    _lang: String,
+    _voice: String,
+    _rate: f32,
+    _request_id: u64,
+) -> Result<tauri::ipc::Response, String> {
+    Err("此版本不支持本机模型".into())
+}
+
 /// 模型加载与推理放独立线程 (不占异步运行时), 原生库里的 panic 转成错误
 #[cfg(llm_engine)]
 async fn run_engine_task<T: Send + 'static>(task: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
@@ -595,7 +768,10 @@ fn schedule_idle_unload() {
     let spawned = std::thread::Builder::new().name("lightread-llm-idle".into()).spawn(|| {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(20));
-            if !engine::unload_if_idle(IDLE_UNLOAD_MS) {
+            // 两个都要问到 (不能短路): 各自空闲够久就各自释放
+            let text_loaded = engine::unload_if_idle(IDLE_UNLOAD_MS);
+            let voice_loaded = tts::unload_if_idle(IDLE_UNLOAD_MS);
+            if !text_loaded && !voice_loaded {
                 break;
             }
         }
@@ -637,6 +813,25 @@ mod tests {
         }
         assert!(spec("hy-mt2-1.8b-q4").is_ok());
         assert!(spec("nope").is_err());
+        for m in MODELS {
+            assert_eq!(m.req.download, m.total_size(), "{}: 要求里的下载量与文件对不上", m.id);
+            assert!(matches!(m.kind, "translate" | "tts"));
+        }
+        // 语音模型: 主干在前, 声码器在后 (local_llm_speak 按这个顺序取)
+        assert!(QWEN3_TTS.files[1].name.starts_with("mmproj-"));
+    }
+
+    #[test]
+    fn reference_voices_are_written_once_and_repaired() {
+        let root = temp_root();
+        let path = voice_file(&root, "male").unwrap();
+        assert!(path.ends_with("voices/male.wav"));
+        assert_eq!(&std::fs::read(&path).unwrap()[..4], b"RIFF");
+        // 被截断的文件会重写; 不认识的名字用默认音色
+        std::fs::write(&path, b"RIFF").unwrap();
+        assert!(std::fs::read(voice_file(&root, "male").unwrap()).unwrap().len() > 100_000);
+        assert!(voice_file(&root, "someone").unwrap().ends_with("voices/female.wav"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -653,6 +848,7 @@ mod tests {
             id: "tiny",
             kind: "translate",
             n_ctx: 1024,
+            req: Requirements::text(4, 1024),
             files: &[ModelFile { name: "a.gguf", size: 4, sha256: "", urls_cn: &[], urls_global: &[] }],
         };
         let root = temp_root();

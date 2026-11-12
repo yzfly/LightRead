@@ -161,6 +161,8 @@ export function splitSpeechText(text: string, maxLen = 80): string[] {
 
 export interface NeuralEngine {
   kind: 'edge' | 'local' | 'cloud'
+  /** 这次朗读结束: 放弃已发出、还没合成完的请求 (本机语音模型用, App 暂无) */
+  cancel?: () => void
   synth: (text: string) => Promise<Blob>
   /** 离线引擎: 单线程推理, 合成请求串行排队并按句切块 */
   local: boolean

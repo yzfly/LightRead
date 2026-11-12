@@ -29,6 +29,8 @@ import { sapiPlatform } from '../services/sapiTts'
 import { KOKORO_VOICES, DEFAULT_KOKORO_SID, kokoroVoiceLabel } from '../services/kokoroVoices'
 import { localPack, localTtsSynthesize, refreshLocalPack } from '../services/localTts'
 import LocalTtsPack from '../components/LocalTtsPack.vue'
+import QwenVoiceRow from '../components/QwenVoiceRow.vue'
+import { localVoiceOffered, localVoiceReady } from '../services/localLlm'
 import LevelSlider from '../components/LevelSlider.vue'
 import { useReadingTimer } from '../composables/useReadingTimer'
 import { usePortraitView } from '../composables/usePortraitView'
@@ -2041,7 +2043,7 @@ watch(ttsState, s => ambient.duck(s === 'playing'), { immediate: true })
 // 换音色 / 倍速 / 引擎: 从正在读的这一句开头按新设置重读 (拖语速滑条时停手 0.4 秒再重读一次);
 // 暂停中改的, 继续时从这句开头读
 let settingsRestartTimer: ReturnType<typeof setTimeout> | undefined
-watch(() => [settings.ttsEngine, settings.ttsRate, settings.edgeVoice, settings.localVoiceId, settings.ttsVoice, cloudSignature(settings), settings.sapiVoice, settings.minimaxApiKey, settings.doubaoApiKey, settings.doubaoAppId], () => {
+watch(() => [settings.ttsEngine, settings.ttsRate, settings.edgeVoice, settings.localVoiceId, settings.qwenVoice, localVoiceReady(), settings.ttsVoice, cloudSignature(settings), settings.sapiVoice, settings.minimaxApiKey, settings.doubaoApiKey, settings.doubaoAppId], () => {
   if (ttsState.value === 'stopped') return
   clearTimeout(settingsRestartTimer)
   if (ttsState.value === 'paused') {
@@ -3651,6 +3653,7 @@ onBeforeUnmount(() => {
         <div class="seg" style="flex: 1">
           <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">{{ t('tts.engineEdge') }}</button>
           <button :class="{ active: settings.ttsEngine === 'local' }" :title="t('tts.engineLocalTitle')" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">{{ t('tts.engineLocal') }}</button>
+          <button v-if="localVoiceOffered()" :class="{ active: settings.ttsEngine === 'qwen' }" :title="t('tts.engineQwenTitle')" @click="settings.ttsEngine = 'qwen'; resetEdgeFailure()">{{ t('tts.engineQwen') }}</button>
           <button :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">{{ t('tts.engineSystem') }}</button>
           <button :class="{ active: settings.ttsEngine === 'cloud' }" :title="t('tts.engineCloudTitle')" @click="settings.ttsEngine = 'cloud'; resetEdgeFailure()">{{ t('tts.engineCloud') }}</button>
           <button v-if="sapiPlatform()" :class="{ active: settings.ttsEngine === 'sapi' }" :title="t('tts.engineSapiTitle')" @click="settings.ttsEngine = 'sapi'; resetEdgeFailure()">{{ t('tts.engineSapi') }}</button>
@@ -3668,6 +3671,9 @@ onBeforeUnmount(() => {
       <div v-else-if="edgeAvailable() && settings.ttsEngine === 'sapi' && sapiPlatform()" class="tts-row">
         <label>{{ t('tts.voice') }}</label>
         <SapiVoiceSelect :busy="ttsState !== 'stopped'" />
+      </div>
+      <div v-else-if="edgeAvailable() && settings.ttsEngine === 'qwen'" class="tts-row">
+        <QwenVoiceRow />
       </div>
       <div v-else-if="edgeAvailable() && settings.ttsEngine === 'local'" class="tts-row">
         <label>{{ t('tts.voice') }}</label>
@@ -3687,7 +3693,7 @@ onBeforeUnmount(() => {
         </AppSelect>
       </div>
       <p v-if="settings.ttsEngine !== 'cloud' || !edgeAvailable()" class="tts-hint">
-        {{ !edgeAvailable() ? t('tts.hintSystem') : settings.ttsEngine === 'edge' ? t('tts.hintEdge') : settings.ttsEngine === 'local' ? t('tts.hintLocal') : settings.ttsEngine === 'sapi' ? t('tts.hintSapi') : t('tts.hintSystem') }}
+        {{ !edgeAvailable() ? t('tts.hintSystem') : settings.ttsEngine === 'edge' ? t('tts.hintEdge') : settings.ttsEngine === 'local' ? t('tts.hintLocal') : settings.ttsEngine === 'qwen' ? t(localVoiceReady() ? 'tts.hintQwen' : 'tts.hintQwenFallback') : settings.ttsEngine === 'sapi' ? t('tts.hintSapi') : t('tts.hintSystem') }}
       </p>
     </div>
 

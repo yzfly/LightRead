@@ -16,7 +16,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 default = ["local-llm"]
 # 本机模型 (llama.cpp, src/local_llm): 离线翻译与本机语音。构建需要 cmake 与 libclang;
 # 只对 macOS / Windows / Android 生效 (见下方依赖表); 关掉它 (--no-default-features) 得到不带引擎的包。
-local-llm = ["dep:llama-cpp-2"]
+local-llm = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
 # Windows 用显卡 (Vulkan); 构建机要装 Vulkan SDK, 默认不开。macOS (Apple 芯片) 自带 Metal, 不需要它。
 local-llm-vulkan = ["local-llm", "llama-cpp-2/vulkan"]
 
@@ -81,10 +81,13 @@ tauri-plugin-global-shortcut = "2"
 # 不用 openmp (少一个运行库依赖, 用 llama.cpp 自己的线程池)。macOS (Apple 芯片) 自动带 Metal。
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["mtmd"], optional = true }
+# 语音生成 (local_llm/tts.rs) 直接用底层接口: 安全封装不暴露它需要的指针
+llama-cpp-sys-2 = { version = "=0.1.161", default-features = false, features = ["mtmd"], optional = true }
 
 # Android: C++ 运行库静态链接, APK 里不用再带 libc++_shared.so
 [target.'cfg(target_os = "android")'.dependencies]
 llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["mtmd", "android-static-stdcxx"], optional = true }
+llama-cpp-sys-2 = { version = "=0.1.161", default-features = false, features = ["mtmd", "static-stdcxx"], optional = true }
 
 # iOS 原生壳 (Swift), 与 Android 的 MainActivity.kt 对应
 [target.'cfg(target_os = "ios")'.dependencies]

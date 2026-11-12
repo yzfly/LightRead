@@ -7,6 +7,7 @@ import { reactive } from 'vue'
 import { isTauri } from '../storage/types'
 import { useSettings } from '../stores/settings'
 import { logEvent } from './diagnostics'
+import { LOCAL_VOICE_MODEL, voiceModelUsable } from './localVoiceCore'
 
 export interface LocalModel {
   id: string
@@ -21,8 +22,8 @@ export interface LocalModel {
   reasons: string[]
   /** 上次使用时应用意外退出, 已停用, 需用户确认再试 */
   crashed: boolean
-  /** 实测生成速度 (token/秒), 没用过为 null */
-  tokensPerSecond: number | null
+  /** 实测速度, 没用过为 null: 翻译模型是 token/秒, 语音模型是「合成速度 ÷ 播放速度」(大于 1 才跟得上朗读) */
+  speed: number | null
   gpu: boolean | null
 }
 
@@ -203,6 +204,41 @@ export async function* localGenerate(
     // 调用方提前退出循环 (不再要后面的文字) 时也让原生层停下
     if (!finished) cancel()
   }
+}
+
+/** 听书面板里要不要出现「本机」语音: 这个版本带引擎, 且这台设备带得动 (或已经下载过) */
+export function localVoiceOffered(): boolean {
+  const m = localLlm.available ? localModel(LOCAL_VOICE_MODEL) : undefined
+  return !!m && (m.supported || m.installed)
+}
+
+/** 本机语音现在能不能用 (否则朗读暂时走在线语音) */
+export function localVoiceReady(): boolean {
+  return voiceModelUsable(localModel(LOCAL_VOICE_MODEL))
+}
+
+/** Rust 侧表示「这次朗读被取消了」(翻页、停止), 不是故障 */
+export const LOCAL_LLM_CANCELLED = 'LOCAL_LLM_CANCELLED'
+export const isLocalLlmCrash = (e: unknown) => String((e as any)?.message ?? e).includes(LOCAL_LLM_CRASHED)
+
+/**
+ * 用本机语音模型读一段文字, 返回 WAV。rate 是语速倍数 (原生层变速不变调)。
+ * 模型首次加载要一两秒; 合成在原生层串行, 并发调用按先后排队。
+ * onRequest 收到这次请求的编号, 之后可用 cancelLocalSpeech(编号) 放弃它和更早的请求。
+ */
+export async function localSpeak(
+  text: string,
+  opts: { model: string; lang: string; voice: string; rate: number; onRequest?: (id: number) => void },
+): Promise<Blob> {
+  const requestId = nextRequestId()
+  opts.onRequest?.(requestId)
+  const bytes = await invoke<ArrayBuffer>('local_llm_speak', { model: opts.model, text, lang: opts.lang, voice: opts.voice, rate: opts.rate, requestId })
+  return new Blob([bytes], { type: 'audio/wav' })
+}
+
+/** 停止朗读: 让原生层放弃编号不大于 upTo 的、已经发出还没合成完的段落 (不再占着处理器 / 显卡) */
+export function cancelLocalSpeech(upTo: number): void {
+  if (upTo > 0) void invoke('local_llm_cancel', { requestId: upTo }).catch(() => {})
 }
 
 /** 应用退到后台等时机: 立刻释放内存里的模型 */

@@ -200,7 +200,7 @@ try {
     await p.evaluate(() => {
       const callbacks = new Map()
       let id = 0
-      const model = { id: 'hy-mt2-1.8b-q4', kind: 'translate', size: 1133080448, installed: false, downloaded: 0, running: false, supported: true, reasons: [], crashed: false, tokensPerSecond: null, gpu: null }
+      const model = { id: 'hy-mt2-1.8b-q4', kind: 'translate', size: 1133080448, installed: false, downloaded: 0, running: false, supported: true, reasons: [], crashed: false, speed: null, gpu: null }
       const wait = ms => new Promise(r => setTimeout(r, ms))
       let progressHandler = null
       window.__llm = { calls: [], model }
@@ -228,7 +228,7 @@ try {
             pieces.forEach((text, index) => send({ index, message: { type: 'piece', text } }))
             // 统计走通道, 且可能晚于命令返回才到: 末尾的文字不能丢
             setTimeout(() => send({ index: pieces.length, message: { type: 'done', tokens: 12, promptTokens: 30, loadMs: 900, promptMs: 300, genMs: 200, gpu: true, cancelled: false } }), 120)
-            model.tokensPerSecond = 60
+            model.speed = 60
             model.gpu = true
             return null
           }

@@ -55,7 +55,7 @@
     "test:updater": "node --experimental-strip-types --test scripts/test-updater.mjs",
     "check:release": "node scripts/check-release.mjs",
     "test:listen-eta": "node --experimental-strip-types --test scripts/test-listen-eta.mjs",
-    "test:read-aloud": "node --experimental-strip-types --test scripts/test-read-aloud.mjs scripts/test-listen-player.mjs scripts/test-voice-catalog.mjs",
+    "test:read-aloud": "node --experimental-strip-types --test scripts/test-read-aloud.mjs scripts/test-listen-player.mjs scripts/test-voice-catalog.mjs scripts/test-local-voice.mjs",
     "test:dianjing": "node --experimental-strip-types --test scripts/test-dianjing.mjs",
     "test:usage-stats": "node --experimental-strip-types --test scripts/test-usage-stats.mjs",
     "test:ambient": "node --experimental-strip-types --test scripts/test-ambient.mjs",

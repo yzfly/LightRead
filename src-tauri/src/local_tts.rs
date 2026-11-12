@@ -97,7 +97,12 @@ use crate::model_download::{download_file, normalize_proxy};
 
 #[cfg(test)]
 pub(crate) async fn synthesize_for_test(root: PathBuf, text: String) -> Result<Vec<u8>, String> {
-    run_engine_task(move || synthesize_at(&root, &text, DEFAULT_SID, 1.0)).await
+    synthesize_voice_for_test(root, text, DEFAULT_SID).await
+}
+
+#[cfg(test)]
+pub(crate) async fn synthesize_voice_for_test(root: PathBuf, text: String, sid: i32) -> Result<Vec<u8>, String> {
+    run_engine_task(move || synthesize_at(&root, &text, sid, 1.0)).await
 }
 
 #[cfg(test)]
@@ -780,6 +785,32 @@ mod download_live {
         let wav = synthesize_for_test(root.clone(), "离线语音安装测试。".into()).await.expect("synthesize");
         assert_eq!(&wav[..4], b"RIFF");
         let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+    }
+
+    /// 重新生成本机语音 (Qwen3-TTS) 的参考音色 src-tauri/resources/voices/*.wav:
+    /// 用 Kokoro 的两个推荐音色各读一句话 (Kokoro 模型 Apache-2.0, 合成的音频可随应用分发)。
+    /// LIGHTREAD_REF_VOICE_OUT=<输出目录> cargo test local_tts::download_live::makes_reference_voices -- --ignored
+    #[tokio::test(flavor = "current_thread")]
+    #[ignore]
+    async fn makes_reference_voices() {
+        use super::desktop::{install_archive, synthesize_voice_for_test, Route};
+        let out = std::path::PathBuf::from(std::env::var("LIGHTREAD_REF_VOICE_OUT").expect("LIGHTREAD_REF_VOICE_OUT"));
+        let dir = std::env::temp_dir().join("lightread-ref-voices").join("tts-models");
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.join("kokoro-multi-lang-v1_1");
+        if !root.join("model.onnx").exists() {
+            let archive = dir.join("kokoro-download.tar.bz2");
+            download_archive_for_test(&archive, &Route::Direct).await.expect("download");
+            install_archive(&archive, &root).expect("install");
+        }
+        // sid 3 = zf_001 (女声), sid 59 = zm_010 (男声): 模型卡给出示例的两个音色
+        for (name, sid) in [("female", 3), ("male", 59)] {
+            let text = "阅读是一场安静的旅行，每翻开一页，都有新的风景在等着你。";
+            let wav = synthesize_voice_for_test(root.clone(), text.into(), sid).await.expect("synthesize");
+            assert_eq!(&wav[..4], b"RIFF");
+            std::fs::write(out.join(format!("{name}.wav")), &wav).unwrap();
+            println!("{name}: {} bytes", wav.len());
+        }
     }
 
     /// 下到一半中断 (模拟离开 / 断网), 再次下载应从已下载的位置续传并通过校验。

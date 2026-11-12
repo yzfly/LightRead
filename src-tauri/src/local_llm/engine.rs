@@ -27,6 +27,8 @@ pub(crate) struct GenRequest {
     pub use_gpu: bool,
     pub request_id: u64,
     pub sampling: Sampling,
+    /// 内存不宽裕: 加载前先释放语音模型
+    pub exclusive: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -59,6 +61,10 @@ struct Loaded {
     gpu: bool,
 }
 
+/// 翻译与语音共用一个「正在推理」的位置: 两者串行 (同时跑只会互相抢处理器 / 显卡),
+/// 也让「加载自己之前先释放对方」不会与对方的推理交错。
+pub(super) static SLOT: Mutex<()> = Mutex::new(());
+
 static BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
 static ENGINE: Mutex<Option<Loaded>> = Mutex::new(None);
 /// 编号不大于它的请求都已取消 (前端编号单调递增)
@@ -67,11 +73,11 @@ static CANCEL_UPTO: AtomicU64 = AtomicU64::new(0);
 static LAST_USED_MS: AtomicU64 = AtomicU64::new(0);
 static EPOCH: OnceLock<Instant> = OnceLock::new();
 
-fn now_ms() -> u64 {
+pub(super) fn now_ms() -> u64 {
     EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64 + 1
 }
 
-fn backend() -> Result<&'static LlamaBackend, String> {
+pub(super) fn backend() -> Result<&'static LlamaBackend, String> {
     BACKEND
         .get_or_init(|| {
             // llama.cpp 默认把加载日志写到 stderr; 关掉, 失败原因由返回值给出
@@ -89,6 +95,11 @@ pub(crate) fn gpu_supported() -> bool {
 
 pub(crate) fn cancel(request_id: u64) {
     CANCEL_UPTO.fetch_max(request_id, Ordering::SeqCst);
+}
+
+/// 应用退出: 让正在生成的请求尽快停下
+pub(crate) fn cancel_all() {
+    CANCEL_UPTO.store(u64::MAX, Ordering::SeqCst);
 }
 
 fn cancelled(request_id: u64) -> bool {
@@ -153,6 +164,7 @@ fn flush_utf8(pending: &mut Vec<u8>, emit: &mut dyn FnMut(&str)) {
 /// 生成一段回复, 文本逐段交给 `on_piece`。闪退标记要在加载之前就立好, 由调用方负责。
 pub(crate) fn generate(req: &GenRequest, on_piece: &mut dyn FnMut(&str)) -> Result<GenStats, String> {
     let backend = backend()?;
+    let _slot = SLOT.lock().unwrap_or_else(|e| e.into_inner());
     let mut guard = ENGINE.lock().map_err(|_| "本机模型引擎锁已损坏".to_string())?;
     let mut stats = GenStats { prompt_tokens: 0, tokens: 0, load_ms: 0, prompt_ms: 0, gen_ms: 0, gpu: false, cancelled: false };
     if cancelled(req.request_id) {
@@ -164,6 +176,9 @@ pub(crate) fn generate(req: &GenRequest, on_piece: &mut dyn FnMut(&str)) -> Resu
     if guard.as_ref().is_none_or(|l| l.id != req.model_id || (l.gpu && !want_gpu)) {
         // 先释放旧模型再加载, 免得两份同时占内存
         *guard = None;
+        if req.exclusive {
+            super::tts::unload(None);
+        }
         let started = Instant::now();
         let (model, gpu) = match load(backend, &req.model_path, want_gpu) {
             Ok(m) => (m, want_gpu),
@@ -299,6 +314,7 @@ mod tests {
                     use_gpu,
                     request_id: id,
                     sampling: Sampling { temperature: 0.2, top_p: 0.6, top_k: 20, repeat_penalty: 1.05 },
+                    exclusive: false,
                 },
                 &mut |s| out.push_str(s),
             )
@@ -326,6 +342,7 @@ mod tests {
                 use_gpu: gpu,
                 request_id: 102,
                 sampling: Sampling { temperature: 0.2, top_p: 0.6, top_k: 20, repeat_penalty: 1.05 },
+                    exclusive: false,
             },
             &mut |_| {},
         )

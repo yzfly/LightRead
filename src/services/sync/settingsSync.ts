@@ -73,6 +73,7 @@ export const SETTINGS_SYNC_SPEC: SettingsSpec = {
   ttsVoice: LOCAL,
   edgeVoice: SYNC,
   localVoiceId: SYNC,
+  qwenVoice: SYNC,
   /** SAPI 语音取决于这台 Windows 装了什么 */
   sapiVoice: LOCAL,
   cloudTtsProvider: SYNC,

@@ -36,6 +36,11 @@ const modules = {
     export const localTtsSynthesize = (...args) => globalThis.__ttsTest.synthesize(...args);
     export const localPack = { crashed: false };
     export const isLocalCrashError = e => String(e?.message ?? e).includes('LOCAL_TTS_CRASHED')`,
+  './localLlm.ts': `export const localModel = () => undefined;
+    export const localSpeak = () => { throw new Error('unexpected on-device voice call') };
+    export const cancelLocalSpeech = () => {};
+    export const refreshLocalLlm = () => Promise.resolve();
+    export const isLocalLlmCrash = () => false`,
   './edgeTts': `export const edgeAvailable = () => false;
     export const edgePause = () => {};
     export const edgeResume = () => {};

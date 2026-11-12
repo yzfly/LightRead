@@ -99,6 +99,8 @@ import {
 import { isLocalCrashError, localPack, localTtsAvailable, localTtsSynthesize, localTtsWarmup } from './localTts'
 import { cloudErrorCode, cloudSignature, cloudSynthesize, isTransientCloudError } from './cloudTts.ts'
 import { sapiPlatform, sapiSynthesize } from './sapiTts.ts'
+import { cancelLocalSpeech, isLocalLlmCrash, localModel, localSpeak, refreshLocalLlm } from './localLlm.ts'
+import { LOCAL_VOICE_MODEL, speechLang, voiceModelUsable } from './localVoiceCore.ts'
 
 /** 神经引擎失败后本次会话回退系统语音, 避免每段都等超时 */
 let neuralFailed = false
@@ -157,12 +159,14 @@ export function splitSpeechText(text: string, maxLen = 80): string[] {
 }
 
 export interface NeuralEngine {
-  kind: 'edge' | 'local' | 'cloud' | 'sapi'
+  kind: 'edge' | 'local' | 'cloud' | 'sapi' | 'qwen'
   synth: (text: string) => Promise<Blob>
   /** 离线引擎: 单线程推理, 合成请求串行排队并按句切块 */
   local: boolean
   /** 失败后值得重试一次 (网络抖动、限流) */
   retryable?: (error: unknown) => boolean
+  /** 这次朗读结束 (停止 / 跳转): 放弃已发出、还没合成完的请求 */
+  cancel?: () => void
 }
 
 /** 当前设置下的神经合成器 (edge 在线 / local 离线); 不可用或本次会话已失败返回 null (用系统语音) */
@@ -182,6 +186,26 @@ export function neuralEngine(): NeuralEngine | null {
   }
   if (settings.ttsEngine === 'sapi' && edgeAvailable() && sapiPlatform()) {
     return { kind: 'sapi', local: true, synth: text => sapiSynthesize(text, settings.sapiVoice, settings.ttsRate) }
+  }
+  if (settings.ttsEngine === 'qwen' && edgeAvailable()) {
+    // 本机语音模型: 没下载、带不动、实测跟不上朗读或因闪退停用时, 自动改用在线语音 (设置不变, 条件恢复后自动用回)
+    if (voiceModelUsable(localModel(LOCAL_VOICE_MODEL))) {
+      // 只取消这个引擎对象自己发出的请求: 下一次朗读是新的对象, 不会被上一次的收尾误伤
+      let lastRequest = 0
+      return {
+        kind: 'qwen',
+        local: true,
+        synth: text => localSpeak(text, {
+          model: LOCAL_VOICE_MODEL,
+          lang: speechLang(text),
+          voice: settings.qwenVoice,
+          rate: settings.ttsRate,
+          onRequest: id => { lastRequest = id },
+        }),
+        cancel: () => cancelLocalSpeech(lastRequest),
+      }
+    }
+    return { kind: 'edge', local: false, synth: text => edgeSynthesize(text, settings.edgeVoice, settings.ttsRate) }
   }
   if (settings.ttsEngine === 'local' && localTtsAvailable()) {
     return {
@@ -238,6 +262,12 @@ export function reportNeuralFailure(error: unknown) {
     toast(t('tts.localCrashedPaused'), 'error', 8000)
     return
   }
+  if (isLocalLlmCrash(error)) {
+    // 原生层已停用本机语音模型; 刷新状态后 neuralEngine 会改用在线语音
+    void refreshLocalLlm()
+    toast(t('tts.qwenCrashedPaused'), 'error', 8000)
+    return
+  }
   toast(t('tts.neuralUnavailable'), 'error', 4000)
 }
 
@@ -249,6 +279,8 @@ export function forgetLocalModel() {
 /** 打开听书面板时预加载离线模型, 点「开始」时就不必再等; 失败静默 (未安装等) */
 export function warmUpSpeech() {
   const settings = useSettings()
+  // 本机语音模型的状态 (是否下载、实测速度): 本地调用, 很快
+  void refreshLocalLlm()
   if (neuralFailed || settings.ttsEngine !== 'local' || !localTtsAvailable() || localPack.crashed) return
   warmLocal().catch(() => { /* 开始朗读时再报错 */ })
 }
@@ -329,7 +361,7 @@ const synthCache = new Map<string, CacheEntry>()
 const MAX_CACHE = 32
 const cacheKey = (text: string) => {
   const s = useSettings()
-  return `${s.ttsEngine}|${s.edgeVoice}|${s.localVoiceId}|${s.ttsRate}|${s.ttsEngine === 'cloud' ? cloudSignature(s) : ''}|${s.ttsEngine === 'sapi' ? s.sapiVoice : ''}|${text}`
+  return `${s.ttsEngine}|${s.edgeVoice}|${s.localVoiceId}|${s.ttsRate}|${s.ttsEngine === 'cloud' ? cloudSignature(s) : ''}|${s.ttsEngine === 'sapi' ? s.sapiVoice : ''}|${s.ttsEngine === 'qwen' ? `${s.qwenVoice}:${voiceModelUsable(localModel(LOCAL_VOICE_MODEL))}` : ''}|${text}`
 }
 
 /** 取 (或发起) 一块文本的合成; priority 越小越先合成 */

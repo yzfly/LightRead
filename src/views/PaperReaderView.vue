@@ -93,6 +93,8 @@ import { sapiPlatform } from '../services/sapiTts'
 import { KOKORO_VOICES, DEFAULT_KOKORO_SID, kokoroVoiceLabel } from '../services/kokoroVoices'
 import { localPack, localTtsSynthesize, refreshLocalPack } from '../services/localTts'
 import LocalTtsPack from '../components/LocalTtsPack.vue'
+import QwenVoiceRow from '../components/QwenVoiceRow.vue'
+import { localVoiceOffered, localVoiceReady } from '../services/localLlm'
 import {
   dispatchPdfReaderShortcut,
   getPdfShortcutHelpRows,
@@ -5059,6 +5061,7 @@ onBeforeUnmount(() => {
         <div class="seg" style="flex: 1">
           <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">{{ t('tts.engineEdge') }}</button>
           <button :class="{ active: settings.ttsEngine === 'local' }" :title="t('tts.engineLocalTitle')" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">{{ t('tts.engineLocal') }}</button>
+          <button v-if="localVoiceOffered()" :class="{ active: settings.ttsEngine === 'qwen' }" :title="t('tts.engineQwenTitle')" @click="settings.ttsEngine = 'qwen'; resetEdgeFailure()">{{ t('tts.engineQwen') }}</button>
           <button :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">{{ t('tts.engineSystem') }}</button>
           <button :class="{ active: settings.ttsEngine === 'cloud' }" :title="t('tts.engineCloudTitle')" @click="settings.ttsEngine = 'cloud'; resetEdgeFailure()">{{ t('tts.engineCloud') }}</button>
           <button v-if="sapiPlatform()" :class="{ active: settings.ttsEngine === 'sapi' }" :title="t('tts.engineSapiTitle')" @click="settings.ttsEngine = 'sapi'; resetEdgeFailure()">{{ t('tts.engineSapi') }}</button>
@@ -5076,6 +5079,9 @@ onBeforeUnmount(() => {
       <div v-else-if="edgeAvailable() && settings.ttsEngine === 'sapi' && sapiPlatform()" class="tts-row">
         <label>{{ t('tts.voice') }}</label>
         <SapiVoiceSelect :busy="ttsState !== 'stopped'" />
+      </div>
+      <div v-else-if="edgeAvailable() && settings.ttsEngine === 'qwen'" class="tts-row">
+        <QwenVoiceRow />
       </div>
       <div v-else-if="edgeAvailable() && settings.ttsEngine === 'local'" class="tts-row">
         <label>{{ t('tts.voice') }}</label>
@@ -5095,6 +5101,7 @@ onBeforeUnmount(() => {
         </AppSelect>
       </div>
       <p v-if="edgeAvailable() && settings.ttsEngine === 'local'" class="tts-local-hint">{{ t('tts.hintLocal') }}</p>
+      <p v-else-if="edgeAvailable() && settings.ttsEngine === 'qwen'" class="tts-local-hint">{{ t(localVoiceReady() ? 'tts.hintQwen' : 'tts.hintQwenFallback') }}</p>
     </div>
 
     <!-- 自动翻页控制条：运行后自动收起到顶部状态按钮，避免遮挡正文。 -->

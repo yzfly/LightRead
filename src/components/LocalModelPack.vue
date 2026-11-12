@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * 本机翻译模型: 设备评估 / 下载 (后台进行, 可续传) / 开关 / 删除 / 闪退后的恢复。
- * 状态全局共享 (services/localLlm.ts), 设置页与翻译面板共用; 这个版本不带引擎时什么都不显示。
- * compact: 翻译面板里的精简形态 —— 只在「还没下载」时出现, 不放开关和删除。
+ * 本机模型 (翻译 / 语音): 设备评估 / 下载 (后台进行, 可续传) / 开关 / 删除 / 闪退后的恢复。
+ * 状态全局共享 (services/localLlm.ts); 这个版本不带引擎时什么都不显示。
+ * kind: translate (默认, 设置页与翻译面板) 或 tts (听书面板, 用不用由朗读引擎的选择决定, 不放开关)。
+ * compact: 面板里的精简形态 —— 没有标题与分隔线; 翻译面板里只在「还没下载」时出现。
  */
 import { computed, onMounted, ref } from 'vue'
 import { t } from '../i18n'
@@ -11,11 +12,16 @@ import { askConfirm } from '../services/confirm'
 import { toast } from '../services/toast'
 import { clearLocalLlmCrash, downloadLocalModel, localLlm, localModel, refreshLocalLlm, removeLocalModel } from '../services/localLlm'
 import { LOCAL_TRANSLATE_MODEL, LOCAL_TRANSLATE_SLOW_TPS } from '../services/translateCore'
+import { LOCAL_VOICE_MODEL, LOCAL_VOICE_MIN_SPEED } from '../services/localVoiceCore'
 
-const props = defineProps<{ compact?: boolean }>()
+const props = defineProps<{ compact?: boolean; kind?: 'translate' | 'tts' }>()
 const emit = defineEmits<{ ready: [] }>()
 const settings = useSettings()
-const model = computed(() => (localLlm.available ? localModel(LOCAL_TRANSLATE_MODEL) : undefined))
+const voice = computed(() => props.kind === 'tts')
+const modelId = computed(() => (voice.value ? LOCAL_VOICE_MODEL : LOCAL_TRANSLATE_MODEL))
+/** 文案按种类分两套: localModel.* (翻译) / localVoice.* (语音) */
+const ns = computed(() => (voice.value ? 'localVoice' : 'localModel'))
+const model = computed(() => (localLlm.available ? localModel(modelId.value) : undefined))
 const removing = ref(false)
 
 onMounted(() => void refreshLocalLlm())
@@ -43,22 +49,23 @@ const downloadLabel = computed(() => {
 /** 实测速度说成人话 (token/秒对用户没有意义) */
 const speedText = computed(() => {
   const m = model.value
-  if (!m || m.tokensPerSecond === null) return t('localModel.speedUnknown')
+  if (!m || m.speed === null) return t('localModel.speedUnknown')
   const how = m.gpu ? t('localModel.onGpu') : t('localModel.onCpu')
-  if (m.tokensPerSecond < LOCAL_TRANSLATE_SLOW_TPS) return t('localModel.speedSlow', { how })
-  return t(m.tokensPerSecond >= 30 ? 'localModel.speedFast' : 'localModel.speedOk', { how })
+  if (voice.value) return t(m.speed < LOCAL_VOICE_MIN_SPEED ? 'localVoice.speedSlow' : 'localVoice.speedOk', { how })
+  if (m.speed < LOCAL_TRANSLATE_SLOW_TPS) return t('localModel.speedSlow', { how })
+  return t(m.speed >= 30 ? 'localModel.speedFast' : 'localModel.speedOk', { how })
 })
-/** 精简形态只负责「邀请下载」: 装好或带不动时不占翻译面板的地方 */
+/** 翻译面板的精简形态只负责「邀请下载」: 装好或带不动时不占地方; 语音的状态始终要看得到 */
 const visible = computed(() => {
   const m = model.value
   if (!m) return false
-  return props.compact ? !m.installed && m.supported : true
+  return props.compact && !voice.value ? !m.installed && m.supported : true
 })
 
 async function download() {
   try {
-    await downloadLocalModel(LOCAL_TRANSLATE_MODEL)
-    toast(t('localModel.ready'), 'success')
+    await downloadLocalModel(modelId.value)
+    toast(t(`${ns.value}.ready`), 'success')
     emit('ready')
   } catch (e: any) {
     toast(t('localModel.downloadFailed', { msg: e?.message ?? e }), 'error', 8000)
@@ -66,10 +73,10 @@ async function download() {
 }
 
 async function remove() {
-  if (!(await askConfirm(t('localModel.removeConfirm'), { confirmLabel: t('common.delete'), danger: true }))) return
+  if (!(await askConfirm(t(`${ns.value}.removeConfirm`), { confirmLabel: t('common.delete'), danger: true }))) return
   removing.value = true
   try {
-    await removeLocalModel(LOCAL_TRANSLATE_MODEL)
+    await removeLocalModel(modelId.value)
   } catch (e: any) {
     toast(e?.message ?? String(e), 'error')
   } finally {
@@ -79,7 +86,7 @@ async function remove() {
 
 async function retry() {
   try {
-    await clearLocalLlmCrash(LOCAL_TRANSLATE_MODEL)
+    await clearLocalLlmCrash(modelId.value)
   } catch (e: any) {
     toast(e?.message ?? String(e), 'error')
   }
@@ -89,17 +96,17 @@ async function retry() {
 <template>
   <div v-if="visible && model" class="model-pack" :class="{ compact }">
     <div v-if="!compact" class="mp-head">
-      <span class="mp-title">{{ t('localModel.translateTitle') }}</span>
-      <label v-if="model.installed && !model.crashed" class="mp-switch" :title="t('localModel.use')">
+      <span class="mp-title">{{ t(`${ns}.title`) }}</span>
+      <label v-if="!voice && model.installed && !model.crashed" class="mp-switch" :title="t('localModel.use')">
         <input v-model="settings.localTranslate" type="checkbox" role="switch" :aria-label="t('localModel.use')" :aria-checked="settings.localTranslate" />
         <span class="mp-switch-track" aria-hidden="true"></span>
       </label>
     </div>
-    <p class="mp-note">{{ compact ? t('localModel.offer', { size: sizeText }) : t('localModel.translateDesc', { size: sizeText }) }}</p>
+    <p v-if="!(voice && model.installed)" class="mp-note">{{ t(compact ? `${ns}.offer` : `${ns}.desc`, { size: sizeText }) }}</p>
 
     <template v-if="model.installed">
       <template v-if="model.crashed">
-        <p class="mp-note danger">{{ t('localModel.crashed') }}</p>
+        <p class="mp-note danger">{{ t(`${ns}.crashed`) }}</p>
         <div class="mp-actions">
           <button class="btn btn-sm" @click="retry">{{ t('localModel.retry') }}</button>
           <button class="btn btn-sm" :disabled="removing" @click="remove">{{ t('localModel.remove') }}</button>
@@ -113,7 +120,7 @@ async function retry() {
       </template>
     </template>
     <template v-else>
-      <p v-if="!model.supported" class="mp-note danger">{{ t('localModel.unsupported', { reasons: model.reasons.join('; ') }) }}</p>
+      <p v-if="!model.supported" class="mp-note danger">{{ t(`${ns}.unsupported`, { reasons: model.reasons.join('; ') }) }}</p>
       <template v-else>
         <div class="mp-actions">
           <button class="btn btn-sm" :class="{ 'btn-primary': !compact }" :disabled="model.running" @click="download">{{ downloadLabel }}</button>

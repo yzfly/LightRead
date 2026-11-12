@@ -319,7 +319,11 @@ const SPEED = 50 // 时钟加速: 1 秒音频 = 20ms
 const SR = 1000
 
 const env = {
-  settings: { ttsEngine: 'edge', ttsRate: 1, edgeVoice: '', localVoiceId: 0, ttsVoice: '' },
+  settings: { ttsEngine: 'edge', ttsRate: 1, edgeVoice: '', localVoiceId: 0, ttsVoice: '', qwenVoice: 'female' },
+  voiceModel: undefined,
+  voiceCalls: [],
+  voiceCancels: [],
+  voiceSeq: 0,
   synth: async text => new Blob([text]),
   notices: [],
   synthCalls: [],
@@ -464,6 +468,18 @@ const mocks = {
     export const edgePause = () => {}; export const edgeResume = () => {}; export const edgeStop = () => {};
     export const edgeSynthesize = ${fakeSynth};
     export const playAudio = async () => 'end'`,
+  // 本机语音模型 (Qwen3-TTS): 状态与合成都走替身, 记录每次请求的参数与取消
+  './localLlm.ts': `export const localModel = () => globalThis.__listenEnv.voiceModel;
+    export const localSpeak = (text, opts) => {
+      const env = globalThis.__listenEnv
+      const id = ++env.voiceSeq
+      opts.onRequest?.(id)
+      env.voiceCalls.push({ id, text, model: opts.model, lang: opts.lang, voice: opts.voice, rate: opts.rate })
+      return (${fakeSynth})(text)
+    };
+    export const cancelLocalSpeech = id => { globalThis.__listenEnv.voiceCancels.push(id) };
+    export const refreshLocalLlm = () => Promise.resolve();
+    export const isLocalLlmCrash = () => false`,
   './localTts': `export const localTtsAvailable = () => true;
     export const localTtsWarmup = () => Promise.resolve();
     export const localTtsSynthesize = ${fakeSynth};
@@ -486,6 +502,9 @@ function resetEnv(engine = 'edge') {
   resetEdgeFailure()
   Object.assign(env.settings, { ttsEngine: engine, ttsRate: 1 })
   env.synth = async text => new Blob([text])
+  env.voiceModel = undefined
+  env.voiceCalls.length = 0
+  env.voiceCancels.length = 0
   env.notices.length = 0
   env.synthCalls.length = 0
   env.inFlight = 0
@@ -573,6 +592,41 @@ test('播放器: 离线引擎串行合成', async () => {
   assert.deepEqual(log.keys, sentences.map(s => s.key))
   assert.equal(env.maxInFlight, 1)
   assert.ok(env.synthCalls[0].length <= CHUNK_PROFILES.local.firstMax)
+})
+
+test('播放器: 本机语音模型逐块串行合成, 带上语言 / 音色 / 语速; 读完后收尾取消不影响已完成的块', async () => {
+  resetEnv('qwen')
+  env.voiceModel = { installed: true, supported: true, crashed: false, speed: 1.9 }
+  Object.assign(env.settings, { qwenVoice: 'male', ttsRate: 1.25 })
+  const sentences = book(20)
+  env.synth = async text => { await tick(3); return new Blob([text]) }
+  const { player, log } = makePlayer()
+  player.play(makeFeed(sentences))
+  await log.done
+  assert.deepEqual(log.keys, sentences.map(s => s.key))
+  assert.equal(env.maxInFlight, 1)
+  assert.ok(env.voiceCalls.length >= 2)
+  assert.ok(env.voiceCalls[0].text.length <= CHUNK_PROFILES.qwen.firstMax)
+  for (const call of env.voiceCalls) {
+    assert.deepEqual({ model: call.model, lang: call.lang, voice: call.voice, rate: call.rate }, { model: 'qwen3-tts-1.7b-q4', lang: 'zh', voice: 'male', rate: 1.25 })
+  }
+  // 这次朗读结束时只取消到它自己发出的最后一个请求
+  assert.deepEqual(env.voiceCancels, [env.voiceCalls.at(-1).id])
+})
+
+test('播放器: 本机语音模型不能用 (没下载 / 实测太慢 / 停用) 时自动走在线语音', async () => {
+  for (const model of [undefined, { installed: false, supported: true, crashed: false, speed: null }, { installed: true, supported: true, crashed: false, speed: 0.8 }, { installed: true, supported: true, crashed: true, speed: 2 }]) {
+    resetEnv('qwen')
+    env.voiceModel = model
+    const sentences = book(6)
+    const { player, log } = makePlayer()
+    player.play(makeFeed(sentences))
+    await log.done
+    assert.deepEqual(log.keys, sentences.map(s => s.key))
+    assert.equal(env.voiceCalls.length, 0, 'on-device voice not used')
+    assert.ok(env.synthCalls.length >= 1, 'online voice used instead')
+    assert.equal(env.notices.length, 0, 'the fallback is silent')
+  }
 })
 
 test('播放器: 暂停冻结时间线, 继续后接着读', async () => {

@@ -258,6 +258,7 @@ pub fn run() {
       local_llm::local_llm_remove,
       local_llm::local_llm_clear_crash,
       local_llm::local_llm_generate,
+      local_llm::local_llm_speak,
       local_llm::local_llm_cancel,
       local_llm::local_llm_unload,
       babeldoc::babeldoc_status,
@@ -310,7 +311,7 @@ pub fn run() {
     // 正常退出时正在朗读不算闪退
     if matches!(&event, tauri::RunEvent::Exit) {
       local_tts::clear_crash_marker_on_exit(app_handle);
-      local_llm::clear_crash_marker_on_exit(app_handle);
+      local_llm::shutdown(app_handle);
     }
     // macOS/移动端通过系统 Opened 事件交付关联文件；冷启动事件同样先进入队列。
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
