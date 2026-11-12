@@ -418,6 +418,7 @@ mod tests {
         // 同一句再读一遍: 时长相近 (声码器内部的随机数不随每段重置, 不保证逐帧相同)
         let again = run("满纸荒唐言，一把辛酸泪。都云作者痴，谁解其中味？", "zh", 102);
         assert!((again.frames - first.frames).abs() <= first.frames / 4, "{again:?} vs {first:?}");
+        #[cfg(unix)]
         unsafe {
             let mut usage: libc::rusage = std::mem::zeroed();
             libc::getrusage(libc::RUSAGE_SELF, &mut usage);

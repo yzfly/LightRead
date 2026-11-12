@@ -27,3 +27,6 @@ if (isTauri() && 'serviceWorker' in navigator) {
 installAndroidSafeArea()
 
 createApp(App).use(createPinia()).use(router).mount('#app')
+
+// 验收用的遥控通道: 只有设了 LIGHTREAD_E2E_DRIVER 的构建才带 (发版检查拒绝这个环境变量), 见 services/e2eDriver.ts
+if (typeof __E2E_DRIVER__ !== 'undefined' && __E2E_DRIVER__) void import('./services/e2eDriver').then(m => m.startE2eDriver(__E2E_DRIVER__))

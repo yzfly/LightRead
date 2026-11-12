@@ -279,9 +279,18 @@ pub fn shutdown(app: &AppHandle) {
     }
 }
 
+/// 速度记录的有效期: 过期后当作没测过, 重新用本机试一次。
+/// 否则一次偏慢的测量会让本机模型永远让位给在线 (不再使用也就不再测速)。
+const SPEED_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
+
 /// 记录的速度: `<数值> <gpu|cpu>` (数值的含义随模型种类, 见 ModelStatus::speed)
 fn read_speed(root: &Path, id: &str) -> Option<(f32, bool)> {
-    let text = std::fs::read_to_string(speed_path(root, id)).ok()?;
+    let path = speed_path(root, id);
+    let age = std::fs::metadata(&path).ok()?.modified().ok()?.elapsed().unwrap_or_default();
+    if age > SPEED_MAX_AGE {
+        return None;
+    }
+    let text = std::fs::read_to_string(path).ok()?;
     let mut parts = text.split_whitespace();
     let tps: f32 = parts.next()?.parse().ok()?;
     (tps.is_finite() && tps > 0.0).then_some((tps, parts.next() == Some("gpu")))
@@ -713,8 +722,9 @@ pub async fn local_llm_speak(
         if stats.cancelled {
             return Err(CANCELLED_ERROR.into());
         }
-        // 两秒以上的音频才记速度 (太短的不准): 合成速度 ÷ 播放速度
-        if stats.audio_ms >= 2000 && stats.gen_ms > 0 {
+        // 两秒以上的音频才记速度 (太短的不准): 合成速度 ÷ 播放速度。
+        // 刚加载完的第一段不记: 它含预热, 偏慢 (M5 实测首段 1.0、之后 1.9), 会把够用的机器误判成跟不上
+        if stats.audio_ms >= 2000 && stats.gen_ms > 0 && stats.load_ms == 0 {
             let factor = stats.audio_ms as f32 / stats.gen_ms as f32;
             let old = read_speed(&root, spec.id).filter(|(_, gpu)| *gpu == stats.gpu).map(|s| s.0);
             let _ = std::fs::write(speed_path(&root, spec.id), format!("{:.2} {}", blend_speed(old, factor), if stats.gpu { "gpu" } else { "cpu" }));
