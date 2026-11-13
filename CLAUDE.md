@@ -198,6 +198,8 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 3. `git tag -a vX.Y.Z -m "vX.Y.Z"`、`git push origin main vX.Y.Z`，再 `gh workflow run release.yml --ref main -f tag=vX.Y.Z`。`.github/workflows/release.yml`：preflight 校验版本与回归测试并建草稿 → macOS arm64 / x64、Windows NSIS、Linux AppImage / deb 构建上传，Rust 1.87 最低版本检查 → publish 核对安装包齐全且**不含 APK**，生成并回验 `SHA256SUMS`，公开为 latest → GitCode 镜像。
 4. 公开后核对下载链接、版本说明、`SHA256SUMS` 与桌面应用内更新。
 
+macOS 包没有 Apple 开发者证书，靠 `tauri.conf.json` 的 `bundle.macOS.signingIdentity: "-"` 做整包临时签名，不要去掉：只有链接器自带签名的包，浏览器下载后在 Apple 芯片 Mac 上报「已损坏」且无法放行（issue #20，v2.10.1 及更早都是这样；应用内更新下载的不带隔离标记所以没暴露）。整包签名后首次打开是「Apple 无法验证」，到「系统设置 → 隐私与安全性」点「仍要打开」。workflow 在 macOS 构建后用 `codesign --verify --deep --strict` 把关。
+
 ### App `app-vX.Y.Z`
 
 1. 修改 `tauri.android.conf.json` / `tauri.ios.conf.json` 的版本，执行 `node scripts/check-release.mjs --platform android --tag app-vX.Y.Z`。

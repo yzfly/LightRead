@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "LightRead",
-  "version": "2.10.1",
+  "version": "2.10.2",
   "identifier": "com.yzfly.lightread",
   "build": {
     "frontendDist": "../dist",
@@ -146,7 +146,9 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": "-",
+      "hardenedRuntime": false
     },
     "windows": {
       "nsis": {
