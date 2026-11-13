@@ -23,6 +23,18 @@ package com.yzfly.lightread
 // 系统安装器。没开「安装未知应用」时由前端引导到该设置页, 回来后再调 install。
 // 清单需要 REQUEST_INSTALL_PACKAGES, 由 scripts/patch-android-project.mjs 在 init 后补上。
 
+//
+// 后台听书 (window.LightReadListen, 前端 src/mobile/services/listenKeepAlive.ts): 听书开始后启动前台服务
+// ListenService (本文件末尾), 持有唤醒锁与常驻通知。没有它, 熄屏或切到后台几分钟后系统就会冻结应用
+// (红米 / 小米最明显), 声音中断。听书期间还要: 1) 撤销 wry 在 onPause 里对 WebView 的暂停;
+// 2) 页面隐藏后 WebView 会把 JS 定时器压到很低的频率, 由这里每 500ms 调一次 window.__lightreadListenPump,
+// 播放器靠它继续排下一段音频。清单里的权限与 <service> 由 scripts/patch-android-project.mjs 补上。
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.ActivityNotFoundException
 import android.content.ContentValues
 import android.content.Context
@@ -31,6 +43,10 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Base64
@@ -46,6 +62,10 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import java.io.File
@@ -66,6 +86,75 @@ class MainActivity : TauriActivity() {
   override fun onPause() {
     activityResumed = false
     super.onPause()
+    // wry 在这里暂停了 WebView; 正在听书就恢复它, 并开始替被压低频率的定时器推进播放器
+    if (listenPlaying) {
+      webView?.onResume()
+      startListenPump()
+    }
+  }
+
+  override fun onDestroy() {
+    stopListenPump()
+    ListenService.stop(this)
+    super.onDestroy()
+  }
+
+  // ---- 后台听书 ----
+
+  @Volatile
+  private var listenPlaying = false
+  private val pumpHandler = Handler(Looper.getMainLooper())
+  private var pumping = false
+  private val pumpTick = object : Runnable {
+    override fun run() {
+      if (!pumping) return
+      if (!listenPlaying || activityResumed) { pumping = false; return }
+      webView?.evaluateJavascript("window.__lightreadListenPump?.()", null)
+      pumpHandler.postDelayed(this, 500)
+    }
+  }
+
+  private fun startListenPump() {
+    if (pumping) return
+    pumping = true
+    pumpHandler.postDelayed(pumpTick, 500)
+  }
+
+  private fun stopListenPump() {
+    pumping = false
+    pumpHandler.removeCallbacks(pumpTick)
+  }
+
+  private var askedNotifications = false
+
+  /** Android 13+ 的通知要用户同意; 不同意前台服务照常运行, 只是通知栏里看不到 */
+  private fun askNotificationsOnce() {
+    if (askedNotifications || Build.VERSION.SDK_INT < 33) return
+    askedNotifications = true
+    val permission = "android.permission.POST_NOTIFICATIONS"
+    if (ContextCompat.checkSelfPermission(this, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED) return
+    try { ActivityCompat.requestPermissions(this, arrayOf(permission), 4201) } catch (e: Exception) { /* 没有也能听 */ }
+  }
+
+  private inner class ListenBridge {
+    /**
+     * state: playing / paused / stopped。title 是书名, text 是章节 (通知上显示)。
+     * 返回 ok / error (个别系统不许此刻启动前台服务: 声音照常, 只是没有后台保护)
+     */
+    @JavascriptInterface
+    fun setState(state: String, title: String, text: String): String {
+      val playing = state == "playing"
+      listenPlaying = playing
+      runOnUiThread {
+        if (playing) {
+          askNotificationsOnce()
+          if (!activityResumed) { webView?.onResume(); startListenPump() }
+        } else {
+          stopListenPump()
+        }
+      }
+      return if (ListenService.update(this@MainActivity, state, title.take(120), text.take(120))) "ok" else "error"
+    }
   }
 
   private inner class LifecycleBridge {
@@ -143,6 +232,7 @@ class MainActivity : TauriActivity() {
     webView.addJavascriptInterface(UpdaterBridge(), "LightReadUpdater")
     webView.addJavascriptInterface(LifecycleBridge(), "LightReadLifecycle")
     webView.addJavascriptInterface(ShareBridge(), "LightReadShare")
+    webView.addJavascriptInterface(ListenBridge(), "LightReadListen")
 
     ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
       val bars = insets.getInsets(
@@ -447,5 +537,138 @@ class MainActivity : TauriActivity() {
         "error"
       }
     }
+  }
+}
+
+/**
+ * 听书的前台服务: 让系统把应用当作正在播放媒体, 熄屏 / 切到后台后不冻结进程。
+ * 播放中持有唤醒锁 (处理器不休眠, 合成与排期照常); 暂停时放掉, 暂停超过 15 分钟自己退出。
+ * 音频本身仍由 WebView 播放, 这里不碰音频。
+ */
+class ListenService : Service() {
+  companion object {
+    private const val CHANNEL = "listen"
+    private const val NOTIFY_ID = 4201
+    private const val PAUSED_LINGER_MS = 15 * 60 * 1000L
+    private const val WAKE_LIMIT_MS = 12 * 60 * 60 * 1000L
+
+    @Volatile
+    private var instance: ListenService? = null
+    @Volatile
+    private var state = "stopped"
+    @Volatile
+    private var title = ""
+    @Volatile
+    private var text = ""
+
+    /** 已在运行的服务直接更新 (后台不许再发启动请求); 没在运行且要播放时才启动 */
+    fun update(context: Context, next: String, nextTitle: String, nextText: String): Boolean {
+      state = next
+      title = nextTitle
+      text = nextText
+      val running = instance
+      if (next == "stopped") {
+        stop(context)
+        return true
+      }
+      if (running != null) {
+        Handler(Looper.getMainLooper()).post { running.refresh() }
+        return true
+      }
+      if (next != "playing") return true
+      return try {
+        ContextCompat.startForegroundService(context, Intent(context, ListenService::class.java))
+        true
+      } catch (e: Exception) {
+        false
+      }
+    }
+
+    fun stop(context: Context) {
+      state = "stopped"
+      try { context.stopService(Intent(context, ListenService::class.java)) } catch (e: Exception) { /* 没在运行 */ }
+    }
+  }
+
+  private var wakeLock: PowerManager.WakeLock? = null
+  private val handler = Handler(Looper.getMainLooper())
+  private val quitWhenIdle = Runnable { if (state != "playing") stopSelf() }
+
+  override fun onBind(intent: Intent?): IBinder? = null
+
+  override fun onCreate() {
+    super.onCreate()
+    instance = this
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      val manager = getSystemService(NotificationManager::class.java)
+      val channel = NotificationChannel(CHANNEL, applicationInfo.loadLabel(packageManager).toString(), NotificationManager.IMPORTANCE_LOW)
+      channel.setShowBadge(false)
+      manager?.createNotificationChannel(channel)
+    }
+  }
+
+  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    refresh()
+    // 被系统回收后不自动重启: 没有网页端就没有可播的内容
+    return START_NOT_STICKY
+  }
+
+  private fun notification(): Notification {
+    val open = packageManager.getLaunchIntentForPackage(packageName)
+    val pending = if (open == null) null else PendingIntent.getActivity(
+      this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+    return NotificationCompat.Builder(this, CHANNEL)
+      .setSmallIcon(if (state == "playing") android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
+      .setContentTitle(title.ifEmpty { applicationInfo.loadLabel(packageManager).toString() })
+      .setContentText(text)
+      .setContentIntent(pending)
+      .setOngoing(state == "playing")
+      .setOnlyAlertOnce(true)
+      .setSilent(true)
+      .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+      .build()
+  }
+
+  /** 按当前状态更新通知与唤醒锁 */
+  fun refresh() {
+    if (state == "stopped") { stopSelf(); return }
+    try {
+      val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+      ServiceCompat.startForeground(this, NOTIFY_ID, notification(), type)
+    } catch (e: Exception) {
+      // 系统不许此刻转前台 (极少见): 退出, 听书照常但没有后台保护
+      stopSelf()
+      return
+    }
+    handler.removeCallbacks(quitWhenIdle)
+    if (state == "playing") {
+      if (wakeLock == null) {
+        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "lightread:listen").apply { setReferenceCounted(false) }
+      }
+      try { wakeLock?.acquire(WAKE_LIMIT_MS) } catch (e: Exception) { /* 没有唤醒锁也继续 */ }
+    } else {
+      releaseWake()
+      handler.postDelayed(quitWhenIdle, PAUSED_LINGER_MS)
+    }
+  }
+
+  private fun releaseWake() {
+    try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (e: Exception) { /* 已释放 */ }
+  }
+
+  /** 从最近任务里划掉应用: 网页端随之结束, 服务也退出 */
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    stopSelf()
+    super.onTaskRemoved(rootIntent)
+  }
+
+  override fun onDestroy() {
+    handler.removeCallbacks(quitWhenIdle)
+    releaseWake()
+    instance = null
+    super.onDestroy()
   }
 }

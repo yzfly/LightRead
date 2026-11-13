@@ -286,6 +286,7 @@ export class MarkTicker {
     this.marks = []
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
+    liveTickers.delete(this)
   }
 
   get pendingCount() { return this.marks.length }
@@ -295,7 +296,8 @@ export class MarkTicker {
     this.timer = null
     const now = this.clock()
     while (this.marks.length && this.marks[0].at <= now + 0.005) this.fire(this.marks.shift()!.key)
-    if (!this.marks.length) return
+    if (!this.marks.length) { liveTickers.delete(this); return }
+    liveTickers.add(this)
     const ms = (this.marks[0].at - now) * 1000
     this.timer = setTimeout(this.tick, Math.min(250, Math.max(10, ms)))
   }
@@ -313,4 +315,31 @@ export async function waitForClock(
   return false
 }
 
-export const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+/**
+ * 还没到点的等待与句子标记。页面隐藏后 WebView 会把定时器压到很低的频率 (隐藏满 5 分钟后约每分钟一次),
+ * 比播放器提前排期的 15 秒还长, 声音会断。安卓原生层在后台听书时定期调 pumpListenTimers(),
+ * 到点的等待由它放行, 不再只靠定时器。
+ */
+interface PendingSleep { at: number; done: () => void }
+const pendingSleeps = new Set<PendingSleep>()
+const liveTickers = new Set<MarkTicker>()
+
+export const sleep = (ms: number) => new Promise<void>(resolve => {
+  const entry: PendingSleep = {
+    at: performance.now() + ms,
+    done: () => {
+      if (!pendingSleeps.delete(entry)) return
+      clearTimeout(timer)
+      resolve()
+    },
+  }
+  pendingSleeps.add(entry)
+  const timer = setTimeout(entry.done, ms)
+})
+
+/** 放行已到点的等待, 并让句子标记按时钟自检一次; 没有到点的什么都不做 */
+export function pumpListenTimers(): void {
+  const now = performance.now()
+  for (const entry of [...pendingSleeps]) if (entry.at <= now) entry.done()
+  for (const ticker of [...liveTickers]) ticker.tick()
+}

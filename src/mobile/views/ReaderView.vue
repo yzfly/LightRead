@@ -17,6 +17,7 @@ import { tapZone } from '../../services/readerTapZone.ts'
 import { getReaderCSS, resolveReaderColors, resolveReaderTheme, HIGHLIGHT_COLORS, listenMarkStyle, type ListenMarkStyle } from '../services/readerTheme.ts'
 import { resolvedTheme } from '../services/appearance.ts'
 import { setPageBarsDark, setSystemBarsHidden, setKeepScreenOn, setVolumeKeyHandler, setNativeSelectionMenu, type VolumeKey } from '../../services/systemBars.ts'
+import { reportListenState } from '../services/listenKeepAlive.ts'
 import { copyText } from '../../services/shareOut.ts'
 import { injectFontIntoDoc, resolveFontFamily } from '../../services/fonts.ts'
 import { isTauri } from '../../storage/types.ts'
@@ -2156,6 +2157,14 @@ function listenFromSelection() {
 
 // 听书出声时压低背景音
 watch(ttsState, s => ambient.duck(s === 'playing'), { immediate: true })
+// 安卓后台听书: 听书期间由原生前台服务保住进程 (services/listenKeepAlive.ts)。
+// 背景音单独播放时本来就在页面隐藏后暂停, 不需要保活
+watch(
+  () => [ttsState.value, meta.value?.title ?? '', chapterLabel.value] as const,
+  ([state, title, chapter]) => reportListenState(state, title, chapter),
+  { immediate: true },
+)
+onBeforeUnmount(() => reportListenState('stopped'))
 
 // 换音色 / 倍速 / 引擎: 从正在读的这一句开头按新设置重读 (拖语速滑条时停手 0.4 秒再重读一次);
 // 暂停中改的, 继续时从这句开头读

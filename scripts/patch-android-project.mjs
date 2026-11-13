@@ -8,6 +8,9 @@
 //     provider 与 cache-path "."; 缺 cache-path 时补一条只覆盖 updates/ 的路径, 缺 provider 直接报错。
 // 划词「用其他应用翻译」(MainActivity.kt 的 LightReadShare.processText) 需要:
 //  3. <queries> 声明 PROCESS_TEXT, 否则 Android 11+ 的软件包可见性规则下查不到已安装的翻译应用。
+// 后台听书 (MainActivity.kt 末尾的 ListenService) 需要:
+//  4. 前台服务 / 媒体播放类型 / 唤醒锁 / 通知权限, 以及 <service> 声明 (foregroundServiceType="mediaPlayback");
+//     缺了任何一项, 熄屏或切到后台几分钟后系统会冻结应用, 听书中断 (红米 / 小米最明显)。
 // 脚本是幂等的。
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -17,11 +20,43 @@ const INSTALL_PERMISSION = '<uses-permission android:name="android.permission.RE
 
 const PROCESS_TEXT_QUERY = '<queries>\n        <intent>\n            <action android:name="android.intent.action.PROCESS_TEXT" />\n            <data android:mimeType="text/plain" />\n        </intent>\n    </queries>'
 
+const LISTEN_PERMISSIONS = [
+  'android.permission.FOREGROUND_SERVICE',
+  'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+  'android.permission.WAKE_LOCK',
+  'android.permission.POST_NOTIFICATIONS',
+]
+
+const LISTEN_SERVICE = '<service\n            android:name=".ListenService"\n            android:exported="false"\n            android:foregroundServiceType="mediaPlayback" />'
+
+function patchListenService(xml) {
+  let next = xml
+  for (const name of LISTEN_PERMISSIONS) {
+    if (next.includes(`"${name}"`)) continue
+    // 接在最后一条权限声明之后, 不打乱已有顺序
+    const all = [...next.matchAll(/^([ \t]*)<uses-permission\b[^>]*\/>/gm)]
+    const last = all.at(-1)
+    if (!last) throw new Error('AndroidManifest.xml 没有任何权限声明, 无法定位插入点')
+    const at = last.index + last[0].length
+    next = `${next.slice(0, at)}\n${last[1]}<uses-permission android:name="${name}" />${next.slice(at)}`
+  }
+  if (!next.includes('android:name=".ListenService"')) {
+    const at = next.lastIndexOf('</application>')
+    if (at < 0) throw new Error('AndroidManifest.xml 缺少 </application>')
+    const lineStart = next.lastIndexOf('\n', at) + 1
+    const indent = /^[ \t]*$/.test(next.slice(lineStart, at)) ? next.slice(lineStart, at) : ''
+    next = indent
+      ? `${next.slice(0, lineStart)}${indent}    ${LISTEN_SERVICE}\n${next.slice(lineStart)}`
+      : `${next.slice(0, at)}${LISTEN_SERVICE}${next.slice(at)}`
+  }
+  return next
+}
+
 export function patchManifest(xml) {
   if (!/android:authorities="\$\{applicationId\}\.fileprovider"/.test(xml) || !xml.includes('androidx.core.content.FileProvider')) {
     throw new Error('AndroidManifest.xml 缺少 ${applicationId}.fileprovider 的 FileProvider, 应用内更新无法安装')
   }
-  return patchProcessTextQuery(patchInstallPermission(xml))
+  return patchListenService(patchProcessTextQuery(patchInstallPermission(xml)))
 }
 
 function patchProcessTextQuery(xml) {

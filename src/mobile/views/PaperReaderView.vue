@@ -10,6 +10,7 @@ import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_STOPS, rateText } from '../../serv
 import { pingUsage } from '../../services/usageStats'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { setVolumeKeyHandler } from '../../services/systemBars.ts'
+import { reportListenState } from '../services/listenKeepAlive.ts'
 import { useRoute, useRouter } from 'vue-router'
 import { getStorage, isTauri, type BookMeta, type AnnotationRec } from '../../storage'
 import { HIGHLIGHT_TEXT_MAX } from '../../services/annotationContext.ts'
@@ -3282,6 +3283,8 @@ watch(() => settings.autoReadSeconds, () => {
 const ttsPanel = ref(false)
 const ttsState = ref<'stopped' | 'playing' | 'paused'>('stopped')
 const ttsVoices = ref<{ name: string; lang: string }[]>([])
+// 安卓后台听书: 朗读期间由原生前台服务保住进程 (services/listenKeepAlive.ts)
+watch(() => [ttsState.value, meta.value?.title ?? ''] as const, ([state, title]) => reportListenState(state, title), { immediate: true })
 const unavailableVoice = computed(() => settings.ttsEngine === 'local' && !localTtsAvailable()
   ? t('tts.localUnsupported')
   : (settings.ttsEngine === 'system' || !edgeAvailable()) && !systemSpeechAvailable()
@@ -3749,6 +3752,7 @@ watch(volumeKeysActive, on => setVolumeKeyHandler(on ? key => (key === 'prev' ? 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', resetAutoScrollClock)
   setVolumeKeyHandler(null)
+  reportListenState('stopped')
   readerAlive = false
   reflowSession++
   invalidateBdContextGeneration()

@@ -846,3 +846,72 @@ test('播放器: 系统语音没法调音量 → fadeOut 返回 unsupported, 继
   await log.done
   assert.deepEqual(log.keys, sentences.map(s => s.key))
 })
+
+// ---- 后台听书: 定时器被系统压低频率时, 由原生层推进 ----
+test('pumpListenTimers releases due sleeps and sentence marks without waiting for timers', async () => {
+  const { sleep, pumpListenTimers, MarkTicker: Ticker } = await import('../src/services/audioQueue.ts')
+  const realSetTimeout = globalThis.setTimeout
+  const realNow = performance.now.bind(performance)
+  let now = 1000
+  // 模拟隐藏页面: 定时器登记了但迟迟不触发
+  globalThis.setTimeout = () => 0
+  performance.now = () => now
+  try {
+    let woke = 0
+    void sleep(200).then(() => { woke++ })
+    void sleep(5000).then(() => { woke += 10 })
+    pumpListenTimers()
+    await Promise.resolve()
+    assert.equal(woke, 0, 'nothing is due yet')
+    now += 250
+    pumpListenTimers()
+    await Promise.resolve()
+    assert.equal(woke, 1, 'only the due sleep resolves')
+
+    let clock = 0
+    const fired = []
+    const ticker = new Ticker(key => fired.push(key))
+    ticker.add([{ at: 1, key: 'a', clip: 1 }, { at: 2, key: 'b', clip: 1 }], () => clock)
+    clock = 1.2
+    pumpListenTimers()
+    assert.deepEqual(fired, ['a'])
+    clock = 2.5
+    pumpListenTimers()
+    assert.deepEqual(fired, ['a', 'b'])
+    ticker.clear()
+    now += 10000
+    pumpListenTimers()
+    await Promise.resolve()
+    assert.equal(woke, 11)
+  } finally {
+    globalThis.setTimeout = realSetTimeout
+    performance.now = realNow
+  }
+})
+
+test('reportListenState tells the native shell once per change and survives a missing bridge', async () => {
+  const { reportListenState, resetListenKeepAliveForTest } = await import('../src/mobile/services/listenKeepAlive.ts')
+  resetListenKeepAliveForTest()
+  delete globalThis.LightReadListen
+  reportListenState('playing', '书', '第一章')
+  const calls = []
+  globalThis.LightReadListen = { setState: (...args) => { calls.push(args); return 'ok' } }
+  try {
+    reportListenState('playing', '书', '第一章')
+    reportListenState('playing', '书', '第一章')
+    reportListenState('playing', '书', '第二章')
+    reportListenState('paused', '书', '第二章')
+    reportListenState('stopped', '书', '第二章')
+    reportListenState('stopped')
+    assert.deepEqual(calls, [
+      ['playing', '书', '第一章'], ['playing', '书', '第二章'], ['paused', '书', '第二章'], ['stopped', '书', '第二章'],
+    ])
+    assert.equal(typeof globalThis.__lightreadListenPump, 'function')
+    globalThis.LightReadListen = { setState: () => { throw new Error('old shell') } }
+    resetListenKeepAliveForTest()
+    reportListenState('playing', '书', '')
+  } finally {
+    delete globalThis.LightReadListen
+    delete globalThis.__lightreadListenPump
+  }
+})
