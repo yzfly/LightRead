@@ -81,12 +81,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-            rust-targets: aarch64-apple-darwin
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-            rust-targets: x86_64-apple-darwin
+          # macOS 包不在这里构建: 签名证书只在 jiangshuMac 的钥匙串里, 由 scripts/build-macos-signed.sh
+          # 在那台机器上签名、公证后上传到草稿, 下面的 macos-signed job 校验。
           - platform: windows-latest
             # WiX/MSI 在包含多种文件关联时会稳定失败；NSIS 同样是原生安装器且兼容这些关联。
             args: '--bundles nsis'
@@ -147,27 +143,6 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      # 没有 Apple 开发者证书, 用临时签名 (tauri.conf.json 的 signingIdentity "-") 把整个应用封印。
-      # 只有链接器自带签名、资源未封印的包, 下载后在 Apple 芯片 Mac 上会报「已损坏」且无法放行 (issue #20)。
-      # 这里失败则本 job 失败, 草稿不会公开。
-      - name: 验证 macOS 应用整包签名
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          target=$(sed -E 's/.*--target ([^ ]+).*/\1/' <<< "${{ matrix.args }}")
-          bundle="src-tauri/target/$target/release/bundle"
-          check() {
-            codesign --verify --deep --strict --verbose=2 "$1"
-            codesign -dv "$1" 2>&1 | tee /dev/stderr | grep -q 'Sealed Resources version=2'
-          }
-          check "$bundle/macos/LightRead.app"
-          dmg=$(ls "$bundle"/dmg/*.dmg)
-          mnt=$(mktemp -d)
-          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" >/dev/null
-          trap 'hdiutil detach "$mnt" >/dev/null || true' EXIT
-          check "$mnt/LightRead.app"
-
   # Linux 独立并行构建；最终 publish 等待全部平台与 Rust 最低版本检查。
   desktop-linux:
     needs: preflight
@@ -227,10 +202,52 @@ jobs:
       - name: 检查声明的 Rust 最低版本
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
 
+  # macOS 包必须是 Developer ID 签名 + Apple 公证 + 装订票据。只有链接器自带签名的包, 浏览器下载后在
+  # Apple 芯片 Mac 上报「已损坏」且无法放行 (issue #20, v2.10.1 及更早都是这样)。这里不构建, 只校验
+  # 已上传到草稿的两个 DMG; 缺包或校验不过, 草稿不会公开。
+  macos-signed:
+    needs: preflight
+    runs-on: macos-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      TEAM_ID: 3HNKBKJ59V
+    steps:
+      - name: 校验 macOS 安装包的签名与公证
+        run: |
+          set -euo pipefail
+          version=${RELEASE_TAG#v}
+          mkdir dmg && cd dmg
+          gh release download "$RELEASE_TAG" -p "LightRead_${version}_aarch64.dmg" -p "LightRead_${version}_x64.dmg" \
+            || { echo "::error::草稿里没有 macOS 安装包: 先在 jiangshuMac 运行 scripts/build-macos-signed.sh 并上传两个 DMG"; exit 1; }
+          # 输出先收进变量再匹配: 直接接 grep -q 会让上游吃 SIGPIPE, pipefail 下误判失败。
+          has() { local out; out=$("${@:2}" 2>&1) || true; printf '%s\n' "$out" >&2; [[ $out == *"$1"* ]]; }
+          for pair in aarch64:arm64 x64:x86_64; do
+            suffix=${pair%%:*}; arch=${pair##*:}
+            dmg="LightRead_${version}_${suffix}.dmg"
+            test -f "$dmg" || { echo "::error::缺少 $dmg"; exit 1; }
+            # 模拟浏览器下载: 带隔离标记后再评估。
+            xattr -w com.apple.quarantine "0083;$(printf %x "$(date +%s)");Safari;$(uuidgen)" "$dmg"
+            xcrun stapler validate "$dmg"
+            has 'source=Notarized Developer ID' spctl -a -t open --context context:primary-signature -vv "$dmg"
+            mnt=$(mktemp -d)
+            hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" >/dev/null
+            app="$mnt/LightRead.app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            has "TeamIdentifier=$TEAM_ID" codesign -dvv "$app"
+            xcrun stapler validate "$app"
+            has 'source=Notarized Developer ID' spctl -a -t exec -vv "$app"
+            test "$(lipo -archs "$app/Contents/MacOS/lightread")" = "$arch"
+            test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$version"
+            hdiutil detach "$mnt" >/dev/null
+            echo "✓ $dmg"
+          done
+
   publish:
-    needs: [desktop, desktop-linux, rust-floor]
-    # 全部桌面平台与 Rust 最低版本检查成功后才公开草稿。
-    if: ${{ !cancelled() && needs.desktop.result == 'success' && needs.desktop-linux.result == 'success' && needs.rust-floor.result == 'success' }}
+    needs: [desktop, desktop-linux, rust-floor, macos-signed]
+    # 全部桌面平台、macOS 签名校验与 Rust 最低版本检查成功后才公开草稿。
+    if: ${{ !cancelled() && needs.desktop.result == 'success' && needs.desktop-linux.result == 'success' && needs.rust-floor.result == 'success' && needs.macos-signed.result == 'success' }}
     runs-on: ubuntu-22.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

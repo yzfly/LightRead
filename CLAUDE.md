@@ -195,10 +195,14 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 
 1. 修改上表的桌面版本文件，执行 `node scripts/check-release.mjs --self-test` 和 `node scripts/check-release.mjs --platform desktop --tag vX.Y.Z`。
 2. 在 t9 跑相关单测、`npm run build`、`npm run e2e` 及改动涉及的 e2e；Rust 变更跑对应 `cargo test`。
-3. `git tag -a vX.Y.Z -m "vX.Y.Z"`、`git push origin main vX.Y.Z`，再 `gh workflow run release.yml --ref main -f tag=vX.Y.Z`。`.github/workflows/release.yml`：preflight 校验版本与回归测试并建草稿 → macOS arm64 / x64、Windows NSIS、Linux AppImage / deb 构建上传，Rust 1.87 最低版本检查 → publish 核对安装包齐全且**不含 APK**，生成并回验 `SHA256SUMS`，公开为 latest → GitCode 镜像。
+3. `git tag -a vX.Y.Z -m "vX.Y.Z"`、`git push origin main vX.Y.Z`，再 `gh workflow run release.yml --ref main -f tag=vX.Y.Z`。触发前先按下方说明上传 jiangshuMac 签好的两个 macOS DMG。`.github/workflows/release.yml`：preflight 校验版本与回归测试并建草稿 → Windows NSIS、Linux AppImage / deb 构建上传，macOS DMG 签名与公证复核，Rust 1.87 最低版本检查 → publish 核对安装包齐全且**不含 APK**，生成并回验 `SHA256SUMS`，公开为 latest → GitCode 镜像。
 4. 公开后核对下载链接、版本说明、`SHA256SUMS` 与桌面应用内更新。
 
-macOS 包没有 Apple 开发者证书，靠 `tauri.conf.json` 的 `bundle.macOS.signingIdentity: "-"` 做整包临时签名，不要去掉：只有链接器自带签名的包，浏览器下载后在 Apple 芯片 Mac 上报「已损坏」且无法放行（issue #20，v2.10.1 及更早都是这样；应用内更新下载的不带隔离标记所以没暴露）。整包签名后首次打开是「Apple 无法验证」，到「系统设置 → 隐私与安全性」点「仍要打开」。workflow 在 macOS 构建后用 `codesign --verify --deep --strict` 把关。
+**macOS 包在 jiangshuMac 上签名公证（2026-11-13 用户指定，issue #20）**：CI 不构建 macOS。只有链接器自带签名的包，浏览器下载后在 Apple 芯片 Mac 上报「已损坏」且无法放行；v2.10.1 及更早的包全都没签名（应用内更新下载的不带隔离标记，所以长期没暴露）。
+- 证书 `Developer ID Application: YUANZHONG LIU (3HNKBKJ59V)` 在 jiangshuMac 登录钥匙串，公证用的 App Store Connect API 密钥与签名身份由该机 `~/.zshrc` 的 `APPLE_*` 环境变量提供；值不入仓库、不输出。
+- 推 tag 后把该提交的源码同步到 jiangshuMac，在**桌面会话启动的 tmux** 里跑 `scripts/build-macos-signed.sh <输出目录>`（ssh 直接跑 codesign 拿不到私钥，报 `errSecInternalComponent`；`tmux new-session -d` 借已有 tmux 服务即可）。脚本打 arm64 / x64 两个 DMG，应用与 DMG 都公证并装订，逐项校验后才出包。
+- 把两个 DMG 传回开发机，`gh release create vX.Y.Z --verify-tag --draft`（已有草稿则跳过）后 `gh release upload`，**再**触发 workflow；`macos-signed` job 在 GitHub 的 Mac 上带隔离标记复核签名、团队、公证票据、架构与版本，不过就不公开。
+- `tauri.conf.json` 的 `signingIdentity: "-"` 是没有证书时的兜底（整包临时签名，首次打开要到「隐私与安全性」放行），正式包由环境变量里的 Developer ID 覆盖，不要删。强化运行时保持开启（公证要求）。
 
 ### App `app-vX.Y.Z`
 

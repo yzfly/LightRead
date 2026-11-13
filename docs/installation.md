@@ -25,8 +25,8 @@
 1. 下载对应的 `.dmg` 文件并双击打开。
 2. 把 **LightRead** 拖到 **Applications / 应用程序** 文件夹。
 3. 到“应用程序”中打开 LightRead。
-4. 第一次打开时 macOS 会提示“Apple 无法验证 LightRead 是否包含恶意软件”（轻阅没有 Apple 开发者证书）。先确认文件来自本仓库，点 **完成**，再进入“系统设置 → 隐私与安全性”，在页面下方点击 **仍要打开**；之后就能正常打开。
-5. 如果提示的是“已损坏，无法打开”：这是 2.10.1 及更早的安装包在 Apple 芯片 Mac 上的问题，请下载 2.10.2 或更新的版本。
+4. 2.10.3 起安装包带 Apple 开发者签名并经过公证，可以直接打开。
+5. 如果提示“已损坏，无法打开”：这是 2.10.1 及更早的安装包在 Apple 芯片 Mac 上的问题，请下载 2.10.3 或更新的版本。
 
 升级时再次打开新版 DMG，把 LightRead 拖进“应用程序”并选择替换即可，不需要先卸载旧版。
 
@@ -109,7 +109,7 @@ chmod +x LightRead_x.y.z_amd64.AppImage
 
 ### 下载后打不开怎么办？
 
-先确认文件来自 `github.com/yzfly/LightRead`。macOS 请按上面的“隐私与安全性 → 仍要打开”步骤操作（提示“已损坏”时换 2.10.2 或更新的安装包）；Windows 可在 SmartScreen 中查看“更多信息”；Linux AppImage 需要先添加执行权限。
+先确认文件来自 `github.com/yzfly/LightRead`。macOS 提示“已损坏”时请换 2.10.3 或更新的安装包；Windows 可在 SmartScreen 中查看“更多信息”；Linux AppImage 需要先添加执行权限。
 
 ### 为什么 AI、翻译或书源无法使用？
 
