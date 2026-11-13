@@ -45,30 +45,28 @@ for k,v in json.load(sys.stdin)["headers"].items(): print(f"-H\n{k}: {v}")')
 
 # 版本 tag 必须先以原提交推到 GitCode；不能由 release create 在 GitCode 默认分支上隐式生成同名 tag。
 # 只使用已经同步且与 GitHub 相同的 tag；不移动已有 tag。
+# GitCode 上的 tag 用 CLI 的 API 查: 它的防火墙会拦 git 读取接口 (info/refs?service=git-upload-pack 返回 418,
+# 带不带登录都一样, 2026-11-13 实测), 推送接口与 API 正常。
+gc_tag_commit() {
+  "$GC" api "repos/$GC_REPO/tags?per_page=100" --no-interactive | python3 -I -c 'import sys,json
+for t in json.load(sys.stdin):
+    if t.get("name") == sys.argv[1]: print(t["commit"]["sha"])' "$1"
+}
 TARGET_REF=main
 if [[ $TAG =~ ^(app-)?v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  gh_commit=$(git ls-remote --tags "https://github.com/$GH_REPO.git" "refs/tags/$TAG^{}" "refs/tags/$TAG" | sort -k2 -r | head -1 | cut -f1)
+  [[ -n $gh_commit ]] || { echo "GitHub tag $TAG 不存在" >&2; exit 1; }
   # GitCode 还没有这个 tag 时, 用 CLI 的登录令牌 (~/.config/gc/auth.json, 只经 credential helper 读取, 不打印)
   # 从本地仓库推送; 本地 tag 必须与 GitHub 指向同一提交。已有 tag 不推、不移动, 由下方核对。
-  if ! git ls-remote --exit-code --tags "https://gitcode.com/$GC_REPO.git" "refs/tags/$TAG" >/dev/null 2>&1; then
-    gh_commit=$(git ls-remote --tags "https://github.com/$GH_REPO.git" "refs/tags/$TAG^{}" "refs/tags/$TAG" | sort -k2 -r | head -1 | cut -f1)
-    [[ -n $gh_commit && $(git rev-parse "refs/tags/$TAG^{commit}" 2>/dev/null) == "$gh_commit" ]] \
+  if [[ -z $(gc_tag_commit "$TAG") ]]; then
+    [[ $(git rev-parse "refs/tags/$TAG^{commit}" 2>/dev/null) == "$gh_commit" ]] \
       || { echo "本地 tag $TAG 不存在或与 GitHub 不一致: 先 git fetch origin tag $TAG" >&2; exit 1; }
     echo "推送 tag $TAG 到 GitCode …"
     git -c credential.helper= -c "credential.helper=!f() { echo username=\$(python3 -I -c 'import json,os;print(json.load(open(os.path.expanduser(\"~/.config/gc/auth.json\")))[\"hosts\"][\"gitcode.com\"][\"active_user\"])'); printf 'password='; python3 -I -c 'import json,os;h=json.load(open(os.path.expanduser(\"~/.config/gc/auth.json\")))[\"hosts\"][\"gitcode.com\"];print(h[\"users\"][h[\"active_user\"]][\"token\"])'; }; f" \
       push "https://gitcode.com/$GC_REPO.git" "refs/tags/$TAG"
   fi
-  TARGET_REF=$(node --input-type=module - "$GH_REPO" "$GC_REPO" "$TAG" <<'JS'
-import assert from 'node:assert/strict';
-import { remoteTagCommit } from './scripts/mirror-gitcode.mjs';
-const [github, gitcode, tag] = process.argv.slice(2);
-const expected = remoteTagCommit(`https://github.com/${github}.git`, tag);
-const actual = remoteTagCommit(`https://gitcode.com/${gitcode}.git`, tag);
-assert.ok(expected, `GitHub tag ${tag} 不存在`);
-assert.ok(actual, `请先将 ${tag} 同步到 GitCode，不能从 main 创建版本 tag`);
-assert.equal(actual, expected, 'GitCode tag 与 GitHub 提交不一致');
-console.log(actual);
-JS
-  )
+  TARGET_REF=$(gc_tag_commit "$TAG")
+  [[ $TARGET_REF == "$gh_commit" ]] || { echo "GitCode tag $TAG (${TARGET_REF:-不存在}) 与 GitHub 提交 $gh_commit 不一致" >&2; exit 1; }
 fi
 
 echo "下载 GitHub Release $TAG …"
