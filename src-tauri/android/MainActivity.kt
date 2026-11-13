@@ -87,10 +87,7 @@ class MainActivity : TauriActivity() {
     activityResumed = false
     super.onPause()
     // wry 在这里暂停了 WebView; 正在听书就恢复它, 并开始替被压低频率的定时器推进播放器
-    if (listenPlaying) {
-      webView?.onResume()
-      startListenPump()
-    }
+    if (listenPlaying) keepWebViewRunning()
   }
 
   override fun onDestroy() {
@@ -104,24 +101,22 @@ class MainActivity : TauriActivity() {
   @Volatile
   private var listenPlaying = false
   private val pumpHandler = Handler(Looper.getMainLooper())
-  private var pumping = false
   private val pumpTick = object : Runnable {
     override fun run() {
-      if (!pumping) return
-      if (!listenPlaying || activityResumed) { pumping = false; return }
+      if (!listenPlaying || activityResumed) return
       webView?.evaluateJavascript("window.__lightreadListenPump?.()", null)
       pumpHandler.postDelayed(this, 500)
     }
   }
 
-  private fun startListenPump() {
-    if (pumping) return
-    pumping = true
+  /** 撤销 wry 对 WebView 的暂停, 并开始替被压低频率的定时器推进播放器 (只在主线程调用) */
+  private fun keepWebViewRunning() {
+    webView?.onResume()
+    pumpHandler.removeCallbacks(pumpTick)
     pumpHandler.postDelayed(pumpTick, 500)
   }
 
   private fun stopListenPump() {
-    pumping = false
     pumpHandler.removeCallbacks(pumpTick)
   }
 
@@ -139,21 +134,21 @@ class MainActivity : TauriActivity() {
   private inner class ListenBridge {
     /**
      * state: playing / paused / stopped。title 是书名, text 是章节 (通知上显示)。
-     * 返回 ok / error (个别系统不许此刻启动前台服务: 声音照常, 只是没有后台保护)
+     * 个别系统不许此刻启动前台服务: 声音照常, 只是没有后台保护
      */
     @JavascriptInterface
-    fun setState(state: String, title: String, text: String): String {
+    fun setState(state: String, title: String, text: String) {
       val playing = state == "playing"
       listenPlaying = playing
       runOnUiThread {
         if (playing) {
           askNotificationsOnce()
-          if (!activityResumed) { webView?.onResume(); startListenPump() }
+          if (!activityResumed) keepWebViewRunning()
         } else {
           stopListenPump()
         }
       }
-      return if (ListenService.update(this@MainActivity, state, title.take(120), text.take(120))) "ok" else "error"
+      ListenService.update(this@MainActivity, state, title.take(120), text.take(120))
     }
   }
 
@@ -562,25 +557,18 @@ class ListenService : Service() {
     private var text = ""
 
     /** 已在运行的服务直接更新 (后台不许再发启动请求); 没在运行且要播放时才启动 */
-    fun update(context: Context, next: String, nextTitle: String, nextText: String): Boolean {
+    fun update(context: Context, next: String, nextTitle: String, nextText: String) {
+      if (next == "stopped") { stop(context); return }
       state = next
       title = nextTitle
       text = nextText
       val running = instance
-      if (next == "stopped") {
-        stop(context)
-        return true
-      }
       if (running != null) {
-        Handler(Looper.getMainLooper()).post { running.refresh() }
-        return true
-      }
-      if (next != "playing") return true
-      return try {
-        ContextCompat.startForegroundService(context, Intent(context, ListenService::class.java))
-        true
-      } catch (e: Exception) {
-        false
+        running.handler.post { running.refresh() }
+      } else if (next == "playing") {
+        try {
+          ContextCompat.startForegroundService(context, Intent(context, ListenService::class.java))
+        } catch (e: Exception) { /* 系统不许此刻启动: 没有后台保护 */ }
       }
     }
 
@@ -593,6 +581,7 @@ class ListenService : Service() {
   private var wakeLock: PowerManager.WakeLock? = null
   private val handler = Handler(Looper.getMainLooper())
   private val quitWhenIdle = Runnable { if (state != "playing") stopSelf() }
+  private val appLabel by lazy { applicationInfo.loadLabel(packageManager).toString() }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -601,7 +590,7 @@ class ListenService : Service() {
     instance = this
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val manager = getSystemService(NotificationManager::class.java)
-      val channel = NotificationChannel(CHANNEL, applicationInfo.loadLabel(packageManager).toString(), NotificationManager.IMPORTANCE_LOW)
+      val channel = NotificationChannel(CHANNEL, appLabel, NotificationManager.IMPORTANCE_LOW)
       channel.setShowBadge(false)
       manager?.createNotificationChannel(channel)
     }
@@ -620,7 +609,7 @@ class ListenService : Service() {
     )
     return NotificationCompat.Builder(this, CHANNEL)
       .setSmallIcon(if (state == "playing") android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
-      .setContentTitle(title.ifEmpty { applicationInfo.loadLabel(packageManager).toString() })
+      .setContentTitle(title.ifEmpty { appLabel })
       .setContentText(text)
       .setContentIntent(pending)
       .setOngoing(state == "playing")

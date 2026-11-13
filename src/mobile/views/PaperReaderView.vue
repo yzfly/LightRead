@@ -10,7 +10,8 @@ import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_STOPS, rateText } from '../../serv
 import { pingUsage } from '../../services/usageStats'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { setVolumeKeyHandler } from '../../services/systemBars.ts'
-import { reportListenState } from '../services/listenKeepAlive.ts'
+import { useListenKeepAlive } from '../composables/useListenKeepAlive.ts'
+import { sleep } from '../../services/audioQueue.ts'
 import { useRoute, useRouter } from 'vue-router'
 import { getStorage, isTauri, type BookMeta, type AnnotationRec } from '../../storage'
 import { HIGHLIGHT_TEXT_MAX } from '../../services/annotationContext.ts'
@@ -3283,8 +3284,7 @@ watch(() => settings.autoReadSeconds, () => {
 const ttsPanel = ref(false)
 const ttsState = ref<'stopped' | 'playing' | 'paused'>('stopped')
 const ttsVoices = ref<{ name: string; lang: string }[]>([])
-// 安卓后台听书: 朗读期间由原生前台服务保住进程 (services/listenKeepAlive.ts)
-watch(() => [ttsState.value, meta.value?.title ?? ''] as const, ([state, title]) => reportListenState(state, title), { immediate: true })
+useListenKeepAlive(ttsState, () => meta.value?.title ?? '')
 const unavailableVoice = computed(() => settings.ttsEngine === 'local' && !localTtsAvailable()
   ? t('tts.localUnsupported')
   : (settings.ttsEngine === 'system' || !edgeAvailable()) && !systemSpeechAvailable()
@@ -3313,7 +3313,7 @@ function splitChunks(text: string, max = 400): string[] {
 }
 
 const waitWhilePaused = async () => {
-  while (ttsState.value === 'paused') await new Promise(r => setTimeout(r, 200))
+  while (ttsState.value === 'paused') await sleep(200)
 }
 /** await 期间状态可能被外部修改, 用函数取值绕开 TS 控制流收窄 */
 const ttsStopped = () => ttsState.value === 'stopped'
@@ -3382,7 +3382,7 @@ async function startTTS() {
       pageNum++
       if (pageNum > pageCount.value) break
       gotoPage(pageNum)
-      await new Promise(r => setTimeout(r, 300))
+      await sleep(300)
     }
     if (!spokeAnything && session === ttsSession) {
       toast(t('tts.pdfNoText'), 'error', 4000)
@@ -3752,7 +3752,6 @@ watch(volumeKeysActive, on => setVolumeKeyHandler(on ? key => (key === 'prev' ? 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', resetAutoScrollClock)
   setVolumeKeyHandler(null)
-  reportListenState('stopped')
   readerAlive = false
   reflowSession++
   invalidateBdContextGeneration()

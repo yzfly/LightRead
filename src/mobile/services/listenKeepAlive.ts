@@ -11,7 +11,7 @@ import { pumpListenTimers } from '../../services/audioQueue.ts'
 export type ListenKeepAliveState = 'playing' | 'paused' | 'stopped'
 
 interface ListenBridge {
-  setState(state: string, title: string, text: string): string
+  setState(state: string, title: string, text: string): void
 }
 
 type Host = { LightReadListen?: ListenBridge; __lightreadListenPump?: () => void }

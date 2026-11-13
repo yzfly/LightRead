@@ -16,8 +16,6 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const INSTALL_PERMISSION = '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />'
-
 const PROCESS_TEXT_QUERY = '<queries>\n        <intent>\n            <action android:name="android.intent.action.PROCESS_TEXT" />\n            <data android:mimeType="text/plain" />\n        </intent>\n    </queries>'
 
 const LISTEN_PERMISSIONS = [
@@ -29,34 +27,33 @@ const LISTEN_PERMISSIONS = [
 
 const LISTEN_SERVICE = '<service\n            android:name=".ListenService"\n            android:exported="false"\n            android:foregroundServiceType="mediaPlayback" />'
 
-function patchListenService(xml) {
-  let next = xml
-  for (const name of LISTEN_PERMISSIONS) {
-    if (next.includes(`"${name}"`)) continue
-    // 接在最后一条权限声明之后, 不打乱已有顺序
-    const all = [...next.matchAll(/^([ \t]*)<uses-permission\b[^>]*\/>/gm)]
-    const last = all.at(-1)
-    if (!last) throw new Error('AndroidManifest.xml 没有任何权限声明, 无法定位插入点')
+/** 接在最后一条权限声明之后 (没有就放在 <manifest> 开头), 不打乱已有顺序; 已有则不动 */
+function addPermission(xml, name) {
+  if (xml.includes(`"${name}"`)) return xml
+  const line = `<uses-permission android:name="${name}" />`
+  const last = [...xml.matchAll(/^([ \t]*)<uses-permission\b[^>]*\/>/gm)].at(-1)
+  if (last) {
     const at = last.index + last[0].length
-    next = `${next.slice(0, at)}\n${last[1]}<uses-permission android:name="${name}" />${next.slice(at)}`
+    return `${xml.slice(0, at)}\n${last[1]}${line}${xml.slice(at)}`
   }
-  if (!next.includes('android:name=".ListenService"')) {
-    const at = next.lastIndexOf('</application>')
-    if (at < 0) throw new Error('AndroidManifest.xml 缺少 </application>')
-    const lineStart = next.lastIndexOf('\n', at) + 1
-    const indent = /^[ \t]*$/.test(next.slice(lineStart, at)) ? next.slice(lineStart, at) : ''
-    next = indent
-      ? `${next.slice(0, lineStart)}${indent}    ${LISTEN_SERVICE}\n${next.slice(lineStart)}`
-      : `${next.slice(0, at)}${LISTEN_SERVICE}${next.slice(at)}`
-  }
-  return next
+  const open = xml.match(/<manifest\b[^>]*>/)
+  if (!open) throw new Error('AndroidManifest.xml 缺少 <manifest>')
+  return xml.replace(open[0], `${open[0]}\n    ${line}`)
+}
+
+function patchListenService(xml) {
+  const next = LISTEN_PERMISSIONS.reduce(addPermission, xml)
+  if (next.includes('android:name=".ListenService"')) return next
+  const at = next.lastIndexOf('</application>')
+  if (at < 0) throw new Error('AndroidManifest.xml 缺少 </application>')
+  return `${next.slice(0, at)}    ${LISTEN_SERVICE}\n    ${next.slice(at)}`
 }
 
 export function patchManifest(xml) {
   if (!/android:authorities="\$\{applicationId\}\.fileprovider"/.test(xml) || !xml.includes('androidx.core.content.FileProvider')) {
     throw new Error('AndroidManifest.xml 缺少 ${applicationId}.fileprovider 的 FileProvider, 应用内更新无法安装')
   }
-  return patchListenService(patchProcessTextQuery(patchInstallPermission(xml)))
+  return patchListenService(patchProcessTextQuery(addPermission(xml, 'android.permission.REQUEST_INSTALL_PACKAGES')))
 }
 
 function patchProcessTextQuery(xml) {
@@ -64,15 +61,6 @@ function patchProcessTextQuery(xml) {
   const app = xml.match(/^([ \t]*)<application\b/m)
   if (!app) throw new Error('AndroidManifest.xml 缺少 <application>')
   return xml.replace(app[0], `${app[1]}${PROCESS_TEXT_QUERY}\n${app[0]}`)
-}
-
-function patchInstallPermission(xml) {
-  if (xml.includes('android.permission.REQUEST_INSTALL_PACKAGES')) return xml
-  const anchor = xml.match(/^([ \t]*)<uses-permission android:name="android\.permission\.INTERNET"\s*\/>/m)
-  if (anchor) return xml.replace(anchor[0], `${anchor[0]}\n${anchor[1]}${INSTALL_PERMISSION}`)
-  const open = xml.match(/<manifest\b[^>]*>/)
-  if (!open) throw new Error('AndroidManifest.xml 缺少 <manifest>')
-  return xml.replace(open[0], `${open[0]}\n    ${INSTALL_PERMISSION}`)
 }
 
 export function patchFilePaths(xml) {

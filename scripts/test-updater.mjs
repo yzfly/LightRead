@@ -617,7 +617,7 @@ test('Android project patch adds the install permission once and keeps the cache
   for (const name of ['FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_MEDIA_PLAYBACK', 'WAKE_LOCK', 'POST_NOTIFICATIONS']) {
     assert.equal(patched.split(`"android.permission.${name}"`).length, 2, name)
   }
-  assert.match(patched, /<service\s+android:name="\.ListenService"\s+android:exported="false"\s+android:foregroundServiceType="mediaPlayback" \/><\/application>/)
+  assert.match(patched, /<service\s+android:name="\.ListenService"\s+android:exported="false"\s+android:foregroundServiceType="mediaPlayback" \/>\s*<\/application>/)
 
   const tauriPaths = '<paths xmlns:android="http://schemas.android.com/apk/res/android">\n  <external-path name="my_images" path="." />\n  <cache-path name="my_cache_images" path="." />\n</paths>'
   assert.equal(patchFilePaths(tauriPaths), tauriPaths)
