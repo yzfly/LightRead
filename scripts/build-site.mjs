@@ -32,6 +32,7 @@ const PAGES = [
   { src: 'docs/installation.md', out: 'docs/installation.html', group: 'docs', nav: '安装与升级' },
   { src: 'docs/paper-reading.md', out: 'docs/paper-reading.html', group: 'docs', nav: '论文阅读' },
   { src: 'docs/ambient-sources.md', out: 'docs/ambient-sources.html', group: 'docs', nav: '背景音来源与许可' },
+  { src: 'docs/privacy.md', out: 'privacy.html', group: 'docs', nav: '隐私政策' },
   { src: 'docs/library-okf-profile.md', out: 'docs/library-okf-profile.html', group: 'docs', nav: '藏书包格式 (OKF)', lang: 'en' },
 ]
 const BY_SRC = new Map(PAGES.map(p => [p.src, p]))

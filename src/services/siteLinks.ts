@@ -6,6 +6,8 @@
 export const SITE_URL = 'https://code.jiangshu.ai/LightRead/'
 export const SITE_MANUAL_URL = `${SITE_URL}manual/`
 export const SITE_DOWNLOAD_SECTION = `${SITE_URL}#download`
+/** 隐私政策 (docs/privacy.md); App Store Connect / TestFlight 的隐私政策链接也填这个 */
+export const SITE_PRIVACY_URL = `${SITE_URL}privacy.html`
 
 /** 仓库文档 → 官网页面 (与 scripts/build-site.mjs 的 PAGES 一致) */
 const SITE_PAGES: Record<string, string> = {
@@ -19,6 +21,7 @@ const SITE_PAGES: Record<string, string> = {
   'docs/paper-reading.md': 'docs/paper-reading.html',
   'docs/ambient-sources.md': 'docs/ambient-sources.html',
   'docs/library-okf-profile.md': 'docs/library-okf-profile.html',
+  'docs/privacy.md': 'privacy.html',
 }
 const REPO_BLOB = 'https://github.com/yzfly/LightRead/blob/main/'
 
