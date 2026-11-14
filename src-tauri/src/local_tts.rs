@@ -1,8 +1,9 @@
 //! 本地离线神经语音: sherpa-onnx + Kokoro multi-lang v1.1 (中英, 103 音色).
 //! 模型 (~310MB) 由应用内下载到数据目录, 合成完全离线.
-//! 移动端暂不支持 (sherpa-onnx 交叉编译限制), 命令返回明确错误.
+//! Android 链接上游预编译的动态库 (随 APK 的 jniLibs 分发, 见 scripts/fetch-sherpa-android.mjs);
+//! iOS 暂不支持 (没有可直接链接的预编译库), 命令返回明确错误.
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "ios")]
 mod stub {
     use serde::Serialize;
     use tauri::AppHandle;
@@ -28,7 +29,7 @@ mod stub {
 
     #[tauri::command]
     pub async fn local_tts_download(_app: AppHandle, _proxy: Option<String>) -> Result<(), String> {
-        Err("移动端暂不支持离线语音包".into())
+        Err("iOS 暂不支持离线语音包".into())
     }
 
     #[derive(Serialize)]
@@ -51,7 +52,7 @@ mod stub {
 
     #[tauri::command]
     pub fn local_tts_warmup(_app: AppHandle, _sid: Option<i32>) -> Result<(), String> {
-        Err("移动端暂不支持离线语音".into())
+        Err("iOS 暂不支持离线语音".into())
     }
 
     #[tauri::command]
@@ -61,14 +62,14 @@ mod stub {
         _sid: i32,
         _speed: f32,
     ) -> Result<tauri::ipc::Response, String> {
-        Err("移动端暂不支持离线语音".into())
+        Err("iOS 暂不支持离线语音".into())
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "ios")]
 pub use stub::*;
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(target_os = "ios"))]
 mod desktop {
 use serde::Serialize;
 use sherpa_onnx::{
@@ -310,9 +311,12 @@ async fn run_download(app: AppHandle, proxy: Option<String>) -> Result<(), Strin
     let proxy = proxy.as_deref().and_then(normalize_proxy);
     let mut errors: Vec<String> = Vec::new();
     let mut ok = false;
-    // 先 GitHub, 再国内镜像; 每个来源都按「代理 → 直连」各试一次
-    'sources: for (si, url) in std::iter::once(MODEL_URL).chain(MODEL_MIRROR_URLS.iter().copied()).enumerate() {
-        let source = if si == 0 { "GitHub" } else { "国内镜像" };
+    // 先镜像, 再 GitHub; 每个来源都按「代理 → 直连」各试一次。
+    // 镜像在前: 2026-11-14 发现上游 Release 里的同名文件被重新上传过 (大小与摘要都变了), 从 GitHub 下的包
+    // 校验必然不过, 两条线路各白下一遍 (约 700MB) 才轮到镜像; 镜像是我们自己放的那一份, 与记录的摘要一致。
+    let n_mirrors = MODEL_MIRROR_URLS.len();
+    'sources: for (si, url) in MODEL_MIRROR_URLS.iter().copied().chain(std::iter::once(MODEL_URL)).enumerate() {
+        let source = if si < n_mirrors { "镜像" } else { "GitHub" };
         for route in download_routes(proxy.clone()) {
             match download_archive(&archive_path, url, &route, &emit).await {
                 Ok(()) => {
@@ -446,8 +450,46 @@ fn build_engine(root: &PathBuf, rule_fsts: Option<String>) -> Result<OfflineTts,
 /// 推理线程数: 用一半逻辑核 (1–4)。2 核的低配 Windows 机器上占满全部核心
 /// 会让 WebView 渲染进程抢不到 CPU, 表现为朗读时窗口「无响应」。
 fn inference_threads() -> i32 {
+    // 手机: 只用大核 (线程数 = 大核数), 见 pin_to_big_cores
+    #[cfg(target_os = "android")]
+    {
+        let big = big_cores().len();
+        if big > 0 {
+            return big.clamp(2, 4) as i32;
+        }
+    }
     let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
     (cores / 2).clamp(1, 4) as i32
+}
+
+/// 手机的大核: 最高频率高于最低一档的核心; 读不到或没有大小核之分时为空
+#[cfg(target_os = "android")]
+fn big_cores() -> Vec<usize> {
+    let freqs: Vec<u64> = (0..64)
+        .map_while(|i| std::fs::read_to_string(format!("/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq")).ok())
+        .filter_map(|s| s.trim().parse().ok())
+        .collect();
+    let Some(min) = freqs.iter().copied().min() else { return Vec::new() };
+    let big: Vec<usize> = freqs.iter().enumerate().filter(|(_, f)| **f > min).map(|(i, _)| i).collect();
+    if big.len() == freqs.len() { Vec::new() } else { big }
+}
+
+/// 把当前线程限制在大核上。引擎的推理线程在加载时创建, 会继承这条限制。
+/// 2026-11-14 在 K30 Pro (骁龙 865) 实测: 不限制时合成速度约为播放速度的 0.45 倍 (线程落到小核上),
+/// 限制在 4 个大核后约 0.83 倍。失败无妨 (照旧由系统调度)。
+#[cfg(target_os = "android")]
+fn pin_to_big_cores() {
+    let big = big_cores();
+    if big.is_empty() {
+        return;
+    }
+    unsafe {
+        let mut set: libc::cpu_set_t = std::mem::zeroed();
+        for cpu in big {
+            libc::CPU_SET(cpu, &mut set);
+        }
+        libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &set);
+    }
 }
 
 /// 防闪退: 加载 / 推理期间在数据目录留一个标记文件, 正常结束 (含 Rust panic) 时删除。
@@ -519,6 +561,9 @@ fn with_engine<T>(
         return Err("离线语音包未安装".into());
     }
     let _crash_guard = CrashGuard::arm(root)?;
+    // 这条线程是为这一次任务单独起的 (run_engine_task), 限制不会带到别处
+    #[cfg(target_os = "android")]
+    pin_to_big_cores();
     let rule_fsts = rule_fsts_for(root, sid);
     if guard.as_ref().map_or(true, |loaded| loaded.rule_fsts != rule_fsts) {
         *guard = None;
@@ -736,12 +781,12 @@ mod tests {
 }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(target_os = "ios"))]
 pub use desktop::*;
 
 /// 真实网络: 先走一个连不上的代理, 应自动回退直连, 下完整包并通过 SHA256 校验。
 /// 约 365MB, 默认跳过: cargo test local_tts::download_live -- --ignored
-#[cfg(all(test, not(any(target_os = "android", target_os = "ios"))))]
+#[cfg(all(test, not(target_os = "ios")))]
 mod download_live {
     use super::desktop::{download_archive_for_test, download_routes};
 

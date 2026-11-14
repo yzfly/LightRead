@@ -32,9 +32,11 @@ import {
   type UpdateInfo, type DownloadOption,
 } from '../../services/updater.ts'
 import { t } from '../../i18n/index.ts'
-import { providerById, chatStream } from '../../services/ai.ts'
+import { aiConfigured, providerById, chatStream } from '../../services/ai.ts'
 import AiProviderPicker from '../../components/settings/AiProviderPicker.vue'
 import LocalModelPack from '../../components/LocalModelPack.vue'
+import LocalChatModels from '../../components/LocalChatModels.vue'
+import { LOCAL_AI_PROVIDER } from '../../services/localChatCore'
 import {
   paperAgentRuntimeAvailable,
   paperAgentEngineStatus,
@@ -575,6 +577,7 @@ function onAiProviderChange() {
   const preset = providerById(settings.aiProvider)
   if (preset.id !== 'custom') {
     settings.aiBaseUrl = preset.baseUrl
+    // 本机模型: 用哪一档由模型列表 (LocalChatModels) 按已下载的情况填
     settings.aiModel = preset.defaultModel
   }
   aiTestResult.value = ''
@@ -588,6 +591,8 @@ const aiShowBaseUrl = computed(() => {
 })
 
 const aiPreset = computed(() => providerById(settings.aiProvider))
+/** 「本机模型」: 没有地址 / Key / 模型名可填, 换成按设备分档的模型列表 */
+const aiLocal = computed(() => settings.aiProvider === LOCAL_AI_PROVIDER)
 const aiNeedsKey = computed(() => aiPreset.value.needsKey || aiPreset.value.id === 'custom')
 const aiDocsUrl = computed(() => providerById(settings.aiProvider).docsUrl ?? '')
 
@@ -676,7 +681,7 @@ async function testAi() {
   const started = performance.now()
   try {
     let got = ''
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout 20s')), 20000))
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error(aiLocal.value ? 'timeout 90s' : 'timeout 20s')), aiLocal.value ? 90000 : 20000))
     await Promise.race([
       (async () => {
         for await (const delta of chatStream([{ role: 'user', content: '请回复: OK' }])) {
@@ -1369,24 +1374,27 @@ const APPEARANCE_OPTIONS = [
           <AiProviderPicker v-model="settings.aiProvider" @change="onAiProviderChange" />
           <p class="ai-provider-hint">{{ t(`aiProvider.${aiPreset.id}Desc`) }}</p>
         </div>
-        <div class="field">
+        <div v-if="aiLocal" class="field field-wide">
+          <LocalChatModels />
+        </div>
+        <div v-else class="field">
           <label class="field-label" for="ai-model">{{ t('settings.aiModelLabel') }}</label>
           <input id="ai-model" v-model="settings.aiModel" class="input" autocapitalize="off" spellcheck="false" :placeholder="t('settings.aiModelPh')" />
         </div>
-        <div v-if="aiShowBaseUrl" class="field field-wide">
+        <div v-if="aiShowBaseUrl && !aiLocal" class="field field-wide">
           <label class="field-label" for="ai-base-url">{{ t('settings.aiBaseUrlLabel') }}</label>
           <input id="ai-base-url" v-model="settings.aiBaseUrl" class="input" type="url" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://api.siliconflow.cn/v1" />
         </div>
-        <div v-if="aiNeedsKey" class="field field-wide">
+        <div v-if="aiNeedsKey && !aiLocal" class="field field-wide">
           <label class="field-label" for="ai-key">API Key</label>
           <input id="ai-key" v-model="settings.aiApiKey" class="input" type="password" :placeholder="t('settings.aiKeyPh')" autocomplete="new-password" />
         </div>
       </div>
       <div class="ai-actions">
-        <button class="btn btn-primary" :disabled="aiTesting || !settings.aiBaseUrl.trim() || !settings.aiModel.trim() || (aiPreset.needsKey && !settings.aiApiKey.trim())" @click="testAi">
+        <button class="btn btn-primary" :disabled="aiTesting || (aiLocal ? !aiConfigured() : !settings.aiBaseUrl.trim() || !settings.aiModel.trim() || (aiPreset.needsKey && !settings.aiApiKey.trim()))" @click="testAi">
           {{ aiTesting ? t('settings.testing') : t('settings.aiTest') }}
         </button>
-        <button v-if="!aiShowBaseUrl" type="button" class="link-btn" @click="aiBaseUrlOpen = true">{{ t('settings.aiEditBaseUrl') }}</button>
+        <button v-if="!aiShowBaseUrl && !aiLocal" type="button" class="link-btn" @click="aiBaseUrlOpen = true">{{ t('settings.aiEditBaseUrl') }}</button>
         <button v-if="aiDocsUrl" type="button" class="link-btn" @click="download(aiDocsUrl)">{{ t('settings.aiGetKey') }}</button>
       </div>
       <div v-if="aiTestResult" class="dav-info ai-result" role="status">{{ aiTestResult }}</div>

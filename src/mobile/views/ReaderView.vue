@@ -251,6 +251,21 @@ const listenChapter = computed(() => {
   return ttsState.value !== 'stopped' && pos ? chapterAtFraction(pos.fraction, pos.index) || chapterLabel.value : chapterLabel.value
 })
 const ttsStatus = computed(() => unavailableVoice.value || (ttsFailure.value ? t('tts.error') : ttsBuffering.value ? t('tts.buffering') : ttsState.value === 'playing' ? t('tts.reading') : ttsState.value === 'paused' ? t('tts.paused') : ttsEnded.value ? t('tts.bookFinished') : t('v2.listenReady')))
+/** 点了当前用不了的语音来源时, 在选择器下方说明原因 (触屏上没有悬停提示) */
+const engineNote = ref('')
+function chooseEngine(engine: 'local' | 'system') {
+  const ok = engine === 'local' ? localTtsAvailable() : systemSpeechAvailable()
+  if (!ok) {
+    engineNote.value = t(engine === 'local' ? 'tts.localUnsupported' : 'tts.systemUnsupported')
+    return
+  }
+  engineNote.value = ''
+  settings.ttsEngine = engine
+  if (engine === 'local') {
+    resetEdgeFailure()
+    refreshLocalStatus()
+  }
+}
 const unavailableVoice = computed(() => settings.ttsEngine === 'local' && !localTtsAvailable() ? t('tts.localUnsupported') : (settings.ttsEngine === 'system' || !edgeAvailable()) && !systemSpeechAvailable() ? t('tts.systemUnsupported') : '')
 const voiceSummary = computed(() => {
   if (!edgeAvailable() || settings.ttsEngine === 'system') return settings.ttsVoice || t('tts.engineSystem')
@@ -3865,7 +3880,7 @@ onBeforeUnmount(() => {
       </nav>
       <AmbientEntry @open="toggleAmbientPanel" />
       <blockquote v-if="listenQuote" class="listen-quote">{{ listenQuote }}</blockquote>
-      <AppModal v-if="ttsOptions" :title="t(ttsOptions === 'rate' ? 'tts.rate' : ttsOptions === 'sleep' ? 'tts.sleep' : 'tts.voice')" @close="ttsOptions = null">
+      <AppModal v-if="ttsOptions" :title="t(ttsOptions === 'rate' ? 'tts.rate' : ttsOptions === 'sleep' ? 'tts.sleep' : 'tts.voice')" @close="ttsOptions = null; engineNote = ''">
         <div class="listen-setting-body">
       <TtsRateControl v-if="ttsOptions === 'rate'" v-model="settings.ttsRate" />
       <div v-show="ttsOptions === 'sleep'" class="tts-row tts-row-stacked">
@@ -3877,12 +3892,13 @@ onBeforeUnmount(() => {
       <div v-show="ttsOptions === 'voice'" v-if="edgeAvailable()" class="tts-row">
         <label>{{ t('tts.engine') }}</label>
         <div class="seg" style="flex: 1">
-          <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; resetEdgeFailure()">{{ t('tts.engineEdge') }}</button>
-          <button :class="{ active: settings.ttsEngine === 'local' }" :disabled="!localTtsAvailable()" :title="localTtsAvailable() ? t('tts.engineLocalTitle') : t('tts.localUnsupported')" @click="settings.ttsEngine = 'local'; resetEdgeFailure(); refreshLocalStatus()">{{ t('tts.engineLocal') }}</button>
-          <button :disabled="!systemSpeechAvailable()" :class="{ active: settings.ttsEngine === 'system' }" @click="settings.ttsEngine = 'system'">{{ t('tts.engineSystem') }}</button>
-          <button :class="{ active: settings.ttsEngine === 'cloud' }" :title="t('tts.engineCloudTitle')" @click="settings.ttsEngine = 'cloud'; resetEdgeFailure()">{{ t('tts.engineCloud') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'edge' }" @click="settings.ttsEngine = 'edge'; engineNote = ''; resetEdgeFailure()">{{ t('tts.engineEdge') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'local', unavailable: !localTtsAvailable() }" :aria-disabled="!localTtsAvailable()" :title="localTtsAvailable() ? t('tts.engineLocalTitle') : t('tts.localUnsupported')" @click="chooseEngine('local')">{{ t('tts.engineLocal') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'system', unavailable: !systemSpeechAvailable() }" :aria-disabled="!systemSpeechAvailable()" :title="systemSpeechAvailable() ? t('tts.engineSystem') : t('tts.systemUnsupported')" @click="chooseEngine('system')">{{ t('tts.engineSystem') }}</button>
+          <button :class="{ active: settings.ttsEngine === 'cloud' }" :title="t('tts.engineCloudTitle')" @click="settings.ttsEngine = 'cloud'; engineNote = ''; resetEdgeFailure()">{{ t('tts.engineCloud') }}</button>
         </div>
       </div>
+      <p v-show="ttsOptions === 'voice'" v-if="engineNote" class="tts-engine-note" role="status">{{ engineNote }}</p>
       <div v-show="ttsOptions === 'voice'" v-if="edgeAvailable() && settings.ttsEngine === 'edge'" class="tts-row">
         <label>{{ t('tts.voice') }}</label>
         <AppSelect v-model="settings.edgeVoice" class="input" :aria-label="t('tts.voice')">
@@ -5128,6 +5144,16 @@ onBeforeUnmount(() => {
   background: var(--card);
   color: var(--text-2);
   font-size: 13px;
+}
+.seg button.unavailable {
+  color: var(--text-3);
+  opacity: 0.6;
+}
+.tts-engine-note {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: 1.6;
+  color: var(--text-2);
 }
 .seg button.active {
   background: var(--brand-light);

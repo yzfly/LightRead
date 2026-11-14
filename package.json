@@ -72,6 +72,7 @@
     "test:reading-focus": "node --experimental-strip-types --test scripts/test-reading-focus.mjs",
     "test:display-title": "node --experimental-strip-types --test scripts/test-display-title.mjs",
     "test:cover-repair": "node --experimental-strip-types --test scripts/test-cover-repair.mjs",
+    "test:local-chat": "node --experimental-strip-types --test scripts/test-local-chat.mjs",
     "test:about-links": "node --experimental-strip-types --test scripts/test-about-links.mjs",
     "test:site-links": "node --test scripts/test-site-links.mjs",
     "check:style-tokens": "node scripts/check-style-tokens.mjs",

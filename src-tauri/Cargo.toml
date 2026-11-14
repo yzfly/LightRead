@@ -63,7 +63,7 @@ fontdb = "0.23"
 [patch.crates-io]
 cargo_metadata = { path = "vendor/cargo_metadata" }
 
-# 本地离线语音仅桌面平台 (sherpa-onnx 无移动端预编译库)
+# 本地离线语音: 桌面静态链接 sherpa-onnx (构建时自动下载预编译库); Android 见下方单独的依赖表; iOS 不带
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 sherpa-onnx = "1.13.3"
 # CBR → CBZ 桌面原生解包 (comic.rs); UnRAR 与前端 node-unrar-js 同源, 许可随包分发
@@ -84,8 +84,14 @@ llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["mtm
 # 语音生成 (local_llm/tts.rs) 直接用底层接口: 安全封装不暴露它需要的指针
 llama-cpp-sys-2 = { version = "=0.1.161", default-features = false, features = ["mtmd"], optional = true }
 
-# Android: C++ 运行库静态链接, APK 里不用再带 libc++_shared.so
+# Android: C++ 运行库静态链接, APK 里不用再带 libc++_shared.so。
+# 离线语音 (local_tts.rs) 动态链接上游预编译的 libsherpa-onnx-c-api.so / libonnxruntime.so:
+# crate 自己不会下载 Android 的库, 由 scripts/fetch-sherpa-android.mjs 取到本机并经 SHERPA_ONNX_LIB_DIR 交给它,
+# npm run android:build 再把两个 .so 放进 APK 的 jniLibs。
 [target.'cfg(target_os = "android")'.dependencies]
+sherpa-onnx = { version = "1.13.3", default-features = false, features = ["shared"] }
+bzip2 = "0.5.2"
+tar = "0.4.46"
 llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["mtmd", "android-static-stdcxx"], optional = true }
 llama-cpp-sys-2 = { version = "=0.1.161", default-features = false, features = ["mtmd", "static-stdcxx"], optional = true }
 

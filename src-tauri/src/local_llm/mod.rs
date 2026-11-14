@@ -53,9 +53,11 @@ pub(crate) struct ModelFile {
 
 pub(crate) struct ModelSpec {
     pub id: &'static str,
-    /// translate / tts
+    /// translate / tts / chat
     pub kind: &'static str,
     pub n_ctx: u32,
+    /// 对话模型的档位 (device::chat_tier), 其余种类为 0
+    pub tier: u8,
     pub req: Requirements,
     pub files: &'static [ModelFile],
 }
@@ -67,6 +69,7 @@ const HY_MT2: ModelSpec = ModelSpec {
     id: "hy-mt2-1.8b-q4",
     kind: "translate",
     n_ctx: 4096,
+    tier: 0,
     req: Requirements::text(1_133_080_448, 4096),
     files: &[ModelFile {
         name: "Hy-MT2-1.8B-Q4_K_M.gguf",
@@ -86,16 +89,21 @@ const HY_MT2: ModelSpec = ModelSpec {
 /// 2026-11-12 在 M5 MacBook Air 实测 (Metal, 上下文 2048): 合成速度约为播放速度的 2 倍, 内存峰值 3.2GB;
 /// 仅处理器时跟不上朗读 (M5 约持平, Windows 4 核 CI 机器 0.4 倍), 所以只在有显卡加速的构建上提供
 /// (目前是 Apple 芯片的 Mac; Windows 要等 Vulkan 构建), 下载后再按实测速度决定用不用。
-/// 手机暂不提供 (更小的 0.6B 还没有可用的 llama.cpp 转换)。
+/// 手机不提供: 2026-11-14 在 K30 Pro (骁龙 865, 4 线程) 用同一套调用实测, 合成速度只有播放速度的 0.14 倍
+/// (主干 2.7 帧/秒, 要 12 帧/秒才持平; 8 秒的声音光声码器就要 19 秒), 换更小的 0.6B 主干也补不回来。
+/// 手机上的离线朗读用 Kokoro (local_tts.rs, 与 pocketpal-ai-zh 的做法一致)。
 /// 大小与摘要取自 Hugging Face ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF 的 ca27d74 版本。
 const QWEN3_TTS: ModelSpec = ModelSpec {
     id: "qwen3-tts-1.7b-q4",
     kind: "tts",
     n_ctx: 2048,
+    tier: 0,
     req: Requirements {
         download: 1_035_965_280 + 446_422_912,
         memory: 3_500 << 20,
         mobile_ok: false,
+        mobile_min_ram: 0,
+        mobile_min_ram_gb: 0,
         // 仅处理器时远跟不上朗读: Windows CI 机器 (4 核) 实测只有播放速度的 0.4 倍
         needs_gpu: true,
         desktop_min_ram: 11_500 << 20,
@@ -130,7 +138,74 @@ const QWEN3_TTS: ModelSpec = ModelSpec {
     ],
 };
 
-pub(crate) const MODELS: &[&ModelSpec] = &[&HY_MT2, &QWEN3_TTS];
+/// 通义千问 Qwen3.5 (Apache-2.0): 阅读助手 (问书 / 解读 / 翻译) 的本机对话模型, 按设备分三档 (device::chat_tier)。
+/// 选型与量化取自 pocketpal-ai-zh 的中文预设: 1B 以下用 Q4_K_M (小模型对量化误差更敏感), 2B 以上用 Q4_0 (ARM 处理器上更快)。
+/// 只取文字部分 (不带视觉的 mmproj)。大小与摘要取自 Hugging Face unsloth/Qwen3.5-*-GGUF 的固定提交 (ModelScope 同一文件, 2026-11-14 核对)。
+/// 2026-11-14 用轻阅绑定的 llama.cpp 在 t9 (8 核 x86, 4 线程) 实测 0.8B 约 43 token/秒; K30 Pro 上的速度见 device::chat_tier。
+/// 轻量: 4GB 手机也能跑, 回答较粗
+const QWEN35_08B: ModelSpec = ModelSpec {
+    id: "qwen3.5-0.8b-q4",
+    kind: "chat",
+    n_ctx: 8192,
+    tier: 0,
+    req: Requirements { mobile_min_ram: 3_300 << 20, mobile_min_ram_gb: 4, desktop_min_ram: 0, desktop_min_ram_gb: 8, ..Requirements::text(532_517_120, 8192) },
+    files: &[ModelFile {
+        name: "Qwen3.5-0.8B-Q4_K_M.gguf",
+        size: 532_517_120,
+        sha256: "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+        urls_cn: &[
+            "https://modelscope.cn/models/unsloth/Qwen3.5-0.8B-GGUF/resolve/master/Qwen3.5-0.8B-Q4_K_M.gguf",
+            "https://hf-mirror.com/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/Qwen3.5-0.8B-Q4_K_M.gguf",
+        ],
+        urls_global: &[
+            "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/Qwen3.5-0.8B-Q4_K_M.gguf",
+        ],
+    }],
+};
+
+/// 标准: 6GB 以上的手机与 8GB 以上的电脑
+const QWEN35_2B: ModelSpec = ModelSpec {
+    id: "qwen3.5-2b-q4",
+    kind: "chat",
+    n_ctx: 8192,
+    tier: 1,
+    req: Requirements { mobile_min_ram: 0, mobile_min_ram_gb: 0, desktop_min_ram: 0, desktop_min_ram_gb: 8, ..Requirements::text(1_214_873_856, 8192) },
+    files: &[ModelFile {
+        name: "Qwen3.5-2B-Q4_0.gguf",
+        size: 1_214_873_856,
+        sha256: "cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1",
+        urls_cn: &[
+            "https://modelscope.cn/models/unsloth/Qwen3.5-2B-GGUF/resolve/master/Qwen3.5-2B-Q4_0.gguf",
+            "https://hf-mirror.com/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_0.gguf",
+        ],
+        urls_global: &[
+            "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_0.gguf",
+        ],
+    }],
+};
+
+/// 增强: 8GB 以上的手机 (慢) 与 12GB 以上的电脑
+const QWEN35_4B: ModelSpec = ModelSpec {
+    id: "qwen3.5-4b-q4",
+    kind: "chat",
+    n_ctx: 8192,
+    tier: 2,
+    req: Requirements { mobile_min_ram: 7_300 << 20, mobile_min_ram_gb: 8, desktop_min_ram: 11_500 << 20, desktop_min_ram_gb: 12, ..Requirements::text(2_583_221_408, 8192) },
+    files: &[ModelFile {
+        name: "Qwen3.5-4B-Q4_0.gguf",
+        size: 2_583_221_408,
+        sha256: "298fcb5fe7a77ccc79745ae24751560c5ac56874caff4bb39b1f2055bd72b8bb",
+        urls_cn: &[
+            "https://modelscope.cn/models/unsloth/Qwen3.5-4B-GGUF/resolve/master/Qwen3.5-4B-Q4_0.gguf",
+            "https://hf-mirror.com/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_0.gguf",
+        ],
+        urls_global: &[
+            "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_0.gguf",
+        ],
+    }],
+};
+
+pub(crate) const MODELS: &[&ModelSpec] = &[&HY_MT2, &QWEN3_TTS, &QWEN35_08B, &QWEN35_2B, &QWEN35_4B];
 
 /// 本机语音的参考音色: Qwen3-TTS Base 按一段参考录音的音色朗读。
 /// 两段录音由离线语音 Kokoro 的两个推荐音色合成 (zf_001 / zm_010, 生成方法见
@@ -374,6 +449,8 @@ pub struct ModelStatus {
     speed: Option<f32>,
     /// 实测时是否用了显卡
     gpu: Option<bool>,
+    /// 对话模型: 这台设备推荐下载的那一个 (带得动的里面档位最合适的)
+    recommended: bool,
 }
 
 #[derive(Serialize)]
@@ -382,17 +459,26 @@ pub struct LocalLlmStatus {
     /// 这个构建带不带引擎 (iOS 不带)
     available: bool,
     models: Vec<ModelStatus>,
+    /// 对话模型在这台设备上的上下文大小 (token); 前端按它裁剪消息
+    chat_ctx: u32,
 }
 
 #[tauri::command]
 pub fn local_llm_status(app: AppHandle, lang: Option<String>) -> Result<LocalLlmStatus, String> {
     if !ENGINE_BUILT {
-        return Ok(LocalLlmStatus { available: false, models: Vec::new() });
+        return Ok(LocalLlmStatus { available: false, models: Vec::new(), chat_ctx: 0 });
     }
     let en = lang.as_deref() == Some("en");
     let root = models_root(&app)?;
     let dev = this_device(&root);
     let running = running_download();
+    // 推荐的对话模型: 不超过本机档位、且带得动的里面最大的一个
+    let tier = device::chat_tier(&dev);
+    let recommended = MODELS
+        .iter()
+        .filter(|m| m.kind == "chat" && m.tier <= tier && device::assess(&dev, &m.req, true).is_empty())
+        .max_by_key(|m| m.tier)
+        .map(|m| m.id);
     let models = MODELS
         .iter()
         .map(|m| {
@@ -411,10 +497,11 @@ pub fn local_llm_status(app: AppHandle, lang: Option<String>) -> Result<LocalLlm
                 crashed: is_installed && settle_crash(&root, m.id) == CrashState::Crashed,
                 speed: speed.map(|s| s.0),
                 gpu: speed.map(|s| s.1),
+                recommended: recommended == Some(m.id),
             }
         })
         .collect();
-    Ok(LocalLlmStatus { available: true, models })
+    Ok(LocalLlmStatus { available: true, models, chat_ctx: chat_ctx(QWEN35_2B.n_ctx) })
 }
 
 /// 用户确认再试一次: 清除闪退标记 (保留「只用处理器」的降级)
@@ -582,6 +669,18 @@ pub enum GenEvent {
     Done { tokens: u32, prompt_tokens: u32, load_ms: u64, prompt_ms: u64, gen_ms: u64, gpu: bool, cancelled: bool },
 }
 
+/// 对话模型实际使用的上下文: 手机上减半, 省内存, 读入提示词也更快
+const fn chat_ctx(n_ctx: u32) -> u32 {
+    if MOBILE { n_ctx / 2 } else { n_ctx }
+}
+
+/// 对话模型的一条消息 (与前端的 AiMessage 同形)
+#[derive(serde::Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
 /// 取消编号不大于 request_id 的生成 (前端编号单调递增)
 #[tauri::command]
 pub fn local_llm_cancel(request_id: u64) {
@@ -617,10 +716,25 @@ pub async fn local_llm_generate(
     max_tokens: u32,
     request_id: u64,
     on_event: tauri::ipc::Channel<GenEvent>,
+    messages: Option<Vec<ChatMessage>>,
+    temperature: Option<f32>,
 ) -> Result<(), String> {
     let spec = spec(&model)?;
-    if spec.kind != "translate" {
+    if !matches!(spec.kind, "translate" | "chat") {
         return Err("这个模型不能生成文字".into());
+    }
+    let chat = spec.kind == "chat";
+    // 对话模型收一串消息 (系统提示 + 多轮); 翻译模型只收一条用户消息
+    let messages: Vec<(String, String)> = match messages.filter(|m| chat && !m.is_empty()) {
+        Some(list) => list
+            .into_iter()
+            .filter(|m| matches!(m.role.as_str(), "system" | "user" | "assistant") && !m.content.trim().is_empty())
+            .map(|m| (m.role, m.content))
+            .collect(),
+        None => vec![("user".into(), prompt)],
+    };
+    if messages.is_empty() {
+        return Err("没有可发送的内容".into());
     }
     let root = models_root(&app)?;
     if !installed(&root, spec) {
@@ -633,15 +747,22 @@ pub async fn local_llm_generate(
     let request = engine::GenRequest {
         model_id: spec.id.into(),
         model_path: model_dir(&root, spec.id).join(spec.files[0].name),
-        prompt,
+        messages,
+        // Qwen3.5: 空的思考块 = 不思考, 直接作答 (阅读助手要的是快)
+        prefill: if chat { "<think>\n\n</think>\n\n" } else { "" },
         max_tokens: max_tokens.clamp(16, spec.n_ctx),
-        n_ctx: spec.n_ctx,
+        n_ctx: if chat { chat_ctx(spec.n_ctx) } else { spec.n_ctx },
         threads: device::inference_threads(&dev),
         use_gpu: !cpu_only_path(&root, spec.id).exists(),
         request_id,
         exclusive: memory_is_tight(&dev),
-        // 混元翻译模型卡片推荐的采样参数
-        sampling: engine::Sampling { temperature: 0.2, top_p: 0.6, top_k: 20, repeat_penalty: 1.05 },
+        sampling: if chat {
+            // Qwen3.5 不思考模式的推荐采样参数; 温度可由调用方指定 (翻译等要更稳)
+            engine::Sampling { temperature: temperature.unwrap_or(0.7).clamp(0.0, 1.5), top_p: 0.8, top_k: 20, repeat_penalty: 1.05 }
+        } else {
+            // 混元翻译模型卡片推荐的采样参数
+            engine::Sampling { temperature: 0.2, top_p: 0.6, top_k: 20, repeat_penalty: 1.05 }
+        },
     };
     let pieces = on_event.clone();
     let stats = run_engine_task(move || {
@@ -679,6 +800,8 @@ pub async fn local_llm_generate(
     _max_tokens: u32,
     _request_id: u64,
     _on_event: tauri::ipc::Channel<GenEvent>,
+    _messages: Option<Vec<ChatMessage>>,
+    _temperature: Option<f32>,
 ) -> Result<(), String> {
     Err("此版本不支持本机模型".into())
 }
@@ -830,10 +953,14 @@ mod tests {
         assert!(spec("nope").is_err());
         for m in MODELS {
             assert_eq!(m.req.download, m.total_size(), "{}: 要求里的下载量与文件对不上", m.id);
-            assert!(matches!(m.kind, "translate" | "tts"));
+            assert!(matches!(m.kind, "translate" | "tts" | "chat"));
         }
         // 语音模型: 主干在前, 声码器在后 (local_llm_speak 按这个顺序取)
         assert!(QWEN3_TTS.files[1].name.starts_with("mmproj-"));
+        // 对话模型: 三档各一个, 档位不重复
+        let mut tiers: Vec<u8> = MODELS.iter().filter(|m| m.kind == "chat").map(|m| m.tier).collect();
+        tiers.sort_unstable();
+        assert_eq!(tiers, vec![0, 1, 2]);
     }
 
     #[test]
@@ -863,6 +990,7 @@ mod tests {
             id: "tiny",
             kind: "translate",
             n_ctx: 1024,
+            tier: 0,
             req: Requirements::text(4, 1024),
             files: &[ModelFile { name: "a.gguf", size: 4, sha256: "", urls_cn: &[], urls_global: &[] }],
         };

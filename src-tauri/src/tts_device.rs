@@ -3,7 +3,7 @@
 //! sherpa-onnx 遇到内部错误会直接结束进程 (`_Exit`), 内存不足时的 C++ 异常也会让 Rust 侧 abort,
 //! 这些都无法在 Rust 里捕获。所以下载前先评估设备, 明显带不动的不提供下载;
 //! 运行时的闪退由 local_tts 的闪退标记兜底。
-#![cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
+#![cfg_attr(target_os = "ios", allow(dead_code))]
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -74,15 +74,15 @@ pub(crate) fn assess(ram: Option<u64>, cores: Option<usize>, avx2: Option<bool>,
 #[tauri::command]
 pub fn local_tts_device_check(app: AppHandle, lang: Option<String>) -> DeviceCheck {
     let en = lang.as_deref() == Some("en");
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(target_os = "ios")]
     {
         let _ = app;
         return DeviceCheck {
             ok: false,
-            reasons: vec![if en { "not supported on mobile".into() } else { "移动端暂不支持".into() }],
+            reasons: vec![if en { "not supported on iOS yet".into() } else { "iOS 暂不支持".into() }],
         };
     }
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(target_os = "ios"))]
     {
         use tauri::Manager;
         let data = app.path().app_data_dir().ok();

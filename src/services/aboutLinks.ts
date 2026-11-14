@@ -8,9 +8,9 @@
  *   另给作者微信号 (加好友后拉群), 二维码过期或取不到时仍可入群; community.json 可覆盖。
  */
 
-export type PlatformId = 'windows' | 'mac' | 'linux' | 'android'
+export type PlatformId = 'windows' | 'mac' | 'linux' | 'android' | 'ios'
 /** 安装包种类, 界面用 about.pkg.<kind> 取文案 */
-export type PackageKind = 'installer' | 'appleSilicon' | 'intel' | 'appimage' | 'deb' | 'rpm' | 'apk'
+export type PackageKind = 'installer' | 'appleSilicon' | 'intel' | 'appimage' | 'deb' | 'rpm' | 'apk' | 'ipa'
 
 export interface PlatformPackage {
   kind: PackageKind
@@ -42,8 +42,11 @@ const RULES: Array<{ platform: PlatformId; kind: PackageKind; match: RegExp }> =
   { platform: 'linux', kind: 'deb', match: /\.deb$/ },
   { platform: 'linux', kind: 'rpm', match: /\.rpm$/ },
   { platform: 'android', kind: 'apk', match: /_android_arm64\.apk$/ },
+  // 未签名真机包 (scripts/build-ios.mjs --ipa), 使用者自己重签后安装
+  { platform: 'ios', kind: 'ipa', match: /_ios_unsigned\.ipa$/ },
 ]
-const PLATFORM_ORDER: PlatformId[] = ['windows', 'mac', 'linux', 'android']
+const PLATFORM_ORDER: PlatformId[] = ['windows', 'mac', 'linux', 'android', 'ios']
+const APP_PLATFORMS: PlatformId[] = ['android', 'ios']
 
 function versionKey(v: string): number[] {
   return v.split('.').map(n => parseInt(n, 10) || 0)
@@ -93,13 +96,13 @@ function normalize(list: unknown, source: ReleaseListSource): Candidate[] {
   return out
 }
 
-/** 每个系统取最新一个带它安装包的 Release: Windows / macOS / Linux 只看桌面 tag, Android 两种 tag 都看 */
+/** 每个系统取最新一个带它安装包的 Release: Windows / macOS / Linux 只看桌面 tag, Android / iOS 两种 tag 都看 */
 export function parsePlatformReleases(list: unknown, source: ReleaseListSource): PlatformDownload[] {
   const best = new Map<PlatformId, PlatformDownload>()
   for (const { tag, assets } of normalize(list, source)) {
     const version = (tag.match(APP_TAG) as RegExpMatchArray)[1]
     for (const platform of PLATFORM_ORDER) {
-      if (platform !== 'android' && !DESKTOP_TAG.test(tag)) continue
+      if (!APP_PLATFORMS.includes(platform) && !DESKTOP_TAG.test(tag)) continue
       const packages: PlatformPackage[] = []
       for (const rule of RULES) {
         if (rule.platform !== platform) continue
@@ -114,7 +117,7 @@ export function parsePlatformReleases(list: unknown, source: ReleaseListSource):
   return PLATFORM_ORDER.flatMap(p => best.get(p) ?? [])
 }
 
-/** 当前设备所属系统 (用来标「本机」); 识别不了返回 null */
+/** 当前设备所属系统 (用来标「本机」); 识别不了返回 null。iOS 应用内由界面用 isIosApp() 判断 (iPad 的 WKWebView 自称 Macintosh) */
 export function detectPlatform(ua: string): PlatformId | null {
   if (/Android/i.test(ua)) return 'android'
   if (/iPhone|iPad|iPod/i.test(ua)) return null

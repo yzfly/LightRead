@@ -6,6 +6,7 @@
  *   /LightRead/download/mac              macOS Apple 芯片 (.dmg)        mac-intel: Intel (.dmg)
  *   /LightRead/download/linux            Linux AppImage                linux-deb / linux-rpm
  *   /LightRead/download/android          安卓 App (.apk, app-vX.Y.Z 线)
+ *   /LightRead/download/ios              iOS 未签名包 (.ipa, 需自行重签; 还没有带 IPA 的 Release 时跳到 Release 页)
  *   /LightRead/download/latest.json      各平台最新版本与直链 (给脚本和 AI)
  *   任一链接加 ?mirror=gitcode            走 GitCode 国内镜像 (镜像还没同步到最新版时用镜像上已校验的最新版)
  *
@@ -42,8 +43,9 @@ const TARGETS: Record<string, { platform: PlatformId; kind: PackageKind }> = {
   'linux-deb': { platform: 'linux', kind: 'deb' },
   'linux-rpm': { platform: 'linux', kind: 'rpm' },
   android: { platform: 'android', kind: 'apk' },
+  ios: { platform: 'ios', kind: 'ipa' },
 }
-const DEFAULT_TARGET: Record<PlatformId, string> = { windows: 'windows', mac: 'mac', linux: 'linux', android: 'android' }
+const DEFAULT_TARGET: Record<PlatformId, string> = { windows: 'windows', mac: 'mac', linux: 'linux', android: 'android', ios: 'ios' }
 
 /**
  * GitHub API 对 Cloudflare 出口 IP 常被限流 (未认证 60 次/时), 限流时改读不限流的 releases.atom:
@@ -145,7 +147,7 @@ export default {
     const target = TARGETS[name]
     if (!target) return redirect(`${SITE}#download`)
 
-    const line = target.platform === 'android' ? 'app' : 'desktop'
+    const line = target.platform === 'android' || target.platform === 'ios' ? 'app' : 'desktop'
     const got = await loadAny(prefer, ctx)
     const pkg = got?.items.find(d => d.platform === target.platform)?.packages.find(p => p.kind === target.kind)
     if (!got || !pkg) return redirect(RELEASE_PAGES[prefer][line])

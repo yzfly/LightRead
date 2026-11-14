@@ -7,6 +7,9 @@
  */
 import { fetchRemote } from './net'
 import { useSettings } from '../stores/settings'
+import { t } from '../i18n'
+import { LOCAL_AI_BASE_URL, LOCAL_AI_PROVIDER } from './localChatCore'
+import { LOCAL_CHAT_NOT_READY, localChat, localChatModel, localLlm, refreshLocalLlm } from './localLlm'
 
 export interface AiProviderPreset {
   id: string
@@ -81,6 +84,14 @@ export const AI_PROVIDERS: AiProviderPreset[] = [
     docsUrl: 'https://console.volcengine.com/ark',
   },
   {
+    // 本机模型 (Qwen3.5, llama.cpp 链接在应用里): 不联网; 模型在设置页按设备下载。只在带引擎的版本里列出
+    id: LOCAL_AI_PROVIDER,
+    label: '本机模型 (Qwen3.5)',
+    baseUrl: LOCAL_AI_BASE_URL,
+    defaultModel: '',
+    needsKey: false,
+  },
+  {
     id: 'ollama',
     label: '本地模型 (Ollama)',
     baseUrl: 'http://127.0.0.1:11434/v1',
@@ -127,6 +138,14 @@ function deviceId(): string {
 export function aiConfigured(): boolean {
   const s = useSettings()
   const preset = providerById(s.aiProvider)
+  if (preset.id === LOCAL_AI_PROVIDER) {
+    // 状态还没问过原生层时先当作可用 (问一下), 真没有模型时 chatStream 会给出明确的提示
+    if (!localLlm.loaded) {
+      void refreshLocalLlm()
+      return true
+    }
+    return !!localChatModel()
+  }
   if (!s.aiBaseUrl.trim() || !s.aiModel.trim()) return false
   if (preset.needsKey && !s.aiApiKey.trim()) return false
   return true
@@ -142,6 +161,15 @@ export async function* chatStream(
   opts: { temperature?: number; maxTokens?: number } = {},
 ): AsyncGenerator<string> {
   const s = useSettings()
+  if (s.aiProvider === LOCAL_AI_PROVIDER) {
+    try {
+      yield* localChat(messages, signal, opts)
+    } catch (e: any) {
+      if (String(e?.message ?? e).includes(LOCAL_CHAT_NOT_READY)) throw new Error(t('localChat.notReady'))
+      throw e
+    }
+    return
+  }
   const url = s.aiBaseUrl.trim().replace(/\/+$/, '') + '/chat/completions'
   const res = await fetchRemote(url, undefined, {
     method: 'POST',

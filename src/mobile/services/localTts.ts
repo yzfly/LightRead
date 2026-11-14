@@ -1,11 +1,15 @@
-/** 本地离线神经语音 (sherpa-onnx + Kokoro v1.1-zh), 桌面版专属 */
+/**
+ * 本地离线神经语音 (sherpa-onnx + Kokoro v1.1-zh): Android App 里有 (引擎随 APK, 语音包由用户下载),
+ * iOS 还没有 (原生层是空壳)。
+ */
 import { isTauri } from '../../storage/types.ts'
+import { isIosApp } from '../../services/iosShell.ts'
 import { reactive } from 'vue'
 import { useSettings } from '../../stores/settings.ts'
 import { toast } from '../../services/toast.ts'
 import { t } from '../../i18n/index.ts'
 
-export const localTtsAvailable = () => isTauri() && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+export const localTtsAvailable = () => isTauri() && !isIosApp()
 
 export interface LocalTtsStatus {
   installed: boolean

@@ -8,10 +8,11 @@ import { isTauri } from '../storage/types'
 import { useSettings } from '../stores/settings'
 import { logEvent } from './diagnostics'
 import { LOCAL_VOICE_MODEL, voiceModelUsable } from './localVoiceCore'
+import { LOCAL_CHAT_MAX_TOKENS, chatCharBudget, fitChatMessages, pickChatModel, type ChatTurn } from './localChatCore'
 
 export interface LocalModel {
   id: string
-  kind: 'translate' | 'tts'
+  kind: 'translate' | 'tts' | 'chat'
   size: number
   installed: boolean
   /** 已下载的字节 (含可续传的半截文件) */
@@ -25,6 +26,8 @@ export interface LocalModel {
   /** 实测速度, 没用过为 null: 翻译模型是 token/秒, 语音模型是「合成速度 ÷ 播放速度」(大于 1 才跟得上朗读) */
   speed: number | null
   gpu: boolean | null
+  /** 对话模型: 这台设备推荐下载的那一个 */
+  recommended?: boolean
 }
 
 export const localLlm = reactive({
@@ -33,6 +36,8 @@ export const localLlm = reactive({
   /** 已经向原生层问过一次状态 */
   loaded: false,
   models: [] as LocalModel[],
+  /** 对话模型在这台设备上的上下文大小 (token) */
+  chatCtx: 4096,
   /** 正在下载的阶段 (connecting / downloading / done) */
   phase: 'idle' as 'idle' | 'connecting' | 'downloading' | 'done',
 })
@@ -61,11 +66,12 @@ export function refreshLocalLlm(): Promise<void> {
   }
   refreshing ??= (async () => {
     try {
-      const status = await invoke<{ available: boolean; models: LocalModel[] }>('local_llm_status', {
+      const status = await invoke<{ available: boolean; models: LocalModel[]; chatCtx?: number }>('local_llm_status', {
         lang: useSettings().language === 'en' ? 'en' : 'zh',
       })
       localLlm.available = status.available
       localLlm.models = status.models
+      if (status.chatCtx) localLlm.chatCtx = status.chatCtx
       const running = status.models.find(m => m.running)
       if (running && !downloads.has(running.id)) void downloadLocalModel(running.id)
     } catch (e) {
@@ -162,7 +168,7 @@ export async function* localGenerate(
   model: string,
   prompt: string,
   maxTokens: number,
-  opts: { signal?: AbortSignal; onStats?: (s: LocalGenStats) => void } = {},
+  opts: { signal?: AbortSignal; onStats?: (s: LocalGenStats) => void; messages?: ChatTurn[]; temperature?: number } = {},
 ): AsyncGenerator<string> {
   const { invoke, Channel } = await import('@tauri-apps/api/core')
   const requestId = nextRequestId()
@@ -182,7 +188,7 @@ export async function* localGenerate(
   const cancel = () => void invoke('local_llm_cancel', { requestId }).catch(() => {})
   opts.signal?.addEventListener('abort', cancel)
   // 命令返回只说明原生层结束了; 正常结束以通道里的 done 为准 (它排在所有文本之后), 出错则没有 done
-  invoke('local_llm_generate', { model, prompt, maxTokens, requestId, onEvent: channel }).catch(e => {
+  invoke('local_llm_generate', { model, prompt, maxTokens, requestId, onEvent: channel, messages: opts.messages ?? null, temperature: opts.temperature ?? null }).catch(e => {
     failure = e ?? new Error('local model failed')
     finished = true
     wake?.()
@@ -203,6 +209,39 @@ export async function* localGenerate(
     opts.signal?.removeEventListener('abort', cancel)
     // 调用方提前退出循环 (不再要后面的文字) 时也让原生层停下
     if (!finished) cancel()
+  }
+}
+
+/** 「AI 服务」选了本机模型时, 这次对话能用的模型 (一个都没下载为 undefined) */
+export function localChatModel(): LocalModel | undefined {
+  return localLlm.available ? pickChatModel(localLlm.models, useSettings().aiModel) : undefined
+}
+
+/** 本机对话还没准备好 (没下载模型, 或这个版本不带引擎) */
+export const LOCAL_CHAT_NOT_READY = 'LOCAL_CHAT_NOT_READY'
+
+/**
+ * 用本机对话模型 (Qwen3.5) 回答, 逐段 yield; 与 services/ai.ts 的 chatStream 同形。
+ * 消息先裁进这台设备的上下文 (留系统提示与当前问题, 历史从近往远留)。
+ */
+export async function* localChat(
+  messages: ChatTurn[],
+  signal?: AbortSignal,
+  opts: { temperature?: number; maxTokens?: number } = {},
+): AsyncGenerator<string> {
+  if (!localLlm.loaded) await refreshLocalLlm()
+  const model = localChatModel()
+  if (!model) throw new Error(LOCAL_CHAT_NOT_READY)
+  const maxTokens = Math.min(opts.maxTokens ?? LOCAL_CHAT_MAX_TOKENS, Math.floor(localLlm.chatCtx / 2))
+  const fitted = fitChatMessages(messages, chatCharBudget(localLlm.chatCtx, maxTokens))
+  try {
+    yield* localGenerate(model.id, '', maxTokens, { signal, messages: fitted, temperature: opts.temperature })
+  } catch (e) {
+    if ((e as any)?.name !== 'AbortError') logEvent('warn', 'local-llm', `chat failed model=${model.id}`, e)
+    throw e
+  } finally {
+    // 记录的速度变了 (首次使用后才有), 让设置页显示出来
+    void refreshLocalLlm()
   }
 }
 

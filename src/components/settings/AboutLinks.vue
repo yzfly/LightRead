@@ -12,6 +12,7 @@ import { AUTHOR_WECHAT, detectPlatform, type PackageKind, type PlatformDownload,
 import { loadCommunity, loadPlatformDownloads } from '../../services/aboutLinksLoad'
 import { SITE_URL } from '../../services/siteLinks'
 import { consumeCommunityFocus } from '../../services/diagnostics'
+import { isIosApp } from '../../services/iosShell'
 import DiagnosticsPanel from './DiagnosticsPanel.vue'
 
 const PLATFORM_LABEL: Record<PlatformId, string> = {
@@ -19,6 +20,7 @@ const PLATFORM_LABEL: Record<PlatformId, string> = {
   mac: 'macOS',
   linux: 'Linux',
   android: 'Android',
+  ios: 'iOS',
 }
 const PKG_KEY: Record<PackageKind, string> = {
   installer: 'settings.pkgInstaller',
@@ -28,9 +30,10 @@ const PKG_KEY: Record<PackageKind, string> = {
   deb: 'settings.pkgDeb',
   rpm: 'settings.pkgRpm',
   apk: 'settings.pkgApk',
+  ipa: 'settings.pkgIpa',
 }
 
-const thisPlatform = detectPlatform(navigator.userAgent)
+const thisPlatform: PlatformId | null = isIosApp() ? 'ios' : detectPlatform(navigator.userAgent)
 /** 手机上无法用本机扫本机的码, 提示截图后从相册识别 */
 const onPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
@@ -106,7 +109,8 @@ onMounted(async () => {
           <div class="row-name">
             <span class="platform">{{ PLATFORM_LABEL[d.platform] }}</span>
             <span v-if="d.platform === thisPlatform" class="chip chip-brand">{{ t('settings.downloadsThisDevice') }}</span>
-            <span v-if="d.platform === 'android'" class="chip">{{ t('settings.downloadsExperimental') }}</span>
+            <span v-if="d.platform === 'android' || d.platform === 'ios'" class="chip">{{ t('settings.downloadsExperimental') }}</span>
+            <span v-if="d.platform === 'ios'" class="chip">{{ t('settings.downloadsSelfSign') }}</span>
             <span class="version">v{{ d.version }}</span>
           </div>
           <div class="row-actions">

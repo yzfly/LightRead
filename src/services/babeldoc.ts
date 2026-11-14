@@ -53,7 +53,8 @@ export const babeldocSupported = () => isTauri()
 /** 试用通道走中转鉴权头, CLI 无法携带 — 需要用户自己的模型服务 */
 export function babeldocUsableProvider(): boolean {
   const s = useSettings()
-  return !s.aiBaseUrl.startsWith(TRIAL_BASE_URL)
+  // 本机模型没有 HTTP 接口, 外部的 BabelDOC 用不了
+  return !s.aiBaseUrl.startsWith(TRIAL_BASE_URL) && !s.aiBaseUrl.startsWith('local:')
 }
 
 export async function babeldocStatus(): Promise<BabeldocStatus> {

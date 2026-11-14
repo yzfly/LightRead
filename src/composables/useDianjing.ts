@@ -60,6 +60,7 @@ import { useSettings } from '../stores/settings'
 import { t } from '../i18n'
 import { toast } from '../services/toast'
 import { aiConfigured, providerById, TRIAL_BASE_URL } from '../services/ai'
+import { LOCAL_AI_PROVIDER } from '../services/localChatCore'
 import { DianjingEngine, type CardTarget, type DjPosition, type DjStatus } from '../services/dianjing/engine'
 import { streamDianjing, type DjChannel } from '../services/dianjing/client'
 import { djColors } from '../services/dianjing/theme'
@@ -164,7 +165,7 @@ export function useDianjing(opts: UseDianjingOptions) {
   const channel = (): DjChannel | null => {
     const mode = prefs.value.channel
     const provider = providerById(settings.aiProvider)
-    const own = provider.id !== 'trial' && aiConfigured() && !settings.aiBaseUrl.startsWith(TRIAL_BASE_URL)
+    const own = provider.id !== 'trial' && provider.id !== LOCAL_AI_PROVIDER && aiConfigured() && !settings.aiBaseUrl.startsWith(TRIAL_BASE_URL)
     const ownChannel: DjChannel = { kind: 'own', baseUrl: settings.aiBaseUrl, apiKey: settings.aiApiKey, model: settings.aiModel }
     if (mode === 'own') return own ? ownChannel : null
     if (mode === 'auto' && own) return ownChannel

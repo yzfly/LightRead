@@ -19,8 +19,10 @@ const N_BATCH: usize = 512;
 pub(crate) struct GenRequest {
     pub model_id: String,
     pub model_path: PathBuf,
-    /// 用户消息; 套用模型自带的对话模板后送入
-    pub prompt: String,
+    /// 对话消息 (role, content), role 为 system / user / assistant; 套用模型自带的对话模板后送入
+    pub messages: Vec<(String, String)>,
+    /// 接在模板末尾的助手开头 (Qwen3.5 用空的思考块关掉思考); 没有就留空
+    pub prefill: &'static str,
     pub max_tokens: u32,
     pub n_ctx: u32,
     pub threads: i32,
@@ -195,8 +197,13 @@ pub(crate) fn generate(req: &GenRequest, on_piece: &mut dyn FnMut(&str)) -> Resu
     let vocab = model.vocab();
 
     let template = model.chat_template(None).map_err(|e| format!("模型缺少对话模板: {e}"))?;
-    let message = LlamaChatMessage::new("user".into(), req.prompt.clone()).map_err(|e| format!("文本无效: {e}"))?;
-    let text = model.apply_chat_template(&template, &[message], true).map_err(|e| format!("套用对话模板失败: {e}"))?;
+    let messages = req
+        .messages
+        .iter()
+        .map(|(role, content)| LlamaChatMessage::new(role.clone(), content.clone()).map_err(|e| format!("文本无效: {e}")))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut text = model.apply_chat_template(&template, &messages, true).map_err(|e| format!("套用对话模板失败: {e}"))?;
+    text.push_str(req.prefill);
     let mut tokens = vocab.tokenize(text.as_bytes(), true, true);
     // 模板自己带了起始符时, 分词器再加一个会重复
     if tokens.len() >= 2 && tokens[0] == vocab.bos() && tokens[1] == vocab.bos() {
@@ -307,7 +314,8 @@ mod tests {
                 &GenRequest {
                     model_id: "test".into(),
                     model_path: path.clone(),
-                    prompt: prompt.into(),
+                    messages: vec![("user".into(), prompt.into())],
+                    prefill: "",
                     max_tokens: 400,
                     n_ctx: 4096,
                     threads,
@@ -335,7 +343,8 @@ mod tests {
             &GenRequest {
                 model_id: "test".into(),
                 model_path: path.clone(),
-                prompt: long,
+                messages: vec![("user".into(), long)],
+                prefill: "",
                 max_tokens: 100,
                 n_ctx: 4096,
                 threads,

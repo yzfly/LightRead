@@ -62,6 +62,21 @@ test('drafts, prereleases, odd tags and foreign URLs are ignored', () => {
   assert.equal(parsePlatformReleases(null, 'github').length, 0)
 })
 
+test('iOS: unsigned IPA is listed from the app line only when a release carries it', () => {
+  const ipa = 'LightRead_app-v2.4.0_ios_unsigned.ipa'
+  const without = parsePlatformReleases([gh('v2.3.1', desktop('2.3.1')), gh('app-v2.3.0', apk('app-v2.3.0'))], 'github')
+  assert.equal(without.find(i => i.platform === 'ios'), undefined)
+  const items = parsePlatformReleases([
+    gh('v2.3.1', desktop('2.3.1')),
+    gh('app-v2.4.0', [...apk('app-v2.4.0'), ipa]),
+    gh('app-v2.3.0', apk('app-v2.3.0')),
+  ], 'github')
+  assert.deepEqual(items.map(i => i.platform), ['windows', 'mac', 'linux', 'android', 'ios'])
+  const ios = items.find(i => i.platform === 'ios')
+  assert.equal(ios.version, '2.4.0')
+  assert.deepEqual(ios.packages.map(p => [p.kind, p.url]), [['ipa', `${GH}app-v2.4.0/${ipa}`]])
+})
+
 test('GitCode: only mirrored (SHA256SUMS) releases, URLs rebuilt, sizes from the body note', () => {
   const sizes = { 'LightRead_2.3.1_x64-setup.exe': 9 * 1048576 }
   const list = [

@@ -35,6 +35,9 @@ pub(crate) struct Requirements {
     pub mobile_ok: bool,
     /// 只在有显卡加速的构建上提供 (仅处理器时跟不上)
     pub needs_gpu: bool,
+    /// 手机的最低总内存 (0 = 用通用下限): 小模型放宽到 4GB 手机, 大模型收紧到 8GB
+    pub mobile_min_ram: u64,
+    pub mobile_min_ram_gb: u32,
     /// 桌面的最低总内存与线程数 (0 = 用通用下限)
     pub desktop_min_ram: u64,
     pub desktop_min_ram_gb: u32,
@@ -44,7 +47,7 @@ pub(crate) struct Requirements {
 impl Requirements {
     /// 文本模型: 内存按文件大小与上下文估算, 其余用通用下限
     pub const fn text(download: u64, n_ctx: u32) -> Self {
-        Self { download, memory: memory_need(download, n_ctx), mobile_ok: true, needs_gpu: false, desktop_min_ram: 0, desktop_min_ram_gb: 8, desktop_min_cores: 0 }
+        Self { download, memory: memory_need(download, n_ctx), mobile_ok: true, needs_gpu: false, mobile_min_ram: 0, mobile_min_ram_gb: 0, desktop_min_ram: 0, desktop_min_ram_gb: 8, desktop_min_cores: 0 }
     }
 }
 
@@ -105,7 +108,7 @@ pub(crate) fn assess(dev: &Device, req: &Requirements, installed: bool) -> Vec<C
         return vec![Concern::NeedsGpu];
     }
     let (min_ram, min_ram_gb, min_cores) = if dev.mobile {
-        (MOBILE_MIN_RAM, 6, MOBILE_MIN_CORES)
+        if req.mobile_min_ram > 0 { (req.mobile_min_ram, req.mobile_min_ram_gb, MOBILE_MIN_CORES) } else { (MOBILE_MIN_RAM, 6, MOBILE_MIN_CORES) }
     } else {
         (req.desktop_min_ram.max(DESKTOP_MIN_RAM), req.desktop_min_ram_gb.max(8), req.desktop_min_cores.max(DESKTOP_MIN_CORES))
     };
@@ -131,6 +134,24 @@ pub(crate) fn assess(dev: &Device, req: &Requirements, installed: bool) -> Vec<C
     out
 }
 
+/// 对话模型按设备分的档: 0 = 轻量 (0.8B), 1 = 标准 (2B), 2 = 增强 (4B)。
+/// 分档取自 pocketpal-ai-zh 的设备规则与 K30 Pro (骁龙 865, 4 线程) 实测:
+/// 0.8B 很快, 2B 约 16 token/秒 (够用), 4B 约 7 token/秒 (能跑但慢, 手机上不作推荐)。
+/// 电脑: 有显卡加速且 16GB 以上推荐 4B, 8GB 以上推荐 2B。
+pub(crate) fn chat_tier(dev: &Device) -> u8 {
+    let ram = dev.ram.unwrap_or(0);
+    if dev.mobile {
+        return if ram >= 7_300 << 20 { 1 } else { 0 };
+    }
+    if dev.gpu && ram >= 15_000 << 20 {
+        2
+    } else if ram >= DESKTOP_MIN_RAM {
+        1
+    } else {
+        0
+    }
+}
+
 /// 由各核心的最高频率数出大核: 高于最低一档的都算。频率全相同 (或读不到) 返回 0。
 pub(crate) fn perf_cores_from_freqs(freqs: &[u64]) -> usize {
     let Some(min) = freqs.iter().copied().min() else { return 0 };
@@ -152,7 +173,7 @@ mod tests {
 
     const HY_MT: Requirements = Requirements::text(1_133_080_448, 4096);
     /// 语音模型: 只在 12GB 以上、8 线程以上的电脑上提供
-    const VOICE: Requirements = Requirements { download: 1_482_388_192, memory: 3_500 << 20, mobile_ok: false, needs_gpu: true, desktop_min_ram: 11_500 << 20, desktop_min_ram_gb: 12, desktop_min_cores: 8 };
+    const VOICE: Requirements = Requirements { download: 1_482_388_192, memory: 3_500 << 20, mobile_ok: false, needs_gpu: true, mobile_min_ram: 0, mobile_min_ram_gb: 0, desktop_min_ram: 11_500 << 20, desktop_min_ram_gb: 12, desktop_min_cores: 8 };
 
     fn dev(ram_gb: f64, cores: usize, mobile: bool) -> Device {
         Device {
@@ -175,6 +196,23 @@ mod tests {
         assert!(assess(&dev(5.6, 8, true), &HY_MT, false).is_empty());
         // 测不到的项不拦
         assert!(assess(&Device::default(), &HY_MT, false).is_empty());
+    }
+
+    #[test]
+    fn chat_models_are_tiered_by_device() {
+        // 手机: 8GB 以上推荐 2B, 其余 0.8B; 手机不推荐 4B
+        assert_eq!(chat_tier(&dev(11.3, 8, true)), 1);
+        assert_eq!(chat_tier(&dev(5.6, 8, true)), 0);
+        // 电脑: 16GB 且有显卡加速才推荐 4B
+        assert_eq!(chat_tier(&Device { gpu: false, ..dev(16.0, 10, false) }), 1);
+        assert_eq!(chat_tier(&dev(16.0, 10, false)), 2);
+        assert_eq!(chat_tier(&dev(8.0, 8, false)), 1);
+        // 小模型放宽到 4GB 手机, 大模型要 8GB 手机
+        let small = Requirements { mobile_min_ram: 3_300 << 20, mobile_min_ram_gb: 4, ..Requirements::text(532_517_120, 4096) };
+        let large = Requirements { mobile_min_ram: 7_300 << 20, mobile_min_ram_gb: 8, ..Requirements::text(2_583_221_408, 4096) };
+        assert!(assess(&dev(3.6, 8, true), &small, false).is_empty());
+        assert_eq!(assess(&dev(5.6, 8, true), &large, false), vec![Concern::LowMemory { have: (5.6 * (1u64 << 30) as f64) as u64, need_gb: 8 }]);
+        assert!(assess(&dev(11.3, 8, true), &large, false).is_empty());
     }
 
     #[test]
