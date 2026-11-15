@@ -10,6 +10,7 @@ import {
 } from './merge.ts'
 import { buildSettingsRegs, planSettingsApply } from './settingsSync.ts'
 import { sha256Blob } from './hash.ts'
+import { isUnreachableError } from './types.ts'
 import {
   aggregateReadingLog, planReadingLogLanding, type ReadingLogRow, type ReadingLogSyncPort,
 } from '../readingLog.ts'
@@ -531,8 +532,9 @@ export async function runSync(deps: SyncDeps): Promise<SyncResult> {
           }
         }
       } catch (err) {
-        // 单个文件失败不影响元数据同步, 下次再传
+        // 单个文件失败不影响元数据同步, 下次再传; 网络断了就不再逐个试剩下的 (2026-11-07 日志: 断网时一轮 121 条)
         console.warn('[sync] upload failed', hash, err)
+        if (isUnreachableError(err)) break
       }
     }
   }

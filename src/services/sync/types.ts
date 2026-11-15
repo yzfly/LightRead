@@ -236,3 +236,9 @@ export interface SyncResult {
   /** 从别的设备落地的设置项数 (值有变化的) */
   settingsApplied?: number
 }
+
+/** 远端连不上 (断网 / DNS / 连接被拒) 的错误: 同步引擎据此不再逐个尝试剩下的文件 (断网时一轮会报上百条) */
+export function unreachableError(message: string): Error {
+  return Object.assign(new Error(message), { networkUnreachable: true })
+}
+export const isUnreachableError = (err: unknown) => (err as { networkUnreachable?: unknown })?.networkUnreachable === true

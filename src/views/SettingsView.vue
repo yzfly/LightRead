@@ -33,6 +33,10 @@ import {
 } from '../services/updater'
 import { t } from '../i18n'
 import { bossKeyLabel, shortcutFromEvent, stealthSupported, STEALTH_BG_MIN, STEALTH_TEXT_MIN } from '../services/stealth'
+import StealthColorPick from '../components/StealthColorPick.vue'
+import { FONT_FAMILIES, resolveReaderColors } from '../services/readerTheme'
+import { listSystemFonts } from '../services/fonts'
+import { resolvedTheme } from '../services/appearance'
 import { aiConfigured, providerById, chatStream } from '../services/ai'
 import AiProviderPicker from '../components/settings/AiProviderPicker.vue'
 import LocalModelPack from '../components/LocalModelPack.vue'
@@ -49,6 +53,21 @@ const settings = useSettings()
 
 // ---- 摸鱼模式: 老板键用「点按后按下新组合键」录制, 格式与原生全局快捷键一致 ----
 const stealthAvailable = stealthSupported()
+/** 摸鱼颜色没设时色块显示的正文主题色 */
+const stealthThemeColors = computed(() => resolveReaderColors(settings.readerPrefs.theme, resolvedTheme.value === 'dark'))
+/** 摸鱼字体可选系统字体: 枚举要扫一遍字体目录, 用到下拉框时才取 (存的是系统字体时进页面就取, 好显示名字) */
+const stealthSystemFonts = ref<string[]>([])
+let stealthFontsLoading = false
+async function loadStealthFonts() {
+  if (!stealthAvailable || stealthSystemFonts.value.length || stealthFontsLoading) return
+  stealthFontsLoading = true
+  try {
+    stealthSystemFonts.value = await listSystemFonts()
+  } catch { /* 取不到就只列内置与自定义字体 */ } finally {
+    stealthFontsLoading = false
+  }
+}
+if (settings.stealth.fontFamily.startsWith('"')) void loadStealthFonts()
 const recording = ref(false)
 function onRecordKey(e: KeyboardEvent) {
   e.preventDefault()
@@ -1426,6 +1445,36 @@ const APPEARANCE_OPTIONS = [
         </div>
         <div class="row">
           <div class="row-text">
+            <div class="row-title">{{ t('stealth.bgColor') }}</div>
+            <div class="row-desc">{{ t('stealth.bgColorDesc') }}</div>
+          </div>
+          <StealthColorPick v-model="settings.stealth.bgColor" :fallback="stealthThemeColors.bg" :label="t('stealth.bgColor')" />
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">{{ t('stealth.textColor') }}</div>
+            <div class="row-desc">{{ t('stealth.textColorDesc') }}</div>
+          </div>
+          <StealthColorPick v-model="settings.stealth.textColor" :fallback="stealthThemeColors.fg" :label="t('stealth.textColor')" />
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">{{ t('stealth.font') }}</div>
+            <div class="row-desc">{{ t('stealth.fontDesc') }}</div>
+          </div>
+          <AppSelect v-model="settings.stealth.fontFamily" class="input ss-font" :aria-label="t('stealth.font')" @pointerenter="loadStealthFonts" @focusin="loadStealthFonts">
+            <option value="">{{ t('stealth.fontFollow') }}</option>
+            <option v-for="f in FONT_FAMILIES.filter(f => f.value)" :key="f.labelKey" :value="f.value">{{ t(f.labelKey) }}</option>
+            <optgroup v-if="settings.customFonts.length" :label="t('reader.customFonts')">
+              <option v-for="f in settings.customFonts" :key="f.file" :value="`custom:${f.name}`">{{ f.name }}</option>
+            </optgroup>
+            <optgroup v-if="stealthSystemFonts.length" :label="t('reader.systemFonts')">
+              <option v-for="name in stealthSystemFonts" :key="name" :value="`&quot;${name}&quot;`">{{ name }}</option>
+            </optgroup>
+          </AppSelect>
+        </div>
+        <div class="row">
+          <div class="row-text">
             <div class="row-title">{{ t('stealth.bossKey') }}</div>
             <div class="row-desc">{{ t('stealth.bossKeyDesc') }}</div>
           </div>
@@ -1968,6 +2017,10 @@ const APPEARANCE_OPTIONS = [
   color: var(--brand);
 }
 .ss-title {
+  width: 200px;
+  flex-shrink: 0;
+}
+.ss-font {
   width: 200px;
   flex-shrink: 0;
 }

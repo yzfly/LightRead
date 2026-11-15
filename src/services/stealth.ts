@@ -33,6 +33,35 @@ export function stealthBackground(hex: string, opacity: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${clampOpacity(opacity, STEALTH_BG_MIN)})`
 }
 
+/** 设置里的摸鱼颜色: 合法的 #rgb / #rrggbb 规整成小写 #rrggbb, 其他 (空 / 手改 / 同步来的脏值) 为 '' (跟随正文主题) */
+export function stealthColor(v: unknown): string {
+  if (typeof v !== 'string') return ''
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(v.trim())
+  if (!m) return ''
+  return `#${(m[1].length === 3 ? m[1].replace(/./g, c => c + c) : m[1]).toLowerCase()}`
+}
+
+/** 摸鱼时实际用的底色与字色: 设了颜色用设置, 没设跟随正文主题 (EPUB) 或纸墨色 (PDF) */
+export function stealthColors(prefs: Pick<StealthPrefs, 'bgColor' | 'textColor'>, base: { bg: string; fg: string }) {
+  return { bg: stealthColor(prefs.bgColor) || base.bg, fg: stealthColor(prefs.textColor) || base.fg }
+}
+
+/** 屏幕取色 (Chromium 的 EyeDropper, WebView2 有; macOS 的 WKWebView 没有): 取窗口后面网页的底色 / 字色 */
+export function eyeDropperSupported(): boolean {
+  return typeof window !== 'undefined' && 'EyeDropper' in window
+}
+
+/** 取一个屏幕颜色; 用户按 Esc 取消或不支持时返回 null */
+export async function pickScreenColor(): Promise<string | null> {
+  if (!eyeDropperSupported()) return null
+  try {
+    const result = await new (window as any).EyeDropper().open()
+    return stealthColor(result?.sRGBHex) || null
+  } catch {
+    return null
+  }
+}
+
 /**
  * PDF 摸鱼「只留墨迹」: feColorMatrix 的矩阵。输出颜色固定为墨色, 透明度 = 原透明度 - 亮度,
  * 白纸完全透明, 黑字完全不透明, 灰字介于两者之间; 彩图变成墨色剪影 (摸鱼时反而更不显眼)。

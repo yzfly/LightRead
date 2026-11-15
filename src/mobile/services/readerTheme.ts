@@ -63,6 +63,12 @@ export const FONT_FAMILIES = [
   { labelKey: 'reader.fontKaiti', value: '"Kaiti SC", KaiTi, "Noto Serif SC", serif' },
 ]
 
+/** 与桌面相同 (services/readerTheme.ts): 选了字体时盖过书自带的字体, 代码类元素保留等宽 */
+export function fontOverrideCSS(fontFamily: string): string {
+  if (!fontFamily) return ''
+  return 'body, body :not(pre):not(code):not(kbd):not(samp):not(tt) { font-family: inherit !important; }'
+}
+
 /** 注入到 foliate 渲染 iframe 的样式 */
 export function getReaderCSS(prefs: ReaderPrefs, appDark: boolean, style?: ReaderModeStyle): string {
   const theme = resolveReaderTheme(prefs.theme, appDark)
@@ -75,9 +81,10 @@ export function getReaderCSS(prefs: ReaderPrefs, appDark: boolean, style?: Reade
       color-scheme: ${theme === 'dark' ? 'dark' : 'light'};
       color: ${colors.fg};
       font-size: ${prefs.fontSize}px;
-      ${prefs.fontFamily ? `font-family: ${prefs.fontFamily};` : ''}
+      ${prefs.fontFamily ? `font-family: ${prefs.fontFamily} !important;` : ''}
       ${prefs.letterSpacing > 0 ? `letter-spacing: ${Math.min(0.5, prefs.letterSpacing)}em;` : ''}
     }
+    ${fontOverrideCSS(prefs.fontFamily)}
     /* 与桌面一致: 书自带的 body 字色 (Project Gutenberg 的 pgepub.css 写死 color: black) 盖过主题后, 夜间是黑底黑字 */
     body { background: none !important; color: ${colors.fg} !important; }
     /* Project Gutenberg 版权页的作者列表写了 all: initial, 字色回到默认黑色, 不继承主题 */

@@ -1,4 +1,4 @@
-// 摸鱼模式 (桌面): 老板键录制与校验 / 显示 / 半透明底色 / 传给原生层的选项 / 窗口配置
+// 摸鱼模式 (桌面): 老板键录制与校验 / 显示 / 半透明底色 / 自选底色·字色·字体 / 传给原生层的选项 / 窗口配置
 // 原生窗口命令见 cargo test stealth, 页面行为见 scripts/e2e-stealth.mjs
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -10,11 +10,14 @@ import {
   nativeOptions,
   shortcutFromEvent,
   stealthBackground,
+  stealthColor,
+  stealthColors,
   stealthInkMatrix,
   stealthPdfColors,
   validBounds,
   STEALTH_BG_MIN,
 } from '../src/services/stealth.ts'
+import { getReaderCSS, resolveReaderColors } from '../src/services/readerTheme.ts'
 
 const key = (code, mods = {}) => ({ key: '', code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods })
 
@@ -126,4 +129,30 @@ test('PDF 只留墨迹: 白纸透明、黑字不透明, 输出墨色; 外观决�
   assert.deepEqual(black.slice(0, 3), [0x1f / 255, 0x23 / 255, 0x29 / 255].map(v => +v.toFixed(4)), 'ink colour')
   assert.deepEqual(stealthPdfColors('light'), { paper: '#ffffff', ink: '#1f2329' })
   assert.notEqual(stealthPdfColors('dark').paper, '#ffffff')
+})
+
+test('摸鱼颜色: 合法十六进制规整成 #rrggbb, 脏值跟随主题', () => {
+  assert.equal(stealthColor('#FFF'), '#ffffff')
+  assert.equal(stealthColor(' 1A2b3C '), '#1a2b3c')
+  for (const bad of ['', 'red', '#12', 'rgb(0,0,0)', null, 3, '#1234567']) assert.equal(stealthColor(bad), '', String(bad))
+  const theme = { bg: '#faf3e7', fg: '#453c2c' }
+  assert.deepEqual(stealthColors({ bgColor: '', textColor: '' }, theme), theme)
+  assert.deepEqual(stealthColors({ bgColor: '#F6F6F6', textColor: 'oops' }, theme), { bg: '#f6f6f6', fg: '#453c2c' })
+})
+
+test('摸鱼字色进正文样式: 正文与链接同色', () => {
+  const c = resolveReaderColors('light', false, { textColor: '#121212' })
+  assert.equal(c.fg, '#121212')
+  assert.equal(c.link, '#121212')
+  assert.notEqual(c.bg, '#121212')
+  assert.equal(resolveReaderColors('light', false, {}).fg, '#1d2129', 'no override keeps the theme')
+})
+
+// 2026-11-15 Windows 反馈改字体无效: 字体只写在 html 上, 书里 body / p 的 font-family 会盖掉它
+test('选了字体时盖过书自带字体, 代码块保留等宽; 默认字体不加覆盖', () => {
+  const prefs = { theme: 'light', fontSize: 18, lineHeight: 1.6, gap: 6, fontFamily: '"Microsoft YaHei"', justify: false, letterSpacing: 0 }
+  const css = getReaderCSS(prefs, false)
+  assert.match(css, /font-family: "Microsoft YaHei" !important;/)
+  assert.match(css, /body, body :not\(pre\):not\(code\):not\(kbd\):not\(samp\):not\(tt\) \{ font-family: inherit !important; \}/)
+  assert.doesNotMatch(getReaderCSS({ ...prefs, fontFamily: '' }, false), /font-family/)
 })

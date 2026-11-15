@@ -3065,7 +3065,9 @@ const modes = useReadingModes({
   onImmersiveChange: on => {
     setSystemBarsHidden(on)
     void setKeepScreenOn(on)
-    if (on) hideBars()
+    // 开着沉浸打开书时, 这里在 useReadingModes() 返回前就被调用 (immediate watch); hideBars 要读 modes / dj,
+    // 此时还没初始化 (TDZ: Cannot access before initialization, 2026-11-15 Windows 诊断日志), 等本轮 setup 结束再收
+    if (on) void nextTick(hideBars)
   },
   refreshMarginals: () => updateMarginals(),
   onReminder: () => stopAutoRead(),

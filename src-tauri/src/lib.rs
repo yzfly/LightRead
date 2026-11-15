@@ -309,9 +309,22 @@ pub fn run() {
       app_handle.state::<agent::AgentSupervisor>().stop_all();
     }
     // 正常退出时正在朗读不算闪退
+    if let tauri::RunEvent::ExitRequested { code, .. } = &event {
+      log::info!(target: "app", "exit requested code={code:?}");
+    }
     if matches!(&event, tauri::RunEvent::Exit) {
+      log::info!(target: "app", "exit");
       local_tts::clear_crash_marker_on_exit(app_handle);
       local_llm::shutdown(app_handle);
+      // Windows: tao 0.35 的事件循环销毁后若还收到窗口消息 (退出途中 / 关机注销时的 WM_ENDSESSION),
+      // 会 panic「cannot move state from Destroyed」(tauri-apps/tao#1310; 2026-11-15 用户诊断日志)。
+      // 清理做完就直接结束进程, 不再回到已销毁的事件循环。应用不使用 restart, 不影响重启流程。
+      #[cfg(windows)]
+      {
+        app_handle.cleanup_before_exit();
+        log::logger().flush();
+        std::process::exit(0);
+      }
     }
     // macOS/移动端通过系统 Opened 事件交付关联文件；冷启动事件同样先进入队列。
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]

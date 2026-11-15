@@ -203,6 +203,12 @@ export interface StealthPrefs {
   bgOpacity: number
   /** 正文文字不透明度 0.4–1 (调低像灰字) */
   textOpacity: number
+  /** 摸鱼时的背景色 (#rrggbb), 空为跟随正文主题; 调成窗口后面网页的底色就和网页融为一体 */
+  bgColor: string
+  /** 摸鱼时的文字颜色 (#rrggbb), 空为跟随正文主题 */
+  textColor: string
+  /** 摸鱼时的正文字体 (取值同 readerPrefs.fontFamily), 空为跟随阅读设置; PDF 不适用 */
+  fontFamily: string
   /** 窗口标题伪装 (任务栏显示的名字) */
   disguise: boolean
   /** 伪装标题; 空时用默认「文档1」 */
@@ -385,6 +391,9 @@ const defaults: SettingsState = {
     autoEnter: false,
     bgOpacity: 0.85,
     textOpacity: 1,
+    bgColor: '',
+    textColor: '',
+    fontFamily: '',
     disguise: false,
     disguiseTitle: '',
     bossKey: 'Alt+Shift+Z',

@@ -7,7 +7,7 @@
  * 改走原生上传命令 (services/nativeUpload.ts), 不经 plugin-http 的 JSON 序列化.
  * 每个请求都有整体超时, 超时报 sync.err.timeout.
  */
-import { SYNC_FORMAT } from './types.ts'
+import { SYNC_FORMAT, unreachableError } from './types.ts'
 import type { SyncDoc, SyncRemote } from './types'
 import { isLocalFileRef, isTauri, type LocalFileRef } from '../../storage/types.ts'
 
@@ -87,6 +87,16 @@ export function defaultHttp(cfg: WebdavConfig): HttpFn {
 }
 
 const timedOutError = (err: unknown) => (err as { code?: unknown })?.code === 'timeout'
+
+/**
+ * 连接建立后被对方断开 (TCP 重置 / 响应前关闭): 多是服务器或中间网络偶发, 立即重试一次通常就好
+ * (2026-11-15 Windows 诊断日志: InfiniCLOUD 每隔几轮报「远程主机强迫关闭了一个现有的连接」)。
+ * 连不上 (DNS / 拒绝连接 / 证书) 不在此列, 重试也没用。WebDAV 的 PUT / GET / PROPFIND 等重发是安全的。
+ */
+export function connectionResetError(err: unknown): boolean {
+  const msg = String((err as Error)?.message ?? err)
+  return /connection closed before message completed|connection reset|forcibly closed|os error (10054|104)\b|强迫关闭/i.test(msg)
+}
 
 async function defaultTranslate(key: string, params?: Record<string, string | number>) {
   const { t } = await import('../../i18n/index.ts')
@@ -170,7 +180,7 @@ export function createWebdavRemote(
   const unreachable = async (err: unknown): Promise<never> => {
     if (timedOutError(err)) throw err
     console.warn('[sync] webdav request failed', err)
-    throw new Error(await tr('webdav.err.network'))
+    throw unreachableError(await tr('webdav.err.network'))
   }
   interface Res { status: number; text: string; blob: Blob | null }
   interface RequestOpts {
@@ -198,7 +208,10 @@ export function createWebdavRemote(
       }, timeoutMs)
     })
     const work = (async (): Promise<Res> => {
-      const res = await http(url, { ...req, signal: ctrl.signal }).catch(unreachable)
+      const send = () => http(url, { ...req, signal: ctrl.signal })
+      const res = await send()
+        .catch(err => (connectionResetError(err) && !ctrl.signal.aborted ? send() : Promise.reject(err)))
+        .catch(unreachable)
       if (res.status >= 400 && !allow.includes(res.status)) await fail(res.status)
       const ok = res.status < 400
       return {

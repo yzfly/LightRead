@@ -156,6 +156,47 @@ try {
     await p.screenshot({ path: `${out}/stealth-strip.png` })
   })
 
+  await step('own background / text colour / font blend into the page behind; reading font beats the book CSS', async () => {
+    // 中文 EPUB 常在 body / p 上写死字体: 以前阅读设置里的字体只写在 html 上, 会被它盖掉 (2026-11-15 Windows 反馈)
+    await p.evaluate(() => {
+      for (const { doc } of document.querySelector('foliate-view').renderer.getContents()) {
+        const st = doc.createElement('style')
+        st.textContent = 'body { font-family: serif } p { font-family: "Book Font", serif; color: #333 }'
+        doc.head.prepend(st)
+      }
+    })
+    await setStealthPref('bgColor', '#f6f6f6')
+    await setStealthPref('textColor', '#121212')
+    await setStealthPref('fontFamily', '"Stealth Test Font", sans-serif')
+    await p.waitForFunction(() => getComputedStyle(document.querySelector('.reader')).backgroundColor === 'rgba(246, 246, 246, 0.4)')
+    await p.waitForFunction(() => {
+      const { doc } = document.querySelector('foliate-view').renderer.getContents()[0]
+      const cs = doc.defaultView.getComputedStyle(doc.querySelector('p') ?? doc.body)
+      return cs.fontFamily.includes('Stealth Test Font') && cs.color === 'rgb(18, 18, 18)'
+    })
+    // 细条里有两个色块
+    await p.locator('.stealth-strip').hover()
+    assert.equal(await p.locator('.stealth-strip input[type=color]').count(), 2)
+    // 摸鱼字体没选: 用阅读设置的字体, 照样盖过书里的
+    await setStealthPref('fontFamily', '')
+    await p.evaluate(() => { document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('settings').setReaderPreference('fontFamily', '"Reader Test Font", serif') })
+    await p.waitForFunction(() => {
+      const { doc } = document.querySelector('foliate-view').renderer.getContents()[0]
+      return doc.defaultView.getComputedStyle(doc.querySelector('p') ?? doc.body).fontFamily.includes('Reader Test Font')
+    })
+    if (process.env.SHOT_DIR) await p.screenshot({ path: `${process.env.SHOT_DIR}/stealth-colors.png` })
+    // 颜色恢复跟随主题
+    await setStealthPref('bgColor', '')
+    await setStealthPref('textColor', '')
+    await p.evaluate(() => { document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('settings').setReaderPreference('fontFamily', '') })
+    await p.waitForFunction(() => getComputedStyle(document.querySelector('.reader')).backgroundColor === 'rgba(255, 255, 255, 0.4)')
+    await p.waitForFunction(() => {
+      const { doc } = document.querySelector('foliate-view').renderer.getContents()[0]
+      const cs = doc.defaultView.getComputedStyle(doc.querySelector('p') ?? doc.body)
+      return !cs.fontFamily.includes('Test Font') && cs.color !== 'rgb(18, 18, 18)'
+    })
+  })
+
   await step('boss key event is wired and handled without errors', async () => {
     assert.ok(await p.evaluate(() => !!window.__bossHandler), 'listens for stealth-boss')
     await p.evaluate(() => { window.__emitBoss(true); window.__emitBoss(false) })
@@ -251,6 +292,11 @@ trailer << /Root 1 0 R /Size 6 >>
     await go('/settings?section=reading')
     const section = p.locator('#settings-reading')
     await section.getByText('老板键', { exact: true }).waitFor()
+    // 摸鱼的背景色 / 文字颜色 / 字体三行: 没设时显示「跟随正文」, 字体选项含「跟随阅读设置」
+    for (const name of ['背景颜色', '文字颜色', '摸鱼字体']) await section.getByText(name, { exact: true }).waitFor()
+    assert.equal(await section.locator('.stealth-settings input[type=color]').count(), 2)
+    await section.getByRole('button', { name: '摸鱼字体' }).filter({ hasText: '跟随阅读设置' }).waitFor()
+    if (process.env.SHOT_DIR) await section.locator('.stealth-settings').screenshot({ path: `${process.env.SHOT_DIR}/stealth-settings.png` })
     await section.getByRole('button', { name: 'Alt+Shift+Z', exact: true }).click()
     await section.getByRole('button', { name: '请按下新的组合键（Esc 取消）' }).waitFor()
     await p.keyboard.press('Shift+K') // 只有 Shift 不接受

@@ -107,7 +107,7 @@ import { paperAgentRuntimeAvailable } from '../services/paperAgent.ts'
 import { t } from '../i18n'
 import { useStealth } from '../composables/useStealth'
 import { setWindowFullscreen, windowChrome } from '../services/windowChrome'
-import { stealthBackground, stealthInkMatrix, stealthPdfColors } from '../services/stealth'
+import { stealthBackground, stealthColors, stealthInkMatrix, stealthPdfColors } from '../services/stealth'
 import StealthStrip from '../components/StealthStrip.vue'
 
 const route = useRoute()
@@ -1165,8 +1165,19 @@ function restoreStealthPage() {
 }
 
 // 摸鱼模式下 PDF 只留墨迹 (白纸透明), 纸色按「背景浓淡」另画, 墨迹按「文字浓淡」淡化
-const stealthPaper = computed(() => stealthPdfColors(resolvedTheme.value).paper)
-const stealthInkValues = computed(() => stealthInkMatrix(stealthPdfColors(resolvedTheme.value).ink))
+// 设置里选了摸鱼底色 / 字色就用它 (融进窗口后面的网页), 否则纸墨色跟随应用外观
+const stealthPdf = computed(() => {
+  const base = stealthPdfColors(resolvedTheme.value)
+  const c = stealthColors(settings.stealth, { bg: base.paper, fg: base.ink })
+  return { paper: c.bg, ink: c.fg }
+})
+const stealthPaper = computed(() => stealthPdf.value.paper)
+/** 顶部细条的色块: 没设摸鱼颜色时显示默认纸墨色 */
+const stealthStripColors = computed(() => {
+  const base = stealthPdfColors(resolvedTheme.value)
+  return { bg: base.paper, fg: base.ink }
+})
+const stealthInkValues = computed(() => stealthInkMatrix(stealthPdf.value.ink))
 
 async function rerenderAfterWindowChange(retry = true) {
   if (pdfLayout.value !== 'original' || loading.value || !pageCount.value) return
@@ -3954,7 +3965,7 @@ onBeforeUnmount(() => {
     :style="stealth ? { '--stealth-paper': stealthBackground(stealthPaper, settings.stealth.bgOpacity), '--stealth-ink': settings.stealth.textOpacity } : undefined"
   >
     <!-- 摸鱼模式: 窗口没有标题栏, 顶部细条拖动窗口; 悬停时露出浓淡与退出 -->
-    <StealthStrip v-if="stealth" :intro="stealthIntro" :boss-key-ok="stealthBossKeyOk" @exit="setStealth(false)" @dismiss-intro="dismissStealthIntro" />
+    <StealthStrip v-if="stealth" :intro="stealthIntro" :boss-key-ok="stealthBossKeyOk" :colors="stealthStripColors" @exit="setStealth(false)" @dismiss-intro="dismissStealthIntro" />
     <!-- 摸鱼模式的「只留墨迹」滤镜: 白纸变透明, 字按深浅留下, 纸色由页面底色另画, 背景与文字浓淡互不牵连。
          始终放在页面里: 与引用它的画布同时插入时, 个别 WebView 会把 filter:url() 当成找不到而不画 -->
     <svg class="stealth-defs" aria-hidden="true" width="0" height="0">

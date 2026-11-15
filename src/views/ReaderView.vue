@@ -40,7 +40,7 @@ import { AutoScrollClock } from '../services/autoScroll'
 import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_MINOR_STOPS, TTS_RATE_STOPS, rateText } from '../services/ttsRate'
 import { toast } from '../services/toast'
 import { logEvent } from '../services/diagnostics'
-import { stealthBackground } from '../services/stealth'
+import { stealthBackground, stealthColor, stealthColors } from '../services/stealth'
 import { useStealth } from '../composables/useStealth'
 import { setWindowFullscreen } from '../services/windowChrome'
 import StealthStrip from '../components/StealthStrip.vue'
@@ -485,9 +485,14 @@ watch(
 )
 onBeforeUnmount(() => setPageTheme(null))
 
-/** 当前选中的自定义字体 (settings.readerPrefs.fontFamily 为 custom:Name 时) */
+/** 正文实际用的字体: 摸鱼时设置里选了字体就用它, 否则用阅读设置 */
+function effectiveFontFamily() {
+  return (stealth.value && settings.stealth.fontFamily) || settings.readerPrefs.fontFamily
+}
+
+/** 当前选中的自定义字体 (字体值为 custom:Name 时) */
 function selectedCustomFont() {
-  const m = settings.readerPrefs.fontFamily.match(/^custom:(.+)$/)
+  const m = effectiveFontFamily().match(/^custom:(.+)$/)
   return m ? settings.customFonts.find(f => f.name === m[1]) : undefined
 }
 
@@ -546,7 +551,10 @@ function applyPrefs() {
     setRendererAttr(r, 'column-count', String(layout.maxColumnCount))
     setRendererAttr(r, 'margin', geo.margin)
     // 歌词运行时的字号 / 行距只是生效值 (modes.typographyOverride), 不写回设置
-    view.renderer.setStyles?.(getReaderCSS({ ...prefs, ...modes.typographyOverride.value, fontFamily: resolveFontFamily(prefs.fontFamily) }, appDark.value, modes.readerStyle.value))
+    // 摸鱼时可另选字色 (正文与链接同色, 融进窗口后面的网页)
+    const stealthFg = stealth.value ? stealthColor(settings.stealth.textColor) : ''
+    const style = stealthFg ? { ...modes.readerStyle.value, textColor: stealthFg } : modes.readerStyle.value
+    view.renderer.setStyles?.(getReaderCSS({ ...prefs, ...modes.typographyOverride.value, fontFamily: resolveFontFamily(effectiveFontFamily()) }, appDark.value, style))
     const custom = selectedCustomFont()
     if (custom) {
       for (const content of view.renderer.getContents?.() ?? []) {
@@ -561,6 +569,11 @@ watch([() => settings.readerPrefs, appDark, readerLayout, portraitView], () => {
   clearTimeout(prefsTimer)
   prefsTimer = setTimeout(applyPrefs, 120)
 }, { deep: true })
+// 摸鱼的字体 / 字色: 进出摸鱼或在摸鱼中改了才重排 (没设时进出不重排, 免得位置跳)
+watch(() => (stealth.value ? `${settings.stealth.fontFamily}|${stealthColor(settings.stealth.textColor)}` : '|'), () => {
+  clearTimeout(prefsTimer)
+  prefsTimer = setTimeout(applyPrefs, 120)
+})
 // 拖动窗口 / 分屏改变宽度: 竖屏留白按像素算, 跨过手机宽度时边带也变; 几何没变就不重排
 let geometryTimer: ReturnType<typeof setTimeout> | undefined
 function onWindowResize() {
@@ -2917,7 +2930,9 @@ const modes = useReadingModes({
   onImmersiveChange: on => {
     setSystemBarsHidden(on)
     void setKeepScreenOn(on)
-    if (on) hideBars()
+    // 开着沉浸打开书时, 这里在 useReadingModes() 返回前就被调用 (immediate watch); hideBars 要读 modes / dj,
+    // 此时还没初始化 (TDZ: Cannot access before initialization, 2026-11-15 Windows 诊断日志), 等本轮 setup 结束再收
+    if (on) void nextTick(hideBars)
   },
   refreshMarginals: () => updateMarginals(),
   onReminder: () => stopAutoRead(),
@@ -3203,7 +3218,7 @@ onBeforeUnmount(() => {
     class="reader"
     :class="[{ 'bars-on': barsVisible, 'no-side-nav': portraitView || autoReading, stealth }, modes.shellClass.value]"
     :style="stealth
-      ? { background: stealthBackground(themeColors.bg, settings.stealth.bgOpacity), color: themeColors.fg, '--stealth-text': settings.stealth.textOpacity }
+      ? { background: stealthBackground(stealthColors(settings.stealth, themeColors).bg, settings.stealth.bgOpacity), color: stealthColors(settings.stealth, themeColors).fg, '--stealth-text': settings.stealth.textOpacity }
       : { background: themeColors.bg, color: themeColors.fg }"
   >
     <!-- 工具栏隐藏时: 鼠标移到上下边缘呼出 -->
@@ -3211,7 +3226,7 @@ onBeforeUnmount(() => {
     <div v-if="!barsVisible && !stealth" class="bar-peek bottom" @mouseenter="showBars()" />
 
     <!-- 摸鱼模式: 窗口没有标题栏, 顶部细条拖动窗口; 悬停时露出浓淡与退出 -->
-    <StealthStrip v-if="stealth" :intro="stealthIntro" :boss-key-ok="stealthBossKeyOk" @exit="setStealth(false)" @dismiss-intro="dismissStealthIntro" />
+    <StealthStrip v-if="stealth" :intro="stealthIntro" :boss-key-ok="stealthBossKeyOk" :colors="themeColors" @exit="setStealth(false)" @dismiss-intro="dismissStealthIntro" />
 
     <!-- 全屏时右上角悬浮退出按钮 -->
     <button

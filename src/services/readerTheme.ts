@@ -32,6 +32,8 @@ export interface ReaderModeStyle {
   /** 仿生阅读着色强度 (0.4–1) 与配色, 见 readingModes/wordGuideIntensity */
   wordGuideIntensity?: number
   wordGuideColor?: string
+  /** 摸鱼模式自选的文字颜色 (#rrggbb): 正文与链接都用它, 免得蓝色链接露馅 */
+  textColor?: string
 }
 
 /** auto 跟随界面外观: 浅色外观读白底, 深色外观读夜间 */
@@ -41,8 +43,8 @@ export function resolveReaderTheme(theme: ReaderPrefs['theme'], appDark: boolean
 
 export function resolveReaderColors(theme: ReaderPrefs['theme'], appDark: boolean, style?: ReaderModeStyle): ReaderThemeColors {
   const name = resolveReaderTheme(theme, appDark)
-  if (style?.eink) return EINK_THEMES[name === 'dark' ? 'dark' : 'light']
-  return READER_THEMES[name]
+  const colors = style?.eink ? EINK_THEMES[name === 'dark' ? 'dark' : 'light'] : READER_THEMES[name]
+  return style?.textColor ? { ...colors, fg: style.textColor, link: style.textColor } : colors
 }
 
 /** 主题选择按钮 (含 auto), 顺序固定; auto 的色板用斜切双色示意跟随外观 */
@@ -59,6 +61,16 @@ export const FONT_FAMILIES = [
   { labelKey: 'reader.fontKaiti', value: '"Kaiti SC", KaiTi, "Noto Serif SC", serif' },
 ]
 
+/**
+ * 选了字体时盖过书自带的字体: 只写在 html 上会被书里 body / p / 类名上的 font-family 盖掉
+ * (常见于中文 EPUB, 2026-11-15 Windows 用户反馈改字体无效)。正文全部继承 html 的字体,
+ * 代码类元素保留书里的等宽字体 (其子元素继承 pre / code, 仍是等宽)。
+ */
+export function fontOverrideCSS(fontFamily: string): string {
+  if (!fontFamily) return ''
+  return 'body, body :not(pre):not(code):not(kbd):not(samp):not(tt) { font-family: inherit !important; }'
+}
+
 /** 注入到 foliate 渲染 iframe 的样式 */
 export function getReaderCSS(prefs: ReaderPrefs, appDark: boolean, style?: ReaderModeStyle): string {
   const theme = resolveReaderTheme(prefs.theme, appDark)
@@ -69,13 +81,15 @@ export function getReaderCSS(prefs: ReaderPrefs, appDark: boolean, style?: Reade
       color-scheme: ${theme === 'dark' ? 'dark' : 'light'};
       color: ${colors.fg};
       font-size: ${prefs.fontSize}px;
-      ${prefs.fontFamily ? `font-family: ${prefs.fontFamily};` : ''}
+      ${prefs.fontFamily ? `font-family: ${prefs.fontFamily} !important;` : ''}
       ${prefs.letterSpacing > 0 ? `letter-spacing: ${Math.min(0.5, prefs.letterSpacing)}em;` : ''}
     }
+    ${fontOverrideCSS(prefs.fontFamily)}
     /* 书自带的 body 字色 (Project Gutenberg 的 pgepub.css 写死 color: black) 盖过主题后, 夜间 / 半透明底上是黑字 */
     body { background: none !important; color: ${colors.fg} !important; }
     /* Project Gutenberg 版权页的作者列表写了 all: initial, 字色回到默认黑色, 不继承主题 */
     #pg-header :not(a), #pg-footer :not(a) { color: inherit !important; }
+    ${style?.textColor ? '/* 摸鱼自选字色: 书里 p / 标题 / 链接写死的颜色一律让位, 整页同一种字色才能融进后面的网页 */\n    body * { color: inherit !important; }' : ''}
     p, li, blockquote, dd {
       line-height: ${prefs.lineHeight};
       ${prefs.justify ? 'text-align: justify;' : ''}

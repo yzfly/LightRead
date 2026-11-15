@@ -469,6 +469,51 @@ test('WebDAV: 网络层失败 → webdav.err.network, 不把请求地址带进�
   await assert.rejects(http500.listDocs(), { message: 'sync.err.http {"status":500}' })
 })
 
+test('WebDAV: 连接被对方重置时立即重试一次; DNS / 连不上不重试', async () => {
+  const reset = 'error sending request for url (https://dav.example.com/x): client error (SendRequest): connection error: 远程主机强迫关闭了一个现有的连接。 (os error 10054)'
+  const dav = createFakeDav()
+  let puts = 0
+  const flaky = createWebdavRemote({ url: dav.base + '/', user: 'u', pass: 'p' }, async (url, req) => {
+    if (req.method === 'PUT' && ++puts === 1) throw new Error(reset)
+    return dav.http(url, req)
+  }, tr)
+  await flaky.prepare()
+  await flaky.putFile('abc', new Blob([enc('data')]))
+  assert.equal(puts, 2, 'one retry')
+  assert.ok(dav.files.has('/remote.php/dav/LightRead/sync/v1/files/abc'))
+  // 一直被重置: 只重试一次, 报网络错误
+  let n = 0
+  const dead = createWebdavRemote({ url: 'https://dav.example.com/', user: 'u', pass: 'p' }, async () => { n++; throw new Error('connection closed before message completed') }, tr)
+  await assert.rejects(dead.putFile('abc', new Blob([enc('x')])), { message: 'webdav.err.network' })
+  assert.equal(n, 2)
+  // DNS 失败重试也没用
+  let m = 0
+  const dns = createWebdavRemote({ url: 'https://dav.example.com/', user: 'u', pass: 'p' }, async () => { m++; throw new Error('client error (Connect): dns error: 不知道这样的主机。 (os error 11001)') }, tr)
+  await assert.rejects(dns.putFile('abc', new Blob([enc('x')])), { message: 'webdav.err.network' })
+  assert.equal(m, 1)
+})
+
+test('断网时: 第一个文件上传连不上就停, 不再逐个试剩下的书', async () => {
+  const dav = createFakeDav()
+  const A = await device('A')
+  for (const title of ['一', '二', '三']) {
+    await A.storage.addBook({ title, author: 'x', format: 'epub', fileName: `${title}.epub`, tags: [], addedAt: tick(), readingSeconds: 0, location: '', progress: 0, lastReadAt: clock }, new Blob([enc(`book ${title}`)]))
+  }
+  let filePuts = 0
+  const http = async (url, req) => {
+    if (req.method === 'PUT' && url.includes('/files/')) {
+      filePuts++
+      throw new Error('client error (Connect): dns error: 不知道这样的主机。 (os error 11001)')
+    }
+    return dav.http(url, req)
+  }
+  tick()
+  const r = await sync(A, dav, { remote: createWebdavRemote({ url: dav.base + '/', user: 'u', pass: 'p' }, http, tr) })
+  assert.equal(r.uploadedFiles, 0)
+  assert.equal(filePuts, 1)
+  assert.equal(Object.keys(dav.readJson('devices/dev-A.json').books).length, 3, '书目照常写入')
+})
+
 test('errorText: 本地化文案原样展示, 原始技术报错换成兜底; redactUrls 去掉漏网地址', () => {
   const warn = console.warn
   console.warn = () => {}

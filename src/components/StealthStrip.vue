@@ -8,12 +8,15 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { t } from '../i18n'
 import { useSettings } from '../stores/settings'
 import { bossKeyLabel, STEALTH_BG_MIN, STEALTH_TEXT_MIN } from '../services/stealth'
+import StealthColorPick from './StealthColorPick.vue'
 
 const props = defineProps<{
   /** 显示首次说明卡 */
   intro?: boolean
   /** 老板键本次注册成功 */
   bossKeyOk?: boolean
+  /** 没设摸鱼颜色时的底色 / 字色 (正文主题或 PDF 纸墨色), 色块显示用 */
+  colors?: { bg: string; fg: string }
 }>()
 const emit = defineEmits<{ exit: []; dismissIntro: [] }>()
 const settings = useSettings()
@@ -64,6 +67,8 @@ const keyLabel = computed(() => (props.bossKeyOk && settings.stealth.bossKey ? b
         :aria-label="t('stealth.textOpacity')"
       />
     </label>
+    <StealthColorPick v-model="settings.stealth.bgColor" compact :fallback="colors?.bg ?? '#ffffff'" :label="t('stealth.bgColor')" />
+    <StealthColorPick v-model="settings.stealth.textColor" compact :fallback="colors?.fg ?? '#1d2129'" :label="t('stealth.textColor')" />
     <button class="stealth-exit" :title="t('stealth.exitHint')" :aria-label="t('stealth.exit')" @click="emit('exit')">
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M6.7 5.3a1 1 0 0 0-1.4 1.4L10.58 12l-5.3 5.3a1 1 0 1 0 1.42 1.4L12 13.42l5.3 5.3a1 1 0 0 0 1.4-1.42L13.42 12l5.3-5.3a1 1 0 0 0-1.42-1.4L12 10.58l-5.3-5.3z"/></svg>
     </button>

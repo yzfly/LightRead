@@ -21,6 +21,8 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
       file_name: Some("lightread".into()),
     }))
     .level(log::LevelFilter::Info)
+    // 枚举系统字体时, fontdb 对每个读不了的字体文件报一条 WARN (Windows 自带的 mstmc.ttf 每次都报), 不影响使用
+    .level_for("fontdb", log::LevelFilter::Error)
     .max_file_size(MAX_FILE_BYTES)
     .rotation_strategy(RotationStrategy::KeepSome(KEEP_ROTATED))
     .timezone_strategy(TimezoneStrategy::UseLocal);
