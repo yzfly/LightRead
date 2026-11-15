@@ -62,6 +62,16 @@ chmod +x LightRead_x.y.z_amd64.AppImage
 
 请把命令里的 `x.y.z` 换成实际下载的版本号，也可以直接输入文件名前几个字母后按 `Tab` 自动补全。
 
+### iOS / iPadOS（TestFlight 测试版）
+
+iOS 版通过苹果的 TestFlight 分发，需要 iOS 15 及以上：
+
+1. 在 App Store 安装苹果官方的 **TestFlight**。
+2. 在 iPhone / iPad 上打开 <https://code.jiangshu.ai/LightRead/download/ios>（会跳到 TestFlight 公开链接），点「接受」再点「安装」。
+3. 之后的新版本在 TestFlight 里更新。每个测试版 90 天后过期，届时安装更新的版本即可，书库和设置都会保留。
+
+iOS 版没有应用内更新、音量键翻页、离线语音和 CBR 漫画；书源页不提供 Z-Library 与 Anna's Archive。
+
 ### Android（实验性）
 
 1. 下载 `android_arm64.apk`，在系统设置中允许浏览器或文件管理器“安装未知应用”。

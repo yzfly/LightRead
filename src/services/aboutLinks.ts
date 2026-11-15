@@ -10,7 +10,7 @@
 
 export type PlatformId = 'windows' | 'mac' | 'linux' | 'android' | 'ios'
 /** 安装包种类, 界面用 about.pkg.<kind> 取文案 */
-export type PackageKind = 'installer' | 'appleSilicon' | 'intel' | 'appimage' | 'deb' | 'rpm' | 'apk' | 'ipa'
+export type PackageKind = 'installer' | 'appleSilicon' | 'intel' | 'appimage' | 'deb' | 'rpm' | 'apk' | 'testflight'
 
 export interface PlatformPackage {
   kind: PackageKind
@@ -42,9 +42,20 @@ const RULES: Array<{ platform: PlatformId; kind: PackageKind; match: RegExp }> =
   { platform: 'linux', kind: 'deb', match: /\.deb$/ },
   { platform: 'linux', kind: 'rpm', match: /\.rpm$/ },
   { platform: 'android', kind: 'apk', match: /_android_arm64\.apk$/ },
-  // 未签名真机包 (scripts/build-ios.mjs --ipa), 使用者自己重签后安装
-  { platform: 'ios', kind: 'ipa', match: /_ios_unsigned\.ipa$/ },
 ]
+/**
+ * iOS 走 TestFlight 公开链接 (2026-11-14 用户决定, 不发未签名 IPA): 不在 Release 里, 版本由 TestFlight 管,
+ * 所以只给链接、不给版本号。外部测试组「公开测试」, 新构建过 Beta 审核后自动对链接生效。
+ */
+export const IOS_TESTFLIGHT_URL = 'https://testflight.apple.com/join/AquXb6hu'
+/**
+ * iOS 那一行: 不来自 Release 列表, 由展示层 (关于页 / latest.json) 自己补上, 取不到 Release 时也照样给。
+ * 每次给一份新对象, 免得调用方改到共用常量。
+ */
+export function iosDownload(): PlatformDownload {
+  return { platform: 'ios', version: '', packages: [{ kind: 'testflight', name: 'TestFlight', url: IOS_TESTFLIGHT_URL, size: 0 }] }
+}
+
 const PLATFORM_ORDER: PlatformId[] = ['windows', 'mac', 'linux', 'android', 'ios']
 const APP_PLATFORMS: PlatformId[] = ['android', 'ios']
 
@@ -96,7 +107,10 @@ function normalize(list: unknown, source: ReleaseListSource): Candidate[] {
   return out
 }
 
-/** 每个系统取最新一个带它安装包的 Release: Windows / macOS / Linux 只看桌面 tag, Android / iOS 两种 tag 都看 */
+/**
+ * 每个系统取最新一个带它安装包的 Release: Windows / macOS / Linux 只看桌面 tag, Android 两种 tag 都看。
+ * 只含 Release 里的安装包 (iOS 不在其中, 见 iosDownload); 一个都没有时为空, 调用方据此换下一个来源。
+ */
 export function parsePlatformReleases(list: unknown, source: ReleaseListSource): PlatformDownload[] {
   const best = new Map<PlatformId, PlatformDownload>()
   for (const { tag, assets } of normalize(list, source)) {
@@ -120,7 +134,7 @@ export function parsePlatformReleases(list: unknown, source: ReleaseListSource):
 /** 当前设备所属系统 (用来标「本机」); 识别不了返回 null。iOS 应用内由界面用 isIosApp() 判断 (iPad 的 WKWebView 自称 Macintosh) */
 export function detectPlatform(ua: string): PlatformId | null {
   if (/Android/i.test(ua)) return 'android'
-  if (/iPhone|iPad|iPod/i.test(ua)) return null
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios'
   if (/Mac/i.test(ua)) return 'mac'
   if (/Win/i.test(ua)) return 'windows'
   if (/Linux|X11/i.test(ua)) return 'linux'

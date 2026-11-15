@@ -56,8 +56,14 @@ export interface PlatformDownloadsResult {
 }
 
 export async function loadPlatformDownloads(force = false): Promise<PlatformDownloadsResult> {
-  const cached = readCache<PlatformDownloadsResult>(DOWNLOADS_KEY)
-  if (!force && cached && cached.at > Date.now() - DOWNLOADS_TTL && cached.value.items?.length) return cached.value
+  const raw = readCache<PlatformDownloadsResult>(DOWNLOADS_KEY)
+  // 缓存是本地存的 JSON, 可能被改坏: 只留对象项, 免得在发网络请求前就抛错。
+  // 旧版缓存里的 iOS 项 (已下线的未签名 IPA) 丢掉, iOS 由关于页自己补 TestFlight 链接
+  const cachedItems = Array.isArray(raw?.value?.items)
+    ? raw.value.items.filter((i): i is PlatformDownload => !!i && typeof i === 'object' && i.platform !== 'ios')
+    : []
+  const cached = raw && cachedItems.length ? { at: raw.at, value: { ...raw.value, items: cachedItems } } : null
+  if (!force && cached && cached.at > Date.now() - DOWNLOADS_TTL) return cached.value
   const attempts: Array<[ReleaseListSource, string, string, number]> = [
     ['github', GITHUB_LIST, 'application/vnd.github+json', 8_000],
     ['gitcode', GITCODE_LIST, 'application/json', 15_000],
@@ -71,7 +77,7 @@ export async function loadPlatformDownloads(force = false): Promise<PlatformDown
       return result
     } catch { /* 换下一个来源 */ }
   }
-  if (cached?.value.items?.length) return cached.value
+  if (cached) return cached.value
   throw new Error('downloads unavailable')
 }
 

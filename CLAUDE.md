@@ -26,7 +26,7 @@
 
 没有 iPhone 真机：在 MacAir（Xcode 26.6 + iOS 模拟器，源码副本 `~/workspace/lightread-ios-build`）用模拟器验收，做法见 [iOS 模拟器验收](docs/testing/ios-simulator.md)，设计与分阶段计划见 `docs/plans/ios-app.md`。
 - 只用 `npm run ios:sim` 出模拟器包、`npm run ios:ipa` 出未签名真机包、`npm run ios:appstore -- --upload` 出 App Store 签名包并传 TestFlight（都是 `scripts/build-ios.mjs`）；`gen/apple` 不入库。
-- **分发走 TestFlight（2026-11-14 用户决定），不发未签名 IPA**：App Store Connect 的 App 是「轻阅 LightRead」（`com.yzfly.lightread`）。签名在 MacAir：Apple Distribution 证书在签名钥匙串，描述文件「LightRead App Store」，跑之前先解锁钥匙串并载入 `~/.config/apple-signing/env`（见 jiangshu-infra `reports/macos-signing.md`）。同一 `CFBundleVersion` 只能传一次；TestFlight 构建 90 天过期，随 App 发版上传。隐私政策 `docs/privacy.md`（官网 `privacy.html`），新增联网功能要同步更新。
+- **分发走 TestFlight（2026-11-14 用户决定），不发未签名 IPA**：App Store Connect 的 App 是「轻阅 LightRead」（`com.yzfly.lightread`）。签名在 MacAir：Apple Distribution 证书在签名钥匙串，描述文件「LightRead App Store」，跑之前先解锁钥匙串并载入 `~/.config/apple-signing/env`（见 jiangshu-infra `reports/macos-signing.md`）。外部测试组「公开测试」的公开链接写在 `aboutLinks.ts` 的 `IOS_TESTFLIGHT_URL`（关于页、官网下载区、`/download/ios` 都用它）；新构建加进这个组并提交 Beta 审核后才对测试者生效。同一 `CFBundleVersion` 只能传一次；TestFlight 构建 90 天过期，随 App 发版上传。隐私政策 `docs/privacy.md`（官网 `privacy.html`），新增联网功能要同步更新。
 - iOS 构建不提供影子图书馆书源（Z-Library、Anna's Archive，`webBookSources.ts` 的 `shadowLibrary`），免得审核以版权为由拒绝；其他平台不变。
 - iOS 专属内容在 `src-tauri/tauri.ios.conf.json`、`src-tauri/Info.ios.plist`、`src-tauri/plugins/ios-shell/`（Swift 原生壳，对应 Android 的 `MainActivity.kt`；网页经 `services/iosShell.ts` → 主程序 `ios_shell` 命令调用）。
 - 「用轻阅打开」的文档类型写在 `tauri.ios.conf.json` 的 `fileAssociations`（iOS 只认类型标识；写进 `Info.ios.plist` 会被 Tauri 生成的那份盖掉）。系统把文件拷进 `Documents/Inbox`，`read_open_file` 读完删除。

@@ -29,7 +29,7 @@
       "alternateName": ["LightRead", "轻阅"],
       "description": "Free, open-source (AGPL-3.0), local-first ebook and PDF reader. Reads EPUB, PDF, MOBI, AZW, AZW3, FB2, TXT, Markdown, HTML, DjVu and CBZ/CBR comics. Key-idea highlighting (点睛阅读), typewriter and lyrics reading modes, text to speech, bilingual PDF translation, highlight export and quote cards, sync via LightRead account or WebDAV.",
       "applicationCategory": "BookApplication",
-      "operatingSystem": "Windows 10, Windows 11, macOS, Linux, Android 7.0+",
+      "operatingSystem": "Windows 10, Windows 11, macOS, Linux, Android 7.0+, iOS 15+ (TestFlight beta)",
       "softwareVersion": "__DESKTOP_VERSION__",
       "license": "https://www.gnu.org/licenses/agpl-3.0.html",
       "isAccessibleForFree": true,
@@ -257,7 +257,8 @@ h3 { font-family: var(--serif); font-size: clamp(23px, 2.7vw, 30px); line-height
 .route { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--glass-line); gap: 2px; }
 .route button { appearance: none; border: 0; background: none; font: inherit; font-size: 14px; color: var(--ink-2); padding: 7px 16px; border-radius: 999px; cursor: pointer; min-height: 36px; }
 .route button[aria-pressed="true"] { background: var(--glass-strong); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); font-weight: 500; }
-.dl-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 32px; }
+.dl-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-top: 32px; }
+@media (max-width: 1180px) { .dl-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .dl { border-radius: var(--r); padding: 22px; display: grid; gap: 12px; align-content: start; background: var(--glass-strong); border: 1px solid var(--glass-line); transition: border-color .2s, box-shadow .2s; }
 .dl.recommended { border-color: color-mix(in srgb, var(--brand) 55%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 12%, transparent); }
 .dl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -340,7 +341,7 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
         </a>
       </div>
       <p class="cta-note" id="hero-note">国内网络会自动走 GitCode 镜像，也可以在下方切换线路。</p>
-      <div class="platforms" aria-label="支持平台"><span>Windows</span><span>macOS</span><span>Linux</span><span>Android</span><span>网页 PWA</span></div>
+      <div class="platforms" aria-label="支持平台"><span>Windows</span><span>macOS</span><span>Linux</span><span>Android</span><span>iOS</span><span>网页 PWA</span></div>
 
       <div class="stage reveal">
         <div class="frame glass"><img src="assets/feature-library.webp" width="1600" height="1125" alt="轻阅桌面版藏书页：继续阅读卡片、今日与本周阅读时长、书单标签和封面书架"></div>
@@ -528,9 +529,15 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
             <div class="links"><a data-fixed="android" href="download/android">安装包 .apk<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a></div>
             <span class="ver" data-ver="android"></span>
           </div>
+          <div class="dl" data-os="ios">
+            <div class="dl-head"><h3>iOS</h3><span class="tag">本机</span></div>
+            <p>iPhone / iPad · iOS 15 及以上 · 测试版</p>
+            <div class="links"><a data-fixed="ios" href="download/ios">用 TestFlight 安装<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a></div>
+            <span class="ver">先装苹果的 TestFlight App，再打开链接加入</span>
+          </div>
         </div>
         <div class="fixed">
-          <p>固定链接：<code>https://code.jiangshu.ai/LightRead/download/&lt;平台&gt;</code>，平台为 <code>windows</code> <code>mac</code> <code>mac-intel</code> <code>linux</code> <code>linux-deb</code> <code>linux-rpm</code> <code>android</code>；加 <code>?mirror=gitcode</code> 走国内镜像。不带平台 (<a href="download/"><code>/download/</code></a>) 按你的系统自动选择。</p>
+          <p>固定链接：<code>https://code.jiangshu.ai/LightRead/download/&lt;平台&gt;</code>，平台为 <code>windows</code> <code>mac</code> <code>mac-intel</code> <code>linux</code> <code>linux-deb</code> <code>linux-rpm</code> <code>android</code> <code>ios</code>（TestFlight）；加 <code>?mirror=gitcode</code> 走国内镜像。不带平台 (<a href="download/"><code>/download/</code></a>) 按你的系统自动选择。</p>
           <p>所有版本：<a href="https://github.com/yzfly/LightRead/releases">GitHub Releases</a> · <a href="https://gitcode.com/langgpt/LightRead/releases">GitCode 镜像</a> · 每个版本附带 <code>SHA256SUMS</code> 校验 · 机器可读：<a href="download/latest.json">latest.json</a></p>
         </div>
       </div>
@@ -586,15 +593,18 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
 
   // 本机系统: 首屏按钮与推荐卡片
   var ua = navigator.userAgent
-  var os = /Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) ? 'ios' : /Mac/i.test(ua) ? 'mac' : /Win/i.test(ua) ? 'windows' : /Linux|X11/i.test(ua) ? 'linux' : ''
+  // iPadOS 的 Safari 自称 Macintosh, 靠多点触控区分
+  var ipad = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1
+  var os = /Android/i.test(ua) ? 'android' : /iPhone|iPad|iPod/i.test(ua) || ipad ? 'ios' : /Mac/i.test(ua) ? 'mac' : /Win/i.test(ua) ? 'windows' : /Linux|X11/i.test(ua) ? 'linux' : ''
   var card = document.querySelector('.dl[data-os="' + os + '"]')
   if (card) card.classList.add('recommended')
   var hero = document.getElementById('hero-download')
-  var labels = { windows: '下载 Windows 版', mac: '下载 macOS 版', linux: '下载 Linux 版', android: '下载安卓 App' }
+  var labels = { windows: '下载 Windows 版', mac: '下载 macOS 版', linux: '下载 Linux 版', android: '下载安卓 App', ios: '加入 iOS 测试版' }
   if (labels[os]) document.getElementById('hero-download-label').textContent = labels[os]
-  // macOS 要分 Apple 芯片与 Intel, 去下载区选; iOS 版还没有
-  if (os === 'mac' || os === 'ios' || !os) hero.setAttribute('href', '#download')
-  if (os === 'ios') document.getElementById('hero-note').textContent = 'iOS 版还在准备中，可以先在电脑或安卓手机上使用。'
+  // macOS 要分 Apple 芯片与 Intel, 去下载区选; iOS 走 TestFlight
+  if (os === 'mac' || !os) hero.setAttribute('href', '#download')
+  if (os === 'ios') hero.setAttribute('href', 'download/ios')
+  if (os === 'ios') document.getElementById('hero-note').textContent = 'iOS 版是 TestFlight 测试版：先装苹果的 TestFlight App，再点上面的按钮加入。'
 
   // 下载线路: 国内时区默认走镜像; 记住手动选择
   var route = 'github'
@@ -607,7 +617,9 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
     route = r
     var q = r === 'gitcode' ? '?mirror=gitcode' : ''
     document.querySelectorAll('a[data-fixed]').forEach(function (a) { a.setAttribute('href', 'download/' + a.dataset.fixed + q) })
-    if (hero.getAttribute('href').indexOf('download/') === 0) hero.setAttribute('href', 'download/' + q)
+    // 首屏按钮: 自动选择 (download/) 或 iOS (download/ios, TestFlight 不分线路); 去下载区的不动
+    var heroHref = hero.getAttribute('href')
+    if (heroHref === 'download/' || heroHref.indexOf('download/?') === 0) hero.setAttribute('href', 'download/' + q)
     document.querySelectorAll('.route button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.route === r)) })
   }
   document.querySelectorAll('.route button').forEach(function (b) {

@@ -8,7 +8,7 @@ import { t } from '../../i18n'
 import { isTauri } from '../../storage/types'
 import { MIRROR_RELEASES_URL, RELEASES_URL, copyLink, openDownload } from '../../services/updater'
 import { toast } from '../../services/toast'
-import { AUTHOR_WECHAT, detectPlatform, type PackageKind, type PlatformDownload, type PlatformId, type WechatGroup } from '../../services/aboutLinks'
+import { AUTHOR_WECHAT, detectPlatform, iosDownload, type PackageKind, type PlatformDownload, type PlatformId, type WechatGroup } from '../../services/aboutLinks'
 import { loadCommunity, loadPlatformDownloads } from '../../services/aboutLinksLoad'
 import { SITE_URL } from '../../services/siteLinks'
 import { consumeCommunityFocus } from '../../services/diagnostics'
@@ -30,12 +30,14 @@ const PKG_KEY: Record<PackageKind, string> = {
   deb: 'settings.pkgDeb',
   rpm: 'settings.pkgRpm',
   apk: 'settings.pkgApk',
-  ipa: 'settings.pkgIpa',
+  testflight: 'settings.pkgTestflight',
 }
 
-const thisPlatform: PlatformId | null = isIosApp() ? 'ios' : detectPlatform(navigator.userAgent)
-/** 手机上无法用本机扫本机的码, 提示截图后从相册识别 */
-const onPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+/** iPadOS 的 Safari 与 WKWebView 都自称 Macintosh, 靠多点触控区分 (与官网下载区同一判断) */
+const iPadAsMac = /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1
+const thisPlatform: PlatformId | null = isIosApp() || iPadAsMac ? 'ios' : detectPlatform(navigator.userAgent)
+/** 手机 / 平板上无法用本机扫本机的码, 提示截图后从相册识别 */
+const onPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || thisPlatform === 'ios'
 
 const downloads = ref<PlatformDownload[]>([])
 const downloadsState = ref<'loading' | 'ready' | 'failed'>('loading')
@@ -44,11 +46,11 @@ const wechatId = ref(AUTHOR_WECHAT)
 const groupState = ref<'loading' | 'ready'>('loading')
 const qrBroken = ref(false)
 
-/** 本机排第一, 其余按固定顺序 */
-const rows = computed(() => [
-  ...downloads.value.filter(d => d.platform === thisPlatform),
-  ...downloads.value.filter(d => d.platform !== thisPlatform),
-])
+/** 本机排第一, 其余按固定顺序; iOS 的 TestFlight 链接不靠 Release 列表, 取不到 Release 时也显示 */
+const rows = computed(() => {
+  const all = [...downloads.value, iosDownload()]
+  return [...all.filter(d => d.platform === thisPlatform), ...all.filter(d => d.platform !== thisPlatform)]
+})
 
 const expiresText = computed(() => {
   if (!group.value) return ''
@@ -101,17 +103,16 @@ onMounted(async () => {
     <section class="block" aria-labelledby="about-downloads-title">
       <h3 id="about-downloads-title" class="block-title">{{ t('settings.downloadsTitle') }}</h3>
       <div v-if="downloadsState === 'loading'" class="rows" aria-busy="true">
-        <div v-for="i in 4" :key="i" class="row"><span class="skeleton sk-name" /><span class="skeleton sk-btn" /></div>
+        <div v-for="i in 5" :key="i" class="row"><span class="skeleton sk-name" /><span class="skeleton sk-btn" /></div>
       </div>
-      <p v-else-if="downloadsState === 'failed'" class="state">{{ t('settings.downloadsFailed') }}</p>
-      <div v-else class="rows">
+      <p v-if="downloadsState === 'failed'" class="state">{{ t('settings.downloadsFailed') }}</p>
+      <div v-if="downloadsState !== 'loading'" class="rows">
         <div v-for="d in rows" :key="d.platform" class="row" :data-platform="d.platform">
           <div class="row-name">
             <span class="platform">{{ PLATFORM_LABEL[d.platform] }}</span>
             <span v-if="d.platform === thisPlatform" class="chip chip-brand">{{ t('settings.downloadsThisDevice') }}</span>
             <span v-if="d.platform === 'android' || d.platform === 'ios'" class="chip">{{ t('settings.downloadsExperimental') }}</span>
-            <span v-if="d.platform === 'ios'" class="chip">{{ t('settings.downloadsSelfSign') }}</span>
-            <span class="version">v{{ d.version }}</span>
+            <span v-if="d.version" class="version">v{{ d.version }}</span>
           </div>
           <div class="row-actions">
             <button

@@ -92,7 +92,9 @@ iPhone 17 与 iPad Air 11 英寸模拟器（iOS 26.5），样书：《The Republ
 
 ## 没有开发者账号时的真机包
 
-`npm run ios:ipa` 出 `src-tauri/gen/apple/build/LightRead_app-v<版本>_ios_unsigned.ipa`（release，arm64，未签名）。它不能直接装进没越狱的 iPhone：使用者要用自己的 Apple ID 重签（AltStore、Sideloadly 等；免费 Apple ID 签的包 7 天过期，需重签）。重签工具会换掉包名前缀，所以这样装的轻阅与以后 TestFlight / App Store 的正式版是两个应用，数据不互通。
+> 2026-11-14 起对外分发改走 TestFlight（`npm run ios:appstore -- --upload`，见项目 `CLAUDE.md` 的 iOS 一节），不发布这个未签名包；下面只作没有开发者账号时的开发备用。
+
+`npm run ios:ipa` 出 `src-tauri/gen/apple/build/LightRead_app-v<版本>_ios_unsigned.ipa`（release，arm64，未签名）。它不能直接装进没越狱的 iPhone：使用者要用自己的 Apple ID 重签（AltStore、Sideloadly 等；免费 Apple ID 签的包 7 天过期，需重签）。重签工具会换掉包名前缀，所以这样装的轻阅与 TestFlight / App Store 版是两个应用，数据不互通。
 
 做法：Tauri 的真机构建固定走「构建 → 归档 → 签名导出」，脚本用 xcconfig 关掉签名让前两步通过，导出失败后从归档里取出 `.app` 打成 IPA。未签名包没有 entitlements；目前应用不依赖任何需要授权的能力（后台音频、相册添加都只靠 Info.plist）。
 

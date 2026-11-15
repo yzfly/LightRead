@@ -6,7 +6,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { AUTHOR_WECHAT, COMMUNITY_BASE, detectPlatform, parseCommunity, parsePlatformReleases, parseWechatContact } from '../src/services/aboutLinks.ts'
+import { IOS_TESTFLIGHT_URL, AUTHOR_WECHAT, COMMUNITY_BASE, detectPlatform, parseCommunity, parsePlatformReleases, parseWechatContact, iosDownload } from '../src/services/aboutLinks.ts'
 
 const GH = 'https://github.com/yzfly/LightRead/releases/download/'
 const gh = (tag, names, extra = {}) => ({
@@ -59,22 +59,26 @@ test('drafts, prereleases, odd tags and foreign URLs are ignored', () => {
     gh('v2.3.1', desktop('2.3.1')),
   ], 'github')
   assert.ok(items.every(i => i.version === '2.3.1'))
-  assert.equal(parsePlatformReleases(null, 'github').length, 0)
+  // 没有任何 Release 安装包时为空, 调用方据此换下一个来源 (不能因为常驻的 iOS 项就当作取到了)
+  assert.deepEqual(parsePlatformReleases(null, 'github'), [])
 })
 
-test('iOS: unsigned IPA is listed from the app line only when a release carries it', () => {
-  const ipa = 'LightRead_app-v2.4.0_ios_unsigned.ipa'
-  const without = parsePlatformReleases([gh('v2.3.1', desktop('2.3.1')), gh('app-v2.3.0', apk('app-v2.3.0'))], 'github')
-  assert.equal(without.find(i => i.platform === 'ios'), undefined)
+test('iOS: TestFlight link comes from iosDownload, never from release assets', () => {
   const items = parsePlatformReleases([
     gh('v2.3.1', desktop('2.3.1')),
-    gh('app-v2.4.0', [...apk('app-v2.4.0'), ipa]),
-    gh('app-v2.3.0', apk('app-v2.3.0')),
+    gh('app-v2.4.0', [...apk('app-v2.4.0'), 'LightRead_app-v2.4.0_ios_unsigned.ipa']),
   ], 'github')
-  assert.deepEqual(items.map(i => i.platform), ['windows', 'mac', 'linux', 'android', 'ios'])
-  const ios = items.find(i => i.platform === 'ios')
-  assert.equal(ios.version, '2.4.0')
-  assert.deepEqual(ios.packages.map(p => [p.kind, p.url]), [['ipa', `${GH}app-v2.4.0/${ipa}`]])
+  assert.deepEqual(items.map(i => i.platform), ['windows', 'mac', 'linux', 'android'])
+  const ios = iosDownload()
+  assert.equal(ios.version, '')
+  assert.deepEqual(ios.packages.map(p => [p.kind, p.url]), [['testflight', IOS_TESTFLIGHT_URL]])
+  assert.ok(IOS_TESTFLIGHT_URL.startsWith('https://testflight.apple.com/join/'))
+  // 没有 Release 安装包时为空, 调用方据此换下一个来源
+  assert.deepEqual(parsePlatformReleases([], 'github'), [])
+  assert.deepEqual(parsePlatformReleases({ message: 'rate limited' }, 'github'), [])
+  // 每次给新对象, 改一份不影响下一次
+  ios.packages.push({ kind: 'apk', name: 'x', url: 'x', size: 0 })
+  assert.equal(iosDownload().packages.length, 1)
 })
 
 test('GitCode: only mirrored (SHA256SUMS) releases, URLs rebuilt, sizes from the body note', () => {
@@ -93,12 +97,13 @@ test('GitCode: only mirrored (SHA256SUMS) releases, URLs rebuilt, sizes from the
   assert.equal(items.find(i => i.platform === 'android').version, '2.3.0')
 })
 
-test('detectPlatform marks this device; iOS has no package', () => {
+test('detectPlatform marks this device; iPhone / iPad go to TestFlight', () => {
   assert.equal(detectPlatform('Mozilla/5.0 (Linux; Android 12; K30) AppleWebKit'), 'android')
   assert.equal(detectPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'), 'mac')
   assert.equal(detectPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), 'windows')
   assert.equal(detectPlatform('Mozilla/5.0 (X11; Linux x86_64)'), 'linux')
-  assert.equal(detectPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), null)
+  assert.equal(detectPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), 'ios')
+  assert.equal(detectPlatform('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)'), 'ios')
 })
 
 test('community: valid until expiry, only images under the community directory', () => {

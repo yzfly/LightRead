@@ -6,14 +6,14 @@
  *   /LightRead/download/mac              macOS Apple 芯片 (.dmg)        mac-intel: Intel (.dmg)
  *   /LightRead/download/linux            Linux AppImage                linux-deb / linux-rpm
  *   /LightRead/download/android          安卓 App (.apk, app-vX.Y.Z 线)
- *   /LightRead/download/ios              iOS 未签名包 (.ipa, 需自行重签; 还没有带 IPA 的 Release 时跳到 Release 页)
+ *   /LightRead/download/ios              iOS: TestFlight 公开链接
  *   /LightRead/download/latest.json      各平台最新版本与直链 (给脚本和 AI)
  *   任一链接加 ?mirror=gitcode            走 GitCode 国内镜像 (镜像还没同步到最新版时用镜像上已校验的最新版)
  *
  * 版本挑选与应用「关于」页同一套规则 (src/services/aboutLinks.ts): 桌面只认 vX.Y.Z, App 取最新带 APK 的 Release,
  * 草稿 / 预发布不算, GitCode 只认带 SHA256SUMS 的版本。Release 列表在每个边缘节点缓存 5 分钟。
  */
-import { detectPlatform, parsePlatformReleases, type PackageKind, type PlatformDownload, type PlatformId, type ReleaseListSource } from '../../src/services/aboutLinks'
+import { IOS_TESTFLIGHT_URL, detectPlatform, iosDownload, parsePlatformReleases, type PackageKind, type PlatformDownload, type PlatformId, type ReleaseListSource } from '../../src/services/aboutLinks'
 
 const SITE = 'https://code.jiangshu.ai/LightRead/'
 const LISTS: Record<ReleaseListSource, string> = {
@@ -43,7 +43,7 @@ const TARGETS: Record<string, { platform: PlatformId; kind: PackageKind }> = {
   'linux-deb': { platform: 'linux', kind: 'deb' },
   'linux-rpm': { platform: 'linux', kind: 'rpm' },
   android: { platform: 'android', kind: 'apk' },
-  ios: { platform: 'ios', kind: 'ipa' },
+  ios: { platform: 'ios', kind: 'testflight' },
 }
 const DEFAULT_TARGET: Record<PlatformId, string> = { windows: 'windows', mac: 'mac', linux: 'linux', android: 'android', ios: 'ios' }
 
@@ -120,8 +120,9 @@ async function latestJson(prefer: ReleaseListSource, ctx: ExecutionContext) {
     homepage: SITE,
     source: got?.source ?? null,
     fixedLinks: fixed,
-    note: 'fixedLinks always redirect (HTTP 302) to the newest build; append ?mirror=gitcode for the China mirror. Desktop uses tags vX.Y.Z, the Android app uses app-vX.Y.Z.',
-    platforms: got?.items ?? [],
+    note: 'fixedLinks always redirect (HTTP 302) to the newest build; append ?mirror=gitcode for the China mirror. Desktop uses tags vX.Y.Z, the Android app uses app-vX.Y.Z, iOS is distributed through TestFlight.',
+    // iOS 不在 Release 里, 版本由 TestFlight 管: 不给 version, 标出渠道
+    platforms: [...(got?.items ?? []), { platform: 'ios', channel: 'testflight', packages: iosDownload().packages }],
   }
   return new Response(JSON.stringify(body, null, 2), {
     status: got ? 200 : 503,
@@ -147,7 +148,8 @@ export default {
     const target = TARGETS[name]
     if (!target) return redirect(`${SITE}#download`)
 
-    const line = target.platform === 'android' || target.platform === 'ios' ? 'app' : 'desktop'
+    if (target.platform === 'ios') return redirect(IOS_TESTFLIGHT_URL)
+    const line = target.platform === 'android' ? 'app' : 'desktop'
     const got = await loadAny(prefer, ctx)
     const pkg = got?.items.find(d => d.platform === target.platform)?.packages.find(p => p.kind === target.kind)
     if (!got || !pkg) return redirect(RELEASE_PAGES[prefer][line])
