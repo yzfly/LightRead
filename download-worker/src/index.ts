@@ -60,10 +60,26 @@ async function githubFeedList(): Promise<unknown[]> {
   if (!res.ok) throw new Error(`github feed ${res.status}`)
   const xml = await res.text()
   const tags = [...xml.matchAll(/\/releases\/tag\/([^"<\s]+)/g)].map(m => decodeURIComponent(m[1]))
-  const desktop = tags.find(t => /^v\d+\.\d+\.\d+$/.test(t))
-  const app = tags.find(t => /^app-v\d+\.\d+\.\d+$/.test(t))
   const base = 'https://github.com/yzfly/LightRead/releases/download/'
   const asset = (tag: string, name: string) => ({ name, browser_download_url: `${base}${tag}/${name}`, size: 0 })
+  // 订阅里也有只推了 tag、Release 还是草稿的版本 (发版途中要等几十分钟): 安装包真的能下才采用,
+  // 否则固定链接会指向 404 (2026-11-15 推 v2.10.4 tag 后即出现)。每条线最多看 3 个 tag。
+  const published = async (tag: string, name: string) => {
+    try {
+      const r = await fetch(`${base}${tag}/${name}`, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(5000) })
+      return r.status >= 200 && r.status < 400
+    } catch {
+      return false
+    }
+  }
+  const pick = async (re: RegExp, file: (tag: string) => string) => {
+    for (const tag of tags.filter(t => re.test(t)).slice(0, 3)) if (await published(tag, file(tag))) return tag
+    return undefined
+  }
+  const [desktop, app] = await Promise.all([
+    pick(/^v\d+\.\d+\.\d+$/, t => `LightRead_${t.slice(1)}_x64-setup.exe`),
+    pick(/^app-v\d+\.\d+\.\d+$/, t => `LightRead_${t}_android_arm64.apk`),
+  ])
   const out: unknown[] = []
   if (desktop) {
     const v = desktop.slice(1)
@@ -79,7 +95,7 @@ async function githubFeedList(): Promise<unknown[]> {
 
 async function loadList(source: ReleaseListSource, ctx: ExecutionContext): Promise<PlatformDownload[]> {
   const cache = (caches as unknown as { default: Cache }).default
-  const key = new Request(`https://lightread-download.cache/${source}`)
+  const key = new Request(`https://lightread-download.cache/v2/${source}`)
   const hit = await cache.match(key)
   if (hit) return parsePlatformReleases(await hit.json(), source)
   const res = await fetch(LISTS[source], {
