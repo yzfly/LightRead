@@ -39,6 +39,11 @@ export interface TypingSound {
   setVolume(volume: number): void
   /** 试听: 以约 300 字/分 的节奏敲 7 下, 最后一下是段落点缀; 需要先在手势里 warm() (内部也会调) */
   preview(id?: TypingSoundPresetId): Promise<void>
+  /**
+   * 打字机暂停 / 退出时调用: 挂起 AudioContext。运行中的 AudioContext 即使没声音也占着系统的音频输出流
+   * (安卓显示为正在播放, 费电); 下次 warm() 自动恢复, 已加载的音色保留。
+   */
+  suspend(): void
   dispose(): void
 }
 
@@ -224,6 +229,9 @@ export function createTypingSound(opts: TypingSoundOptions = {}): TypingSound {
       }
       lastHit = (t - 0.2) * 1000
       await new Promise(r => setTimeout(r, Math.max(0, (t - c.currentTime) * 1000 + 300)))
+    },
+    suspend() {
+      if (ctx?.state === 'running') void ctx.suspend().catch(() => {})
     },
     dispose() {
       disposed = true

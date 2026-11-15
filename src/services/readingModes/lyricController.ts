@@ -456,6 +456,11 @@ export class LyricController {
       if (line && frame != null && Math.abs(frame + line.top - this.#pinnedTop) < 2) return
     }
     this.#safe(() => {
+      const side = this.#sideOfCurrent() ?? 'visible'
+      // 手动换行时当前行还在屏上: 不算离开。放大焦点行 (×1.4) 后换行会改变上方行高, 浏览器的滚动锚定
+      // 随之微调滚动位置, 被当成手动滚动, 就会误显示「回到当前行」并吃掉下一次轻点 (K30 实测 2/8 次)。
+      // 手动模式下没有自动推进, 不需要为这种滚动暂停; 下一次换行会重新定位。
+      if (side === 'visible' && !this.#detached && this.#cfg.driver === 'manual') return
       if (!this.#detached) {
         this.#wasRunning = this.#state === 'running' && this.#cfg.driver === 'pace'
         if (this.#timer) {
@@ -464,7 +469,6 @@ export class LyricController {
           this.#timer = undefined
         }
       }
-      const side = this.#sideOfCurrent() ?? 'visible'
       if (side !== this.#detached) {
         this.#detached = side
         this.#ev.onDetach?.(side)

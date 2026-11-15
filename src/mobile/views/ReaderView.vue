@@ -641,7 +641,14 @@ onBeforeUnmount(() => {
   clearTimeout(geometryTimer)
 })
 
+/**
+ * 阅读页正在卸载: 之后的 relocate 不再记录进度。卸载时退出歌词会把临时的滚动排版恢复成翻页,
+ * 渲染器随之重排并定位到本节开头; 那次 relocate 若被保存, 下次打开就回到章首 (K30 实测, 歌词中按返回键)。
+ */
+let leaving = false
+
 function onRelocate(e: CustomEvent) {
+  if (leaving) return
   // 翻页 / 滚动后工具条的位置已经不对: 划线菜单收起, 选区工具条跟着选区重新定位
   hlMenu.value = null
   if (selection.value) placeSelTools(selectionRange)
@@ -1247,12 +1254,33 @@ function onMiniUp(e: PointerEvent) {
   const d = miniDrag
   if (!d || e.pointerId !== d.id) return
   miniDrag = null
-  if (!d.moved) {
-    ttsPanel.value = true
-    return
-  }
+  if (!d.moved) return // 轻点交给 onMiniClick
+  miniDraggedAt = Date.now()
   try { localStorage.setItem(MINI_POS_KEY, JSON.stringify(miniPos.value)) } catch { /* 忽略 */ }
 }
+
+/**
+ * 轻点胶囊: 展开面板。必须在 click 里打开而不是 pointerup: 面板在抬手时出现的话, 同一次触摸随后的
+ * click 会落到面板里手指下方的按钮上 (曾误开「音色」)。
+ * 面板一开胶囊就卸载, 第二下点不到它, 所以胶囊被拖离默认位置时稍等一下看是不是双击 (双击归位);
+ * 在默认位置时没有可归位的, 立即展开。
+ */
+function onMiniClick() {
+  // 拖动结束后可能紧跟一次 click (也可能没有), 只忽略刚拖完的那一下
+  if (Date.now() - miniDraggedAt < 400) return
+  if (!miniPos.value) { ttsPanel.value = true; return }
+  if (miniTapTimer) {
+    clearTimeout(miniTapTimer)
+    miniTapTimer = undefined
+    resetMiniPos()
+    return
+  }
+  miniTapTimer = setTimeout(() => { miniTapTimer = undefined; ttsPanel.value = true }, MINI_DOUBLE_TAP_MS)
+}
+
+const MINI_DOUBLE_TAP_MS = 280
+let miniTapTimer: ReturnType<typeof setTimeout> | undefined
+let miniDraggedAt = 0
 
 /** 双击胶囊回到默认停靠位置 */
 function resetMiniPos() {
@@ -3133,7 +3161,10 @@ const typewriterProgress = computed<ReadingModeProgress | null>(() => {
   if (!modes.progressActive.value) return null
   const p = pageInfo.value
   let eta: { chapter: number; book: number } | null = null
-  if (p && charsPerPage.value && !fixedLayout.value) {
+  // 歌词跟随听书时由朗读决定进度: 用听书的剩余时间 (与听书面板、胶囊一致), 不按打字机速度推算
+  if (modes.lyricFollowing.value && ttsState.value !== 'stopped' && listenEta.value) {
+    eta = listenEta.value
+  } else if (p && charsPerPage.value && !fixedLayout.value) {
     const perMinute = modes.speedUnit.value === 'cpm' ? modes.speed.value : modes.speed.value * 5
     const factor = settings.readingMode.typewriter.punctuationPause ? 1.1 : 1
     const secondsPerPage = charsPerPage.value / (perMinute / 60) * factor
@@ -3148,7 +3179,7 @@ const typewriterProgress = computed<ReadingModeProgress | null>(() => {
     chapterProgress: chapterProgress.value ?? fraction.value,
     chapterLeft: eta ? t('tts.chapterLeft', { time: humanTime(eta.chapter) }) : '',
     chapterLeftShort: eta ? humanTime(eta.chapter) : '',
-    finish: eta ? clockText(eta.chapter, 'read') : '',
+    finish: eta ? clockText(eta.chapter, modes.lyricFollowing.value && ttsState.value !== 'stopped' ? 'listen' : 'read') : '',
     book: eta ? t('tts.bookSummary', { pct: percentText.value, time: humanTime(eta.book) }) : t('readingMode.bookPercent', { pct: percentText.value }),
     percent: percentText.value,
   }
@@ -3363,6 +3394,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(miniTapTimer)
   document.removeEventListener('visibilitychange', resetAutoScrollClock)
   setPageBarsDark(null)
   setVolumeKeyHandler(null)
@@ -3370,6 +3402,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', syncFullscreenState)
   // 回藏书页时恢复窗口状态
   if (isFullscreen.value) toggleFullscreen()
+  leaving = true
   clearTimeout(saveTimer)
   // 离开前把节流中的最新进度写下
   if (pendingProgress) library.saveProgress(bookId, pendingProgress.cfi, pendingProgress.frac)
@@ -3660,6 +3693,7 @@ onBeforeUnmount(() => {
       @auto-toggle="autoPaused ? resumeAutoRead() : pauseAutoRead()"
       @auto-speed="adjustAutoSpeed"
       @auto-stop="stopAutoRead"
+      @menu="barsVisible ? hideBars() : showBars()"
     />
     <ReadingModeLayer :modes="modes" :bars-visible="barsVisible" :suggest-eink="modes.einkSuggested.value" />
 
@@ -3761,7 +3795,7 @@ onBeforeUnmount(() => {
       @pointermove="onMiniMove"
       @pointerup="onMiniUp"
       @pointercancel="miniDrag = null"
-      @dblclick="resetMiniPos"
+      @click="onMiniClick"
       @open="ttsPanel = true"
       @toggle="ttsState === 'playing' ? pauseTTS() : resumeTTS()"
       @back="returnToListening"
@@ -5420,6 +5454,16 @@ onBeforeUnmount(() => {
 .progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 32px; width: 100%; }.progress-chapter { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 11px; }.progress-meta .progress-label { flex: 0 0 auto; min-width: 0; max-width: none; width: auto; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 12px; padding: 4px 0 4px 8px; height: 32px; }.page-number { white-space: nowrap; }.progress-row { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; gap: 4px; width: 100%; }.slider-wrap { width: 100%; min-width: 0; }.slider { width: 100%; height: 44px; }.bar.bottom { gap: 0; }
 .jump-pop.progress-settings { position: static; inset: auto; width: auto; max-width: none; padding: 20px; box-shadow: none; border: 0; border-radius: 0; display: grid; gap: 14px; }.jump-overview { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }.jump-overview > div { display: grid; gap: 6px; }.jump-overview small { font-size: 12px; color: var(--text-3); }.jump-overview strong { font-size: 32px; font-weight: 600; }.jump-overview > span { font-size: 12px; color: var(--text-2); text-align: end; }.jump-chapter { margin: 0; font-size: 13px; color: var(--text-2); line-height: 1.6; overflow-wrap: anywhere; }.jump-slider { width: 100%; height: 44px; margin: 0; accent-color: var(--brand); }.jump-tabs { display: flex; }.jump-tabs button { flex: 1; min-height: 44px; }.jump-field-label { font-size: 13px; }.jump-form { min-width: 0; }.jump-input { min-height: 44px; min-width: 0; }.jump-total { white-space: nowrap; }.jump-form .btn,.jump-undo { min-height: 44px; }.jump-meta,.jump-hint { margin: 0; line-height: 1.7; }
 .listen-cover { width: 132px; height: 185px; margin: 4px auto; }.listen-hero h2 { font-size: 18px; }.listen-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }.listen-options button { border: 1px solid var(--border); border-radius: 12px; background: var(--card); gap: 5px; padding: 12px 4px; min-height: 82px; }.listen-options svg { width: 18px; height: 18px; }.listen-options small { font-size: 11px; color: var(--text-3); }.listen-options strong { font-size: 13px; font-weight: 600; color: var(--text); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }.tts-progress-head,.tts-progress-sub { flex-wrap: wrap; gap: 4px 12px; }.tts-progress-eta { margin-left: auto; }.tts-progress-sub > span { white-space: normal; }.listen-setting-body .tts-row { min-width: 0; }.tts-panel { padding-inline: max(20px,var(--lr-safe-left)); }
+/* 横屏手机 (高度不足 500px): 侧边面板只有约 270px 高, 封面会占掉大半, 播放键要滚两屏才看到。
+   去掉封面、让面板用满高度, 并把播放控制排到书名下面, 首屏就能看到播放控制与定时 / 音色 / 语速。 */
+@media (orientation: landscape) and (max-height: 500px) {
+  .tts-panel { top: calc(8px + var(--safe-top)); max-height: calc(100% - 16px - var(--safe-top) - var(--safe-bottom)); }
+  .listen-cover { display: none; }
+  /* 播放控制排到书名下面 (K30 横屏实测: 只去掉封面时播放键仍在 488px, 面板只到 368px) */
+  .tts-panel > .tts-head { order: -3; }
+  .tts-panel > .listen-hero { order: -2; }
+  .tts-panel > .tts-transport { order: -1; }
+}
 @media(max-width:359px) { .progress-meta { gap: 6px; }.progress-meta .progress-label { font-size: 11px; }.tts-panel { padding-inline: 16px; }.listen-options strong { font-size: 12px; } }
 
 </style>

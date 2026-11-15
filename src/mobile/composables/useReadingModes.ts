@@ -949,6 +949,12 @@ export function useReadingModes(opts: UseReadingModesOptions) {
       sound.warm()
     }
   })
+  // 打字机暂停 / 退出时挂起打字声的音频输出 (否则系统一直显示在播放, 费电), 继续时恢复
+  watch(typewriterState, state => {
+    if (!sound) return
+    if (state === 'idle' || state === 'paused') sound.suspend()
+    else if (state === 'running' && tw.value.sound) sound.warm()
+  })
   // 打字声音色 / 音量改了立即生效
   watch(() => tw.value.soundPreset, id => sound?.setPreset(id))
   watch(() => tw.value.soundVolume, v => sound?.setVolume(v))

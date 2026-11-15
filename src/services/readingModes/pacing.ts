@@ -428,7 +428,8 @@ export function clampSpeed(n: number, script: Script): number {
 
 /** ±10%, 取整到 10, 至少变化 10 (调用方再 clampSpeed) */
 export function adjustSpeed(n: number, dir: 1 | -1): number {
-  const next = Math.round((n * (1 + 0.1 * dir)) / 10) * 10
+  // 加速 ×1.1、减速 ÷1.1 (而不是 ×0.9): 加一下再减一下回到原值 (K30 实测 420 → 460 → 410 回不去)
+  const next = Math.round((dir > 0 ? n * 1.1 : n / 1.1) / 10) * 10
   if (dir > 0) return Math.max(next, Math.round(n / 10) * 10 + 10)
   return Math.min(next, Math.round(n / 10) * 10 - 10)
 }

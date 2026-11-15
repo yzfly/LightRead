@@ -30,6 +30,8 @@ const emit = defineEmits<{
   'auto-toggle': []
   'auto-speed': [dir: 1 | -1]
   'auto-stop': []
+  /** 轻点状态文字: 呼出 / 收起阅读器工具栏 (手动歌词模式下轻点正文只会换行, 这是回到工具栏的入口) */
+  menu: []
 }>()
 
 const guide = computed(() => props.modes.activeGuide.value)
@@ -124,12 +126,12 @@ onBeforeUnmount(() => clearTimeout(fadeTimer))
     >
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M11.3 7.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1-1.4 1.4L12 9.42l-5.3 5.3a1 1 0 0 1-1.4-1.42l6-6z"/></svg>
     </button>
-    <span class="rm-mini-status" aria-live="polite">
-      <span class="rm-mini-state">{{ statusText }}</span>
+    <button type="button" class="rm-mini-status" :title="t('readingMode.toggleToolbar')" @click="emit('menu'); wake()">
+      <span class="rm-mini-state" aria-live="polite">{{ statusText }}</span>
       <span class="rm-mini-speed">
         <template v-if="paced">{{ speedText }}<template v-if="progress && !isAuto"> · </template></template><template v-if="progress && !isAuto">{{ progress.chapterLeftShort ? t('readingMode.miniLeft', { time: progress.chapterLeftShort }) : progress.percent }}</template>
       </span>
-    </span>
+    </button>
     <template v-if="paced && !docked">
       <button
         type="button"
@@ -280,6 +282,12 @@ onBeforeUnmount(() => clearTimeout(fadeTimer))
   color: var(--on-brand);
 }
 .rm-mini-status {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;

@@ -575,7 +575,11 @@ onBeforeUnmount(() => {
   clearTimeout(geometryTimer)
 })
 
+/** 阅读页正在卸载: 之后的 relocate (退出歌词恢复翻页排版时重排到本节开头) 不再记录进度 */
+let leaving = false
+
 function onRelocate(e: CustomEvent) {
+  if (leaving) return
   modes.onRelocate(e.detail)
   dj.onRelocate(e.detail)
   // 朗读跟随翻页 / 打字机、歌词自动推进都不能无限续命计时
@@ -3168,6 +3172,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', syncFullscreenState)
   // 回藏书页时恢复窗口状态
   if (isFullscreen.value) toggleFullscreen()
+  leaving = true
   clearTimeout(saveTimer)
   // 离开前把节流中的最新进度写下
   if (pendingProgress) library.saveProgress(bookId, pendingProgress.cfi, pendingProgress.frac)
@@ -3461,6 +3466,7 @@ onBeforeUnmount(() => {
       @auto-toggle="autoPaused ? resumeAutoRead() : pauseAutoRead()"
       @auto-speed="adjustAutoSpeed"
       @auto-stop="stopAutoRead"
+      @menu="barsVisible ? hideBars() : showBars()"
     />
     <ReadingModeLayer :modes="modes" :bars-visible="barsVisible" :suggest-eink="modes.einkSuggested.value" />
 

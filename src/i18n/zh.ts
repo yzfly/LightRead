@@ -1441,6 +1441,7 @@ export default {
   'readingMode.scaleOriginal': '原字号',
   'readingMode.exitLyric': '退出歌词',
   'readingMode.lyricKeysHint': '空格 暂停 · ↓/J 下一行 · ↑/K 上一行 · Esc 退出',
+  'readingMode.toggleToolbar': '显示或隐藏工具栏',
   'readingMode.lyricFixedLayout': '这类书暂不支持歌词，可用自动翻页继续读',
   'readingMode.lyricStartFailed': '没能开启歌词模式，请重试',
   'readingMode.lyricError': '歌词模式出错，已恢复正常显示',

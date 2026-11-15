@@ -264,6 +264,8 @@ test('速度: 范围钳制、±10% 取整到 10、快捷档、打字声频率', 
   assert.equal(adjustSpeed(300, -1), 270)
   assert.equal(adjustSpeed(60, 1), 70) // 至少变化 10
   assert.equal(adjustSpeed(40, -1), 30)
+  // 加一下再减一下回到原值
+  for (const n of [200, 300, 420, 460, 510, 800]) assert.equal(adjustSpeed(adjustSpeed(n, 1), -1), n, `round trip ${n}`)
   assert.deepEqual(speedPresets('cjk'), [200, 300, 450])
   assert.deepEqual(speedPresets('latin'), [150, 200, 300])
   assert.equal(soundEvery(300), 1)

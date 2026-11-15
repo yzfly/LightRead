@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { t } from '../../i18n'
 import { useRouter } from 'vue-router'
 import { isTauri } from '../../storage/types'
@@ -18,6 +18,16 @@ let removeNavigationGuard: (() => void) | undefined
 let closeWatcher: { destroy(): void } | undefined
 let removeAndroidBack: (() => void) | undefined
 let disposed = false
+// 软键盘: Android WebView 不缩布局视口, 贴底的面板 (例如 AppSelect 的搜索) 会整块落在键盘后面。
+// 按 visualViewport 让出键盘高度, 并把面板高度限制在键盘上方的可见区域内。
+const keyboard = ref<{ inset: number; height: number } | null>(null)
+function updateKeyboard() {
+  const view = window.visualViewport
+  const inset = view ? Math.max(0, window.innerHeight - view.height - view.offsetTop) : 0
+  keyboard.value = inset > 80 && view ? { inset, height: view.height } : null
+}
+const maskStyle = computed(() => keyboard.value ? { paddingBottom: `${keyboard.value.inset}px` } : undefined)
+const panelStyle = computed(() => keyboard.value ? { maxHeight: `${Math.round(keyboard.value.height * 0.9)}px`, paddingBottom: '0px' } : undefined)
 const focusable = () => [...(panel.value?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [href], [tabindex="0"]') ?? [])].filter(el => el.getClientRects().length)
 function keydown(event: KeyboardEvent) {
   if (mask.value?.inert) return
@@ -38,6 +48,9 @@ function globalKeydown(event: KeyboardEvent) {
 }
 onMounted(async () => {
   previousFocus = document.activeElement as HTMLElement | null
+  updateKeyboard()
+  window.visualViewport?.addEventListener('resize', updateKeyboard)
+  window.visualViewport?.addEventListener('scroll', updateKeyboard)
   document.addEventListener('keydown', globalKeydown, true)
   for (const el of document.querySelectorAll<HTMLElement>('#app, [data-app-modal], [role=dialog], [role=alertdialog]')) {
     if (el === mask.value || mask.value?.contains(el)) continue
@@ -79,6 +92,8 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   disposed = true
+  window.visualViewport?.removeEventListener('resize', updateKeyboard)
+  window.visualViewport?.removeEventListener('scroll', updateKeyboard)
   document.removeEventListener('keydown', globalKeydown, true)
   removeAndroidBack?.()
   removeNavigationGuard?.()
@@ -91,8 +106,8 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div ref="mask" class="modal-mask app-modal-mask" data-app-modal @keydown="keydown" @click.self="dismiss">
-      <section ref="panel" class="app-modal" role="dialog" aria-modal="true" :aria-labelledby="titleId" :aria-describedby="description ? `${titleId}-desc` : undefined" tabindex="-1">
+    <div ref="mask" class="modal-mask app-modal-mask" data-app-modal :style="maskStyle" @keydown="keydown" @click.self="dismiss">
+      <section ref="panel" class="app-modal" :style="panelStyle" role="dialog" aria-modal="true" :aria-labelledby="titleId" :aria-describedby="description ? `${titleId}-desc` : undefined" tabindex="-1">
         <div class="app-modal-handle" aria-hidden="true" />
         <header class="app-modal-header">
           <div><h2 :id="titleId">{{ title }}</h2><p v-if="description" :id="`${titleId}-desc`">{{ description }}</p></div>

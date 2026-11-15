@@ -1441,6 +1441,7 @@ export default {
   'readingMode.scaleOriginal': "Original size",
   'readingMode.exitLyric': 'Exit lyrics',
   'readingMode.lyricKeysHint': "Space pause · ↓/J next line · ↑/K previous line · Esc exit",
+  'readingMode.toggleToolbar': 'Show or hide the toolbar',
   'readingMode.lyricFixedLayout': "Lyrics is unavailable for this book. Try auto page turn",
   'readingMode.lyricStartFailed': "Could not start Lyrics. Try again",
   'readingMode.lyricError': "Lyrics stopped. The normal page is back; try again when ready",
