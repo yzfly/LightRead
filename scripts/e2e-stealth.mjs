@@ -161,7 +161,7 @@ try {
     await p.evaluate(() => {
       for (const { doc } of document.querySelector('foliate-view').renderer.getContents()) {
         const st = doc.createElement('style')
-        st.textContent = 'body { font-family: serif } p { font-family: "Book Font", serif; color: #333 }'
+        st.textContent = 'body { font-family: serif } p { font-family: "Book Font", serif; color: #333 } body p { line-height: 1.1 }'
         doc.head.prepend(st)
       }
     })
@@ -185,6 +185,13 @@ try {
       return doc.defaultView.getComputedStyle(doc.querySelector('p') ?? doc.body).fontFamily.includes('Reader Test Font')
     })
     if (process.env.SHOT_DIR) await p.screenshot({ path: `${process.env.SHOT_DIR}/stealth-colors.png` })
+    // 行距同样盖过书里写死的 line-height (2026-11-16 Windows 反馈改行距无效)
+    await p.evaluate(() => { document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('settings').setReaderPreference('lineHeight', 2.4) })
+    await p.waitForFunction(() => {
+      const { doc } = document.querySelector('foliate-view').renderer.getContents()[0]
+      const cs = doc.defaultView.getComputedStyle(doc.querySelector('p') ?? doc.body)
+      return Math.abs(parseFloat(cs.lineHeight) / parseFloat(cs.fontSize) - 2.4) < 0.05
+    })
     // 颜色恢复跟随主题
     await setStealthPref('bgColor', '')
     await setStealthPref('textColor', '')

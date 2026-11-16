@@ -156,3 +156,12 @@ test('选了字体时盖过书自带字体, 代码块保留等宽; 默认字体�
   assert.match(css, /body, body :not\(pre\):not\(code\):not\(kbd\):not\(samp\):not\(tt\) \{ font-family: inherit !important; \}/)
   assert.doesNotMatch(getReaderCSS({ ...prefs, fontFamily: '' }, false), /font-family/)
 })
+
+// 2026-11-16 Windows 反馈改行距无效: 行距只写在 p 上, 书里 p.类名 / div 段落上的 line-height 会盖掉它
+test('行距盖过书自带的: body 带 !important, 正文容器继承; 标题不强制', () => {
+  const prefs = { theme: 'light', fontSize: 18, lineHeight: 2.2, gap: 6, fontFamily: '', justify: false, letterSpacing: 0 }
+  const css = getReaderCSS(prefs, false)
+  assert.match(css, /body \{ line-height: 2\.2 !important; \}/)
+  assert.match(css, /body p, body div,[^{]*\{ line-height: inherit !important; \}/)
+  assert.doesNotMatch(css.match(/body p, body div,[^{]*/)[0], /\bh[1-6]\b|\brt\b|\bsup\b/)
+})

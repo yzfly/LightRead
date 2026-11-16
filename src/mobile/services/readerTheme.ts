@@ -69,6 +69,13 @@ export function fontOverrideCSS(fontFamily: string): string {
   return 'body, body :not(pre):not(code):not(kbd):not(samp):not(tt) { font-family: inherit !important; }'
 }
 
+/** 与桌面相同 (services/readerTheme.ts): 行距盖过书自带的, 标题 / 注音 / 上下标保留书里的写法 */
+export function lineHeightCSS(lineHeight: number): string {
+  return `body { line-height: ${lineHeight} !important; }
+    body p, body div, body li, body blockquote, body dd, body dt, body td, body th, body section, body article,
+    body span, body a, body em, body strong, body b, body i, body u, body font, body small, body big, body cite, body q { line-height: inherit !important; }`
+}
+
 /** 注入到 foliate 渲染 iframe 的样式 */
 export function getReaderCSS(prefs: ReaderPrefs, appDark: boolean, style?: ReaderModeStyle): string {
   const theme = resolveReaderTheme(prefs.theme, appDark)
@@ -89,8 +96,8 @@ export function getReaderCSS(prefs: ReaderPrefs, appDark: boolean, style?: Reade
     body { background: none !important; color: ${colors.fg} !important; }
     /* Project Gutenberg 版权页的作者列表写了 all: initial, 字色回到默认黑色, 不继承主题 */
     #pg-header :not(a), #pg-footer :not(a) { color: inherit !important; }
+    ${lineHeightCSS(prefs.lineHeight)}
     p, li, blockquote, dd {
-      line-height: ${prefs.lineHeight};
       ${prefs.justify ? 'text-align: justify;' : ''}
       -webkit-hyphens: auto;
       hyphens: auto;
