@@ -2444,7 +2444,7 @@ dependencies = [
 
 [[package]]
 name = "lightread"
-version = "2.10.4"
+version = "2.10.5"
 dependencies = [
  "base64 0.22.1",
  "bzip2 0.5.2",
