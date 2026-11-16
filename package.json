@@ -103,6 +103,7 @@
     "test:stealth": "node --experimental-strip-types --test scripts/test-stealth.mjs",
     "e2e:window-chrome": "node scripts/e2e-window-chrome.mjs",
     "e2e:stealth": "node scripts/e2e-stealth.mjs",
+    "e2e:desktop-select": "node scripts/e2e-desktop-select.mjs",
     "e2e:translate": "node scripts/e2e-translate.mjs"
   },
   "dependencies": {

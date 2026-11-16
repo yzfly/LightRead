@@ -2318,7 +2318,20 @@ function onSectionLoad(e: CustomEvent) {
     }
   }
   selectionUpdaters.set(doc, updateSelection)
-  doc.addEventListener('mouseup', () => setTimeout(updateSelection, 0))
+  // 鼠标划选: 左键按住期间不弹工具条, 松开后再弹 (2026-11-15 用户: 划到一半停住没松手时就弹出, 挡住要继续划的字)
+  let mouseSelecting = false
+  doc.addEventListener('mousedown', (e: MouseEvent) => { if (e.button === 0) mouseSelecting = true })
+  doc.addEventListener('mouseup', () => {
+    mouseSelecting = false
+    setTimeout(updateSelection, 0)
+  })
+  const releaseOutside = () => {
+    if (!mouseSelecting) return
+    mouseSelecting = false
+    setTimeout(updateSelection, 0)
+  }
+  window.addEventListener('mouseup', releaseOutside)
+  doc.defaultView?.addEventListener('pagehide', () => window.removeEventListener('mouseup', releaseOutside))
   doc.addEventListener('touchend', () => setTimeout(updateSelection, 0))
   // 安卓浏览器 (vivo 自带浏览器、华为平板等) 长按选字会取消这次触摸 (touchcancel, 没有 touchend),
   // 拖选区两端的把手也不发触摸事件: 只等 touchend 就永远看不到选区, 划线工具条不出来, 只剩浏览器
@@ -2328,6 +2341,8 @@ function onSectionLoad(e: CustomEvent) {
   doc.addEventListener('selectionchange', () => {
     clearTimeout(selectionTimer)
     selectionTimer = setTimeout(() => {
+      // 左键还按着: 等 mouseup 再弹 (拖到 iframe 外松开时, 顶层窗口的 mouseup 也会清掉这个标记)
+      if (mouseSelecting) return
       const sel = doc.getSelection()
       if (sel && !sel.isCollapsed && sel.toString().trim()) updateSelection()
     }, 300)

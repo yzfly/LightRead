@@ -87,6 +87,7 @@ npm run test:translate       # 划词翻译 (目标语言 / 校验 / relay /v1/t
 E2E_BASE=http://localhost:<端口> npm run e2e:translate   # 选中本段 → 翻译 (未登录引导 / 账号额度 / 超额) → 简繁往返 → 本机翻译模型 (下载入口 / 进度 / 本机出译文, 原生层用替身); E2E_MOBILE=1 测 App 并校验顶栏与浮动听书胶囊按钮一致 (components/ListenCapsule.vue)
 npm run test:stealth         # 摸鱼模式 (桌面): 老板键录制 / 校验 / 显示, 半透明底色, 自选底色·字色 (脏值跟随主题), 阅读字体盖过书自带字体, 传给原生层的选项, 透明窗口配置 (App 窗口保持不透明); 原生窗口命令见 cargo test stealth (src-tauri/src/stealth.rs)
 E2E_BASE=http://localhost:<端口> npm run e2e:stealth   # 模拟桌面 IPC: 网页版无入口 → 从「阅读模式」面板进入 (面板内可调浓淡与隐蔽开关) → 只剩正文 + 半透明 → 透明度 / 伪装即时生效 → 自选底色 / 字色 / 字体 (可从屏幕取色, 融进后面的网页; 字体盖过书自带 CSS) → 老板键事件 → Esc 退出 → 打开图书自动进入 → PDF 阅读页 (入口在「视图」, 页外底色透明, 整页按浓淡淡化) → 设置页录制老板键; 两个阅读页共用 composables/useStealth + components/StealthStrip
+E2E_BASE=http://localhost:<端口> npm run e2e:desktop-select   # 桌面正文划词: 左键按住时不弹划线工具条, 松开才弹; 触屏 / 键盘选字仍在选区稳定后自己弹出
 E2E_BASE=http://localhost:<端口> npm run e2e:window-chrome   # Windows 自绘窗口 (与 macOS 对齐: 无系统标题栏 / 无深色细边框 / 圆角; 非阅读页为 2026-11-08 用户选定的原型 B「侧栏到顶」, docs/prototypes/windows-shell): 侧栏到顶 + 按钮浮在右上且不压页面标题行, 顶行空白拖动 / 双击最大化, 标题栏按钮 → 窗口命令, 阅读页保留标题条, 最大化去圆角, 摸鱼收起; 原生侧 cargo test window_chrome (src-tauri/src/window_chrome.rs, tauri.windows.conf.json)
 npm run audit:keywords       # 离线复现词边界、同形词跨语境和未来新词影响; 不是准确率评测
 node scripts/build-terminology.mjs   # 重建开放候选词库与覆盖报告; 方案见 docs/research/keyword-optimization.md
