@@ -369,6 +369,10 @@ let systemFontsLoading = false
         </div>
       </div>
       <p v-if="settings.zhConvert !== 'off'" class="set-note" role="note">{{ t('reader.zhConvertHint') }}</p>
+      <div class="tp-portrait">
+        <span>{{ t('reader.oneHandTurn') }}<small>{{ t('reader.oneHandTurnHint') }}</small></span>
+        <button type="button" class="tp-switch" role="switch" :aria-checked="settings.oneHandTurn" :aria-label="t('reader.oneHandTurn')" @click="settings.oneHandTurn = !settings.oneHandTurn"><span aria-hidden="true" /></button>
+      </div>
       <div v-if="volumeKeys" class="tp-portrait">
         <span>{{ t('reader.volumeKeyTurn') }}<small>{{ t('reader.volumeKeyTurnHint') }}</small></span>
         <button type="button" class="tp-switch" role="switch" :aria-checked="settings.volumeKeyTurn" :aria-label="t('reader.volumeKeyTurn')" @click="settings.volumeKeyTurn = !settings.volumeKeyTurn"><span aria-hidden="true" /></button>

@@ -13,7 +13,7 @@ import { useSettings } from '../../stores/settings.ts'
 import { useLibrary } from '../../stores/library.ts'
 import { isTextLike } from '../../services/format.ts'
 import { convertToEpub, TEXT_EPUB_LAYOUT } from '../../services/textToEpub.ts'
-import { tapZone } from '../../services/readerTapZone.ts'
+import { createDoubleTap, tapZone } from '../../services/readerTapZone.ts'
 import { getReaderCSS, resolveReaderColors, resolveReaderTheme, HIGHLIGHT_COLORS, listenMarkStyle, type ListenMarkStyle } from '../services/readerTheme.ts'
 import { drawHighlight, storedHighlightStyle, type HighlightStyle } from '../../services/highlightStyle.ts'
 import HighlightStylePicker from '../../components/HighlightStylePicker.vue'
@@ -2551,6 +2551,7 @@ function onSectionLoad(e: CustomEvent) {
       if (sel && !sel.isCollapsed) return
       e.stopImmediatePropagation()
       suppressClickUntil = Date.now() + 700
+      tapGate.cancel()
       turnPage(dy < 0 ? 'right' : 'left')
       return
     }
@@ -2560,12 +2561,16 @@ function onSectionLoad(e: CustomEvent) {
       const sel = doc.getSelection()
       if (sel && !sel.isCollapsed) return
       suppressClickUntil = Date.now() + 700
+      tapGate.cancel()
       turnPage(dx < 0 ? 'right' : 'left')
       return
     }
-    // 有位移是滑动 (途中移动过也算, 哪怕松手时回到原处), 长按是选字, 都交给原有流程
-    if (st.moved > 10) return
-    if (Date.now() - st.t > 350) return
+    // 有位移是滑动 (途中移动过也算, 哪怕松手时回到原处), 长按是选字, 都交给原有流程;
+    // 单手翻页时还在等的单击作废, 免得滑完再多翻一页
+    if (st.moved > 10 || Date.now() - st.t > 350) {
+      tapGate.cancel()
+      return
+    }
     e.stopImmediatePropagation()
     if (panel.value !== 'none' || settingsOpen.value || activeAnnotation.value) {
       panel.value = 'none'
@@ -2720,7 +2725,8 @@ function onContentClick(clientX: number, doc: Document, target?: Element | null,
  * 自动翻页 / 滚动开着时不设翻页区, 整屏轻点只暂停 (并呼出工具栏) / 继续
  */
 function handleTapZone(x: number, y: number, rect: DOMRect) {
-  const zone = tapZone({ x, y, width: rect.width, height: rect.height, portrait: portraitView.value, autoReading: autoReading.value })
+  const oneHand = settings.oneHandTurn
+  const zone = tapZone({ x, y, width: rect.width, height: rect.height, portrait: portraitView.value, autoReading: autoReading.value, oneHand })
   if (autoReading.value) {
     if (autoPaused.value) {
       resumeAutoRead()
@@ -2731,10 +2737,35 @@ function handleTapZone(x: number, y: number, rect: DOMRect) {
     }
     return
   }
+  if (oneHand) {
+    // 单手翻页: 单击下一页 (工具栏开着时只收起), 双击呼出 / 收起工具栏
+    showOneHandTip()
+    tapGate.tap(x, y, Date.now(), () => {
+      if (barsVisible.value) hideBars()
+      else turnPage('right')
+    }, () => (barsVisible.value ? hideBars() : showBars()))
+    return
+  }
   if (zone === 'prev') turnPage('left')
   else if (zone === 'next') turnPage('right')
   // 中间: 呼出 / 隐藏工具栏 (沉浸式)
   else barsVisible.value ? hideBars() : showBars()
+}
+
+/** 单手翻页的双击识别 (单击要等一个双击间隔才翻页) */
+const tapGate = createDoubleTap()
+onBeforeUnmount(() => tapGate.cancel())
+
+/** 第一次用单手翻页时说明一次手势 (每台设备一次) */
+const ONE_HAND_TIP_KEY = 'lightread.oneHandTip'
+function showOneHandTip() {
+  try {
+    if (localStorage.getItem(ONE_HAND_TIP_KEY)) return
+    localStorage.setItem(ONE_HAND_TIP_KEY, '1')
+  } catch {
+    return
+  }
+  toast(t('reader.oneHandTip'))
 }
 
 /**

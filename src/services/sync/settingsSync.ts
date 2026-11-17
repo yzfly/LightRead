@@ -65,6 +65,7 @@ export const SETTINGS_SYNC_SPEC: SettingsSpec = {
   githubBookRepos: SYNC,
   autoReadSeconds: SYNC,
   volumeKeyTurn: SYNC,
+  oneHandTurn: SYNC,
   pdfReflowDefault: SYNC,
   /** 听书引擎取决于本机能力 (本地离线音色要下载模型, 网页没有) */
   ttsEngine: LOCAL,

@@ -71,7 +71,7 @@ E2E_BASE=http://localhost:<端口> npm run e2e:pdf-crash   # PDF 引擎崩溃自
 npm run test:read-aloud      # 听书: 句子游标断句 + 播放管线 (分块/预取/无缝拼接/回退, 假时钟) + 音色目录 + 本机语音模型 (朗读语言 / 可用规则 / 不可用时回退在线)
 npm run test:reading-modes   # 阅读模式: 打字机出字节奏 / 断句 / 按行分组 (纯函数)
 npm run test:reading-focus   # 阅读焦点: 舒适区 25%–65% / 焦点线 38% / 长句 / 手动滚动后暂停跟随 (听书跟随与跳转落点, 纯函数)
-npm run test:reader-tap-zone # 轻点分区: 横屏左·中·右 / 竖屏上·中·下 / 自动阅读时无翻页区 (纯函数)
+npm run test:reader-tap-zone # 轻点分区: 横屏左·中·右 / 竖屏上·中·下 / 自动阅读时无翻页区 / 单手翻页 (App 默认: 整屏下一页, 双击呼出菜单, 右滑上一页) 与双击识别 (纯函数)
 npm run test:display-title   # 手机书架短书名 / 短作者: 只去末尾长营销括注, 作者取分号前第一段 (src/services/displayTitle.ts)
 npm run test:about-links      # 关于页全平台下载 (桌面 v / App app-v 各取最新, 镜像只认已校验版本) + 读者群二维码过期 (src/services/aboutLinks.ts)
 npm run check:style-tokens    # 样式档位棘轮: 裸 px 字号 / 圆角 / 阴影 / 非 400·500·600 字重只许减少; 替换一批后 node scripts/check-style-tokens.mjs --update
@@ -84,7 +84,7 @@ npm run test:concept-recognition # 生产完整概念边界 / 智能碎片扩展
 npm run test:auto-scroll     # 多刷新率速度 / 卡帧与调速 / 亚像素累计
 npm run test:local-chat      # 本机对话模型 (Qwen3.5): 用哪一档 / 消息裁进上下文 / 去思考块 (src/services/localChatCore.ts)
 npm run test:translate       # 划词翻译 (目标语言 / 校验 / relay /v1/translate 按账号每日 100 次 / 账号校验缓存) + 正文简繁转换 (OpenCC 等长替换, CFI 不变) + 本机翻译模型 (提示词 / 逐段拆分 / 用不用本机的规则)
-E2E_BASE=http://localhost:<端口> npm run e2e:translate   # 选中本段 → 翻译 (未登录引导 / 账号额度 / 超额) → 简繁往返 → 本机翻译模型 (下载入口 / 进度 / 本机出译文, 原生层用替身); E2E_MOBILE=1 测 App 并校验顶栏与浮动听书胶囊按钮一致 (components/ListenCapsule.vue)
+E2E_BASE=http://localhost:<端口> npm run e2e:translate   # 选中本段 → 翻译 (未登录引导 / 账号额度 / 超额) → 简繁往返 → 本机翻译模型 (下载入口 / 进度 / 本机出译文, 原生层用替身); E2E_MOBILE=1 测 App 并校验顶栏与浮动听书胶囊按钮一致 (components/ListenCapsule.vue), 以及单手翻页手势
 npm run test:stealth         # 摸鱼模式 (桌面): 老板键录制 / 校验 / 显示, 半透明底色, 自选底色·字色 (脏值跟随主题), 阅读字体盖过书自带字体, 传给原生层的选项, 透明窗口配置 (App 窗口保持不透明); 原生窗口命令见 cargo test stealth (src-tauri/src/stealth.rs)
 E2E_BASE=http://localhost:<端口> npm run e2e:stealth   # 模拟桌面 IPC: 网页版无入口 → 从「阅读模式」面板进入 (面板内可调浓淡与隐蔽开关) → 只剩正文 + 半透明 → 透明度 / 伪装即时生效 → 自选底色 / 字色 / 字体 (可从屏幕取色, 融进后面的网页; 字体盖过书自带 CSS) → 老板键事件 → Esc 退出 → 打开图书自动进入 → PDF 阅读页 (入口在「视图」, 页外底色透明, 整页按浓淡淡化) → 设置页录制老板键; 两个阅读页共用 composables/useStealth + components/StealthStrip
 E2E_BASE=http://localhost:<端口> npm run e2e:highlight-style   # 书里写死 pt / px 字号时调字号仍生效 (services/bookFontSize.ts, foliate 加载样式时换成 rem, issue #22) + 划线风格 色块 / 下划线 / 波浪线 (services/highlightStyle.ts + components/HighlightStylePicker.vue, 标注 style 字段缺省即色块, issue #21); E2E_MOBILE=1 测 App 工具条

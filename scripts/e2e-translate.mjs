@@ -53,6 +53,8 @@ const results = []
 p.on('pageerror', e => errors.push(e.message))
 const step = async (name, fn) => { await fn(); results.push(name); console.log('PASS', name) }
 const bar = mobile ? '.highlight-bar' : '.highlight-bar'
+/** 手机上的双击: 两次真实轻点 (鼠标双击在桌面 Chromium 里会选中词语, 手机上不会) */
+const doubleTap = async (x, y) => { await p.touchscreen.tap(x, y); await p.touchscreen.tap(x, y) }
 const settingsStore = () => p.evaluate(() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('settings').$state)
 const setSetting = (key, value) => p.evaluate(([k, v]) => { document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('settings')[k] = v }, [key, value])
 
@@ -152,7 +154,9 @@ try {
     await step('listening capsule: top-bar and floating capsules share controls and hit sizes', async () => {
       const reveal = async () => {
         await p.evaluate(() => document.querySelector('.content')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-        if (!await p.locator('footer.bar.bottom:not(.hidden)').count()) await p.mouse.click(196, 425)
+        // 单手翻页 (App 默认): 双击呼出工具栏, 单击是下一页
+        if (!await p.locator('footer.bar.bottom:not(.hidden)').count()) await doubleTap(196, 425)
+        await p.locator('footer.bar.bottom:not(.hidden)').waitFor()
       }
       await reveal()
       await p.locator('.listen-entry').click()
@@ -260,6 +264,42 @@ try {
     await p.screenshot({ path: `${out}/translate-offline-result.png` })
     await p.keyboard.press('Escape')
   })
+
+  if (mobile) {
+    await step('one-handed page turns: tap anywhere = next page, double tap = menu, off restores zones', async () => {
+      const shown = () => p.locator('footer.bar.bottom:not(.hidden)').count()
+      const relocs = () => p.evaluate(() => window.__qaRelocs ?? 0)
+      await p.evaluate(() => {
+        window.__qaRelocs = 0
+        document.querySelector('foliate-view').addEventListener('relocate', () => { window.__qaRelocs++ })
+      })
+      assert.equal((await settingsStore()).oneHandTurn, true, 'on by default in the App')
+      if (await shown()) {
+        await p.touchscreen.tap(196, 425)
+        await p.locator('footer.bar.bottom.hidden').waitFor()
+      }
+      await p.evaluate(() => { window.__qaRelocs = 0 })
+      // 上方三分之一原本是上一页; 单手时也是下一页
+      await p.touchscreen.tap(196, 150)
+      await p.waitForTimeout(700)
+      assert.ok(await relocs() > 0, 'single tap turned the page')
+      assert.equal(await shown(), 0, 'single tap does not open the menu')
+      const before = await relocs()
+      await doubleTap(196, 425)
+      await p.locator('footer.bar.bottom:not(.hidden)').waitFor()
+      await p.waitForTimeout(500)
+      assert.equal(await relocs(), before, 'double tap does not turn the page')
+      await p.screenshot({ path: `${out}/one-hand-menu.png` })
+      await doubleTap(196, 425)
+      await p.locator('footer.bar.bottom.hidden').waitFor()
+      // 关掉: 中间单击立即呼出工具栏
+      await setSetting('oneHandTurn', false)
+      await p.touchscreen.tap(196, 425)
+      await p.locator('footer.bar.bottom:not(.hidden)').waitFor({ timeout: 200 })
+      await p.touchscreen.tap(196, 425)
+      await setSetting('oneHandTurn', true)
+    })
+  }
 
   assert.deepEqual(errors, [])
   await writeFile(`${out}/results.json`, JSON.stringify({ ok: true, results }, null, 2))

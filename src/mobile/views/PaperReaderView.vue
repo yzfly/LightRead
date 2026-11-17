@@ -5,7 +5,7 @@ import { AutoScrollClock, ScrollAccumulator } from '../../services/autoScroll'
 import { AUTO_SPEED_LEVELS, AUTO_SPEED_STEPS, speedPosition, secondsAtPosition } from '../../services/autoReadSpeed'
 import LevelSlider from '../../components/LevelSlider.vue'
 import { MQ, useMediaQuery } from '../../composables/useMediaQuery'
-import { tapZone } from '../../services/readerTapZone'
+import { createDoubleTap, tapZone } from '../../services/readerTapZone'
 import { TTS_RATE_MAX, TTS_RATE_MIN, TTS_RATE_STOPS, rateText } from '../../services/ttsRate'
 import { pingUsage } from '../../services/usageStats'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -2052,6 +2052,7 @@ function onPdfTouchEnd(e: TouchEvent) {
   suppressClick = true
   // 手指滑过时浏览器多半不发 click; 不及时复位会吞掉下一次轻点
   setTimeout(() => { suppressClick = false }, 400)
+  tapGate.cancel()
   if (verticalDir) void pagedTurnFromEdge(verticalDir)
   else if (dx < 0) nextPage()
   else prevPage()
@@ -2111,6 +2112,8 @@ function finishPdmSelection(page: number, a: number, b: number) {
 
 function onScrollerDblClick(e: MouseEvent) {
   if (!pdm) return
+  // 手机翻页模式的双击归单手翻页 (呼出工具栏), 不选词
+  if (oneHandPaged()) return
   const holder = (e.target as HTMLElement).closest?.('.p-holder') as HTMLElement | null
   if (!holder) return
   const page = Number(holder.dataset.page)
@@ -3876,6 +3879,17 @@ function phoneTap(e: MouseEvent) {
   if (selection.value || liveSel.value || window.getSelection()?.toString()) return
   const box = (pdfLayout.value === 'reflow' ? reflowScroller.value : bookPaged.value ? pagedBox.value : scroller.value)
     ?.getBoundingClientRect()
+  // 单手翻页 (翻页模式): 单击下一页 (工具栏开着时只收起), 双击呼出 / 收起工具栏
+  if (box && oneHandPaged() && !autoReading.value) {
+    tapGate.tap(e.clientX, e.clientY, Date.now(), () => {
+      if (phoneBars.value) hidePhoneBars()
+      else {
+        nextPage()
+        hidePhoneBars()
+      }
+    }, () => (phoneBars.value ? hidePhoneBars() : showPhoneBars()))
+    return
+  }
   // 滚动模式整屏都用来滑动阅读, 轻点只呼出 / 收起工具栏
   const zone = box && bookPaged.value
     ? tapZone({
@@ -3896,6 +3910,13 @@ function phoneTap(e: MouseEvent) {
   } else if (phoneBars.value) hidePhoneBars()
   else showPhoneBars()
 }
+
+/** 手机翻页模式开着单手翻页 (滚动 / 重排模式轻点仍只管工具栏) */
+function oneHandPaged() {
+  return isPhone.value && settings.oneHandTurn && bookPaged.value && pdfLayout.value !== 'reflow'
+}
+const tapGate = createDoubleTap()
+onBeforeUnmount(() => tapGate.cancel())
 
 /** 页面以外的留白 (页间灰底 / 流式正文): 页内的轻点由 onHolderClick 处理后转过来 */
 function onViewportClick(e: MouseEvent) {

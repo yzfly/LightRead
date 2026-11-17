@@ -281,6 +281,8 @@ interface SettingsState {
   libraryRoot: string
   /** 安卓: 阅读时音量键翻页 (上一页 / 下一页); 听书播放或打开面板时音量键照常调音量 */
   volumeKeyTurn: boolean
+  /** App 阅读页单手翻页: 轻点整屏都是下一页, 双击呼出工具栏, 右滑 / 下滑上一页; 关掉回到按区域翻页 (services/readerTapZone.ts) */
+  oneHandTurn: boolean
   /** AI 助手: 预设 id / 接口地址 / 密钥 / 模型 */
   /** 匿名使用统计 (设置 → 隐私); 默认开启, 可关闭, 见 services/usageStats.ts */
   usageStats: boolean
@@ -379,6 +381,7 @@ const defaults: SettingsState = {
   calibrePath: '',
   libraryRoot: '',
   volumeKeyTurn: false,
+  oneHandTurn: true,
   usageStats: true,
   syncSettings: true,
   syncSecrets: false,
