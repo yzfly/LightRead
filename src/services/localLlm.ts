@@ -9,6 +9,7 @@ import { useSettings } from '../stores/settings'
 import { logEvent } from './diagnostics'
 import { LOCAL_VOICE_MODEL, voiceModelUsable } from './localVoiceCore'
 import { LOCAL_CHAT_MAX_TOKENS, chatCharBudget, fitChatMessages, pickChatModel, type ChatTurn } from './localChatCore'
+import { LOCAL_TRANSLATE_LITE_MODEL, LOCAL_TRANSLATE_MODEL, pickTranslateModel } from './translateCore'
 
 export interface LocalModel {
   id: string
@@ -213,6 +214,11 @@ export async function* localGenerate(
 }
 
 /** 「AI 服务」选了本机模型时, 这次对话能用的模型 (一个都没下载为 undefined) */
+/** 离线翻译用的那一档 (标准 / 轻量, 规则见 translateCore 的 pickTranslateModel); 没有引擎时为空 */
+export function localTranslateModel(): LocalModel | undefined {
+  return pickTranslateModel(localModel(LOCAL_TRANSLATE_MODEL), localModel(LOCAL_TRANSLATE_LITE_MODEL))
+}
+
 export function localChatModel(): LocalModel | undefined {
   return localLlm.available ? pickChatModel(localLlm.models, useSettings().aiModel) : undefined
 }

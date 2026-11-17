@@ -33,6 +33,8 @@ pub(crate) struct Requirements {
     pub memory: u64,
     /// 手机上是否提供
     pub mobile_ok: bool,
+    /// 电脑上是否提供 (轻量翻译模型只有 ARM 的计算程序, 电脑用标准档)
+    pub desktop_ok: bool,
     /// 只在有显卡加速的构建上提供 (仅处理器时跟不上)
     pub needs_gpu: bool,
     /// 手机的最低总内存 (0 = 用通用下限): 小模型放宽到 4GB 手机, 大模型收紧到 8GB
@@ -47,7 +49,7 @@ pub(crate) struct Requirements {
 impl Requirements {
     /// 文本模型: 内存按文件大小与上下文估算, 其余用通用下限
     pub const fn text(download: u64, n_ctx: u32) -> Self {
-        Self { download, memory: memory_need(download, n_ctx), mobile_ok: true, needs_gpu: false, mobile_min_ram: 0, mobile_min_ram_gb: 0, desktop_min_ram: 0, desktop_min_ram_gb: 8, desktop_min_cores: 0 }
+        Self { download, memory: memory_need(download, n_ctx), mobile_ok: true, desktop_ok: true, needs_gpu: false, mobile_min_ram: 0, mobile_min_ram_gb: 0, desktop_min_ram: 0, desktop_min_ram_gb: 8, desktop_min_cores: 0 }
     }
 }
 
@@ -55,6 +57,8 @@ impl Requirements {
 pub(crate) enum Concern {
     /// 这类设备暂不提供 (手机上的大语音模型)
     NotOnMobile,
+    /// 只给手机 (电脑上有更合适的一档)
+    NotOnDesktop,
     /// 需要显卡加速, 这个版本在这台设备上没有
     NeedsGpu,
     LowMemory { have: u64, need_gb: u32 },
@@ -70,6 +74,8 @@ impl Concern {
         match (self, en) {
             (Concern::NotOnMobile, false) => "手机上暂不提供，目前只支持电脑".into(),
             (Concern::NotOnMobile, true) => "not available on phones yet, computers only".into(),
+            (Concern::NotOnDesktop, false) => "只提供给手机，电脑请用标准版".into(),
+            (Concern::NotOnDesktop, true) => "phones only; computers use the standard model".into(),
             (Concern::NeedsGpu, false) => "需要显卡加速，目前只支持 Apple 芯片的 Mac".into(),
             (Concern::NeedsGpu, true) => "needs GPU acceleration, currently Apple-silicon Macs only".into(),
             (Concern::LowMemory { have, need_gb }, false) => format!("内存 {} GB，至少需要 {need_gb} GB", gb(have)),
@@ -103,6 +109,9 @@ pub(crate) fn assess(dev: &Device, req: &Requirements, installed: bool) -> Vec<C
     let mut out = Vec::new();
     if dev.mobile && !req.mobile_ok {
         return vec![Concern::NotOnMobile];
+    }
+    if !dev.mobile && !req.desktop_ok {
+        return vec![Concern::NotOnDesktop];
     }
     if req.needs_gpu && !dev.gpu {
         return vec![Concern::NeedsGpu];
@@ -173,7 +182,7 @@ mod tests {
 
     const HY_MT: Requirements = Requirements::text(1_133_080_448, 4096);
     /// 语音模型: 只在 12GB 以上、8 线程以上的电脑上提供
-    const VOICE: Requirements = Requirements { download: 1_482_388_192, memory: 3_500 << 20, mobile_ok: false, needs_gpu: true, mobile_min_ram: 0, mobile_min_ram_gb: 0, desktop_min_ram: 11_500 << 20, desktop_min_ram_gb: 12, desktop_min_cores: 8 };
+    const VOICE: Requirements = Requirements { download: 1_482_388_192, memory: 3_500 << 20, mobile_ok: false, desktop_ok: true, needs_gpu: true, mobile_min_ram: 0, mobile_min_ram_gb: 0, desktop_min_ram: 11_500 << 20, desktop_min_ram_gb: 12, desktop_min_cores: 8 };
 
     fn dev(ram_gb: f64, cores: usize, mobile: bool) -> Device {
         Device {
@@ -274,5 +283,17 @@ mod tests {
         assert_eq!(inference_threads(&dev(32.0, 32, false)), 8);
         assert_eq!(inference_threads(&dev(8.0, 2, false)), 1);
         assert_eq!(inference_threads(&Device::default()), 1);
+    }
+
+    /// 轻量翻译 (Hy-MT2 1.25bit, 0.44GB): 4GB 手机也提供, 电脑一律不提供 (x86 上没有快的计算程序)
+    #[test]
+    fn lite_translation_is_for_phones_only() {
+        const LITE: Requirements = Requirements { mobile_min_ram: 3_300 << 20, mobile_min_ram_gb: 4, desktop_ok: false, ..Requirements::text(461_860_800, 4096) };
+        assert!(assess(&dev(3.7, 8, true), &LITE, false).is_empty());
+        assert!(assess(&dev(5.6, 8, true), &LITE, false).is_empty());
+        // 标准档在 4GB 手机上不提供
+        assert!(!assess(&dev(3.7, 8, true), &HY_MT, false).is_empty());
+        assert_eq!(assess(&dev(16.0, 10, false), &LITE, false), vec![Concern::NotOnDesktop]);
+        assert!(matches!(assess(&dev(2.8, 8, true), &LITE, false)[0], Concern::LowMemory { need_gb: 4, .. }));
     }
 }

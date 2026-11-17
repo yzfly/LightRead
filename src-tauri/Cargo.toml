@@ -62,6 +62,9 @@ fontdb = "0.23"
 # upstream Tauri no longer enables this transitive build dependency.
 [patch.crates-io]
 cargo_metadata = { path = "vendor/cargo_metadata" }
+# crates.io 的 0.1.161 原样 + STQ1_0 量化补丁 (llama.cpp PR #22836, 轻量翻译模型 Hy-MT2 1.25bit 要用)。
+# 由 scripts/vendor-llama-cpp-sys.mjs 生成, 不要手改; 升级 llama-cpp-2 时同步改那里的版本与摘要。
+llama-cpp-sys-2 = { path = "vendor/llama-cpp-sys-2" }
 
 # 本地离线语音: 桌面静态链接 sherpa-onnx (构建时自动下载预编译库); Android 见下方单独的依赖表; iOS 不带
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

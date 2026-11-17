@@ -102,8 +102,33 @@ export function translateMessages(req: TranslateRequest): { role: 'system' | 'us
 
 // ---- 本机翻译模型 (混元 Hy-MT2, 经 llama.cpp; services/localLlm.ts) ----
 
-/** 本机翻译用的模型 (src-tauri/src/local_llm/mod.rs 的登记表) */
+/** 本机翻译用的模型 (src-tauri/src/local_llm/mod.rs 的登记表): 标准档 Q4_K_M 1.1GB */
 export const LOCAL_TRANSLATE_MODEL = 'hy-mt2-1.8b-q4'
+/** 轻量档 (实验): 1.25bit 0.44GB, 只给手机, 4GB 内存也能用; 译文可能略逊于标准档 */
+export const LOCAL_TRANSLATE_LITE_MODEL = 'hy-mt2-1.8b-stq1'
+
+/** 选翻译模型要看的几项 (services/localLlm.ts 的 LocalModel) */
+export interface TranslateModelChoice {
+  id: string
+  installed: boolean
+  supported: boolean
+  running: boolean
+  downloaded: number
+}
+
+/**
+ * 这台设备上的离线翻译用哪一档 (界面也只显示这一档):
+ * 已下载的优先 (两档都有时用标准档); 都没下载时, 正在下 / 下了一半的轻量档优先,
+ * 否则带得动标准档就用标准档, 带不动再给轻量档; 都带不动时返回标准档 (界面显示原因)。
+ */
+export function pickTranslateModel<T extends TranslateModelChoice>(standard: T | undefined, lite: T | undefined): T | undefined {
+  if (standard?.installed) return standard
+  if (lite?.installed) return lite
+  if (lite && (lite.running || (lite.downloaded > 0 && !standard?.downloaded && !standard?.running))) return lite
+  if (standard?.supported) return standard
+  if (lite?.supported) return lite
+  return standard ?? lite
+}
 /** 低于这个速度 (token/秒) 算慢: 一段话要等十几秒, 有在线通道时改用在线 */
 export const LOCAL_TRANSLATE_SLOW_TPS = 6
 /** 一次送给本机模型的原文上限: 小模型逐段翻更稳, 也保证装得进 4096 的上下文 */

@@ -22,13 +22,28 @@
 | 用途 | 模型 | 大小 | 许可 | 实测 |
 |---|---|---|---|---|
 | 翻译 | 腾讯混元 Hy-MT2 1.8B，Q4_K_M | 1.13 GB | Apache-2.0 | M5 显卡约 95 token/s、内存 1.5 GB；仅处理器约 61 token/s、2.4 GB；t9（8 核 x86，4 线程）约 28 token/s |
+| 翻译（轻量，实验，只给手机） | 同一模型的 1.25bit 版（AngelSlim Sherry 量化，STQ1_0） | 0.44 GB | Apache-2.0 | 见下文「轻量翻译模型」 |
 | 语音 | 通义 Qwen3-TTS 12Hz 1.7B Base：主干 Q4_K_M + 声码器 Q8_0 | 1.04 + 0.45 GB | Apache-2.0 | M5 显卡：合成速度约为播放速度的 2 倍，首次加载不到 1 秒，内存峰值 3.2 GB（与翻译模型同时在内存里 3.3 GB） |
 
 - 支持界面里的全部 9 种目标语言。简繁互转仍用 OpenCC（`zhConvert.ts`），不经模型。
-- 选它的原因：专做翻译的小模型里质量最好的一档，GGUF 官方提供。更小的 2-bit / 1.25-bit 版本在标准 llama.cpp 里加载不了，目前没有能用的 1 GB 以下选项。
+- 选它的原因：专做翻译的小模型里质量最好的一档，GGUF 官方提供。更小的 1.25-bit 版本作为手机上的轻量档另外提供（见下文）；2-bit 版不提供。
 - 下载来源：中文界面先 ModelScope，再 hf-mirror，最后 Hugging Face；其他语言反过来。Hugging Face 固定到提交 `a0c709d`，所有来源按同一个 SHA-256 校验，支持断点续传。
 - 提示词按模型卡片的两种写法（`translateCore.ts` 的 `localTranslatePrompt`），采样参数 temperature 0.2、top_p 0.6、top_k 20、repeat_penalty 1.05。
 - 一个自然段一次请求，超过 600 字的段落在句末再拆（`splitForLocalTranslate`）：小模型逐段翻更稳，也保证装得进 4096 的上下文。
+
+### 轻量翻译模型（Hy-MT2 1.25bit，2026-11-17 起，实验）
+
+腾讯发布的 `tencent/Hy-MT2-1.8B-1.25Bit-GGUF`（0.44 GB）用 AngelSlim 的 Sherry 三值量化（每 4 个权重恰有一个为 0，约 1.31 bit/权重），llama.cpp 里的类型叫 STQ1_0。它让 4 GB 内存的手机也能离线翻译（标准档要 6 GB）。
+
+- **llama.cpp 正式版还不支持**：STQ1_0 在 ggml-org/llama.cpp PR #22836，截至 2026-11-17 仍未合并。轻阅给绑定的 llama.cpp 打了这个 PR 的补丁：`src-tauri/vendor/llama-cpp-sys-2` 是 crates.io 上的 `llama-cpp-sys-2 0.1.161` 原样加补丁 `src-tauri/vendor/patches/llama-cpp-stq1_0.patch`（只取 crate 里有的 `ggml/`、`include/`、`src/`，+367 行），由 `node scripts/vendor-llama-cpp-sys.mjs` 生成，`src-tauri/Cargo.toml` 的 `[patch.crates-io]` 指向它。**升级 `llama-cpp-2` 时**：改脚本里的版本与摘要重跑，补丁打不上就按 PR 最新版重做；PR 合并后删掉这份副本和 `[patch]`。
+- **类型编号**：同一种格式在 PR 的不同阶段用过 40、42、43。官方文件记的是 42，而正式版 llama.cpp 里 42 是 Q2_0（我们这版也是）；PR 现在用 43，补丁也用 43。下载校验 SHA-256 后，`local_llm/gguf.rs` 只改文件头里 224 个张量的类型字段（42 → 43，权重数据不动），加载前再确认一次（幂等，兜住改到一半被关的情况）。改写结果与 t9 上用 Python 独立改写、实测能正确翻译的文件逐字节一致。
+- **选哪个文件**：AngelSlim 仓库里的 `Hy-MT2-1.8B-1.25bit-v2.gguf`（类型记成 40）用这份补丁算出来是乱码，不要换成它；tencent 官方那份（Hugging Face 提交 `9df5c82`，ModelScope `Tencent-Hunyuan/Hy-MT2-1.8B-1.25Bit-GGUF` 同一文件）翻译正确。
+- **只给手机**：PR 只有 ARM（NEON + dotprod）的快速实现；x86 上是逐个计算的通用实现，t9（4 线程）实测约 2 token/秒，所以电脑一律不提供（`Requirements::desktop_ok = false`，电脑用标准档）。手机上 4 GB 以上、8 核以上提供。
+- **界面**（`LocalModelPack.vue`，选哪一档见 `translateCore.ts` 的 `pickTranslateModel`）：已下载的优先，两档都有用标准档；都没下载时，带得动标准档就显示标准档，并在设置页多给一个「下载轻量版（实验）」按钮；带不动标准档的手机直接显示轻量档。文案写明「实验中、译文可能略逊」。
+- **K30 Pro 实测（骁龙 865，2026-11-17）**：应用内从设置页下载（ModelScope，约 1 分钟）、改写类型编号、在《理想国》里划词翻译一段 175 字的对话，约 17 秒出完整译文（含加载），约 12 token/秒，应用占内存约 1.0 GB（标准档约 1.9 GB）。译文通顺，专名偶有偏差（「玻勒马霍斯」译成 Polymachus）。同一台手机上单独跑 PR 分支的 `llama-completion`：按 `armv8-a` 编译（与应用相同）输出 13.7 token/秒、读入 18 token/秒；按 `armv8.2-a+dotprod` 编译输出 25.2、读入 39 token/秒——**打开 dotprod 能快一倍**，但会影响所有模型，也要处理不支持 dotprod 的老芯片（Cortex-A53），还没做。同样 `armv8-a` 下标准档 Q4_K_M 约 14.5 token/秒，所以在这台手机上轻量档的好处是体积和内存，不是速度。
+- **对话模板**：llama.cpp 内置的 hunyuan-dense 模板与 Hy-MT2 文件里的 Jinja 模板不一致（角色标记放在内容后面、结尾没有 `<｜hy_Assistant｜>`）。标准档对此不敏感；轻量档会漏译，且译完不停，一直生成到上限（界面上表现为只出一个词就卡住）。现在混元模板由 `local_llm/prompt.rs` 按 Jinja 原文拼出，两档都改用正确格式；其他模型仍用内置模板。
+- **别人的实测（PR 讨论，非我们测量）**：骁龙 870 约 9–20 token/秒；另一台手机上输出比 Q4_K_M 快（27 对 22 token/秒），读入原文只有 Q4_K_M 的一半（41 对 79 token/秒）。
+- **2bit 版不提供**：`tencent/Hy-MT2-1.8B-2Bit-GGUF`（0.6 GB）依赖 PR #19357，它只有 SME2 的计算程序（M4、vivo X300 这类最新芯片），一般手机上没有加速；文件也比 1.25bit 大。
 
 ### 本机对话（Qwen3.5）
 
@@ -84,6 +99,9 @@
 |---|---|
 | `src-tauri/src/local_llm/mod.rs` | 模型登记表、下载、状态、闪退标记、命令 `local_llm_*` |
 | `src-tauri/src/local_llm/device.rs` | 设备评估与线程数（纯函数，带测试） |
+| `src-tauri/src/local_llm/gguf.rs` | 改写 GGUF 张量类型编号（轻量翻译模型用） |
+| `src-tauri/src/local_llm/prompt.rs` | 混元模型的对话格式（内置模板对它不对） |
+| `src-tauri/vendor/llama-cpp-sys-2`、`vendor/patches/` | 打了 STQ1_0 补丁的 llama.cpp 绑定（`scripts/vendor-llama-cpp-sys.mjs` 生成） |
 | `src-tauri/src/local_llm/engine.rs` | 文本生成：模型常驻一份，每次请求新建上下文，逐段吐字，可取消 |
 | `src-tauri/src/local_llm/tts.rs` | 语音生成：llama.cpp 的实验性接口 `mtmd_helper_gen_audio_*`（直接用 `llama-cpp-sys-2`） |
 | `src-tauri/src/local_llm/stretch.rs` | 变速不变调与 WAV 读写（纯函数，带测试） |
@@ -124,6 +142,7 @@ npm run test:read-aloud                      # 含本机语音: 朗读语言 / �
 cargo test --manifest-path src-tauri/Cargo.toml --lib -- local_llm model_download   # 设备评估 / 登记表 / 闪退降级 / 续传 / 变速
 E2E_BASE=http://localhost:<端口> npm run e2e:translate   # 最后一步: 未登录 → 下载入口 → 进度 → 本机翻译 (原生层用替身)
 # 真实模型 (macOS / Windows / Android 目标; Linux 不带引擎):
+LOCAL_LLM_RETYPE_TEST=<Hy-MT2-1.8B-1.25Bit.gguf 的副本，会被原地改写> cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored retypes_the_real_model --nocapture
 LOCAL_LLM_TEST_MODEL=<Hy-MT2-1.8B-Q4_K_M.gguf> cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored translates_with_a_real_model --nocapture
 LOCAL_TTS_TEST_DIR=<含 model.gguf / mmproj.gguf / speaker.wav 的目录> cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored speaks_with_a_real_model --nocapture
 ```

@@ -197,12 +197,18 @@ pub(crate) fn generate(req: &GenRequest, on_piece: &mut dyn FnMut(&str)) -> Resu
     let vocab = model.vocab();
 
     let template = model.chat_template(None).map_err(|e| format!("模型缺少对话模板: {e}"))?;
-    let messages = req
-        .messages
-        .iter()
-        .map(|(role, content)| LlamaChatMessage::new(role.clone(), content.clone()).map_err(|e| format!("文本无效: {e}")))
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut text = model.apply_chat_template(&template, &messages, true).map_err(|e| format!("套用对话模板失败: {e}"))?;
+    // 混元的模板由我们按 Jinja 原文拼 (内置模板对它是错的, 见 prompt.rs); 其余交给内置模板
+    let mut text = match super::prompt::hunyuan_prompt(template.to_str().unwrap_or_default(), &req.messages) {
+        Some(text) => text,
+        None => {
+            let messages = req
+                .messages
+                .iter()
+                .map(|(role, content)| LlamaChatMessage::new(role.clone(), content.clone()).map_err(|e| format!("文本无效: {e}")))
+                .collect::<Result<Vec<_>, _>>()?;
+            model.apply_chat_template(&template, &messages, true).map_err(|e| format!("套用对话模板失败: {e}"))?
+        }
+    };
     text.push_str(req.prefill);
     let mut tokens = vocab.tokenize(text.as_bytes(), true, true);
     // 模板自己带了起始符时, 分词器再加一个会重复

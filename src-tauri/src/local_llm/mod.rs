@@ -16,6 +16,8 @@
 #![cfg_attr(not(llm_engine), allow(dead_code, unused_imports))]
 
 pub(crate) mod device;
+mod gguf;
+mod prompt;
 #[cfg(llm_engine)]
 mod engine;
 mod stretch;
@@ -46,6 +48,8 @@ pub(crate) struct ModelFile {
     pub name: &'static str,
     pub size: u64,
     pub sha256: &'static str,
+    /// 下载校验后把张量类型编号 from 改成 to (见 gguf.rs); 加载前也会确认一次
+    pub retype: Option<(u32, u32)>,
     /// 国内来源在前; 各来源内容相同, 都按 SHA-256 校验
     pub urls_cn: &'static [&'static str],
     pub urls_global: &'static [&'static str],
@@ -75,12 +79,41 @@ const HY_MT2: ModelSpec = ModelSpec {
         name: "Hy-MT2-1.8B-Q4_K_M.gguf",
         size: 1_133_080_448,
         sha256: "dc5f44fcf1fa496ee7ad725982c0c8c553a4de00259b53af84c4b89fb0c06699",
+        retype: None,
         urls_cn: &[
             "https://modelscope.cn/models/Tencent-Hunyuan/Hy-MT2-1.8B-GGUF/resolve/master/Hy-MT2-1.8B-Q4_K_M.gguf",
             "https://hf-mirror.com/tencent/Hy-MT2-1.8B-GGUF/resolve/a0c709d9fac510f2c807aa3af52872340dc37a4a/Hy-MT2-1.8B-Q4_K_M.gguf",
         ],
         urls_global: &[
             "https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/a0c709d9fac510f2c807aa3af52872340dc37a4a/Hy-MT2-1.8B-Q4_K_M.gguf",
+        ],
+    }],
+};
+
+/// 混元翻译 Hy-MT2 1.8B 的 1.25bit 版 (Apache-2.0, 腾讯 AngelSlim 的 Sherry 三值量化, STQ1_0): 只给手机, 实验中。
+/// 体积 0.44GB, 是 Q4_K_M 的四成, 4GB 内存的手机也能装下。
+/// - STQ1_0 还没进 llama.cpp 正式版 (PR #22836): 绑定的 llama.cpp 打了这个补丁 (vendor/patches/llama-cpp-stq1_0.patch);
+/// - 官方文件按 PR 早先的版本把类型记成 42 (正式版里 42 是 Q2_0), 下载后改成补丁用的 43 (retype);
+/// - 只有 ARM 有专门的计算程序; x86 上只有逐个计算的通用实现, t9 实测约 2 token/秒, 所以电脑不提供
+///   (电脑用 Q4_K_M 那一档)。同一页上的 AngelSlim「v2」文件用这份补丁算出来是乱码, 不要换成它。
+/// 大小与摘要取自 Hugging Face tencent/Hy-MT2-1.8B-1.25Bit-GGUF 的 9df5c82 版本 (ModelScope 同一文件, 2026-11-17 核对)。
+const HY_MT2_LITE: ModelSpec = ModelSpec {
+    id: "hy-mt2-1.8b-stq1",
+    kind: "translate",
+    n_ctx: 4096,
+    tier: 0,
+    req: Requirements { mobile_min_ram: 3_300 << 20, mobile_min_ram_gb: 4, desktop_ok: false, ..Requirements::text(461_860_800, 4096) },
+    files: &[ModelFile {
+        name: "Hy-MT2-1.8B-1.25Bit.gguf",
+        size: 461_860_800,
+        sha256: "cc497fe8f033b52b3b8b00a7669e9661435432f9d4cd43f7ed24400c01507a93",
+        retype: Some((42, 43)),
+        urls_cn: &[
+            "https://modelscope.cn/models/Tencent-Hunyuan/Hy-MT2-1.8B-1.25Bit-GGUF/resolve/master/Hy-MT2-1.8B-1.25Bit.gguf",
+            "https://hf-mirror.com/tencent/Hy-MT2-1.8B-1.25Bit-GGUF/resolve/9df5c824a00a744fb0512a29c640466f4d97dfb0/Hy-MT2-1.8B-1.25Bit.gguf",
+        ],
+        urls_global: &[
+            "https://huggingface.co/tencent/Hy-MT2-1.8B-1.25Bit-GGUF/resolve/9df5c824a00a744fb0512a29c640466f4d97dfb0/Hy-MT2-1.8B-1.25Bit.gguf",
         ],
     }],
 };
@@ -102,6 +135,7 @@ const QWEN3_TTS: ModelSpec = ModelSpec {
         download: 1_035_965_280 + 446_422_912,
         memory: 3_500 << 20,
         mobile_ok: false,
+        desktop_ok: true,
         mobile_min_ram: 0,
         mobile_min_ram_gb: 0,
         // 仅处理器时远跟不上朗读: Windows CI 机器 (4 核) 实测只有播放速度的 0.4 倍
@@ -115,6 +149,7 @@ const QWEN3_TTS: ModelSpec = ModelSpec {
             name: "Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
             size: 1_035_965_280,
             sha256: "8d18c94acb2addd042f97da63c98be144eafa76d0d9495177eab65130cf85129",
+            retype: None,
             urls_cn: &[
                 "https://modelscope.cn/models/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/master/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
                 "https://hf-mirror.com/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf",
@@ -127,6 +162,7 @@ const QWEN3_TTS: ModelSpec = ModelSpec {
             name: "mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
             size: 446_422_912,
             sha256: "6fd65188839bcd6ecc91b277ad471e22a0edfada4699a0fe82f1165c18cfcce2",
+            retype: None,
             urls_cn: &[
                 "https://modelscope.cn/models/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/master/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
                 "https://hf-mirror.com/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf",
@@ -153,6 +189,7 @@ const QWEN35_08B: ModelSpec = ModelSpec {
         name: "Qwen3.5-0.8B-Q4_K_M.gguf",
         size: 532_517_120,
         sha256: "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+        retype: None,
         urls_cn: &[
             "https://modelscope.cn/models/unsloth/Qwen3.5-0.8B-GGUF/resolve/master/Qwen3.5-0.8B-Q4_K_M.gguf",
             "https://hf-mirror.com/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/Qwen3.5-0.8B-Q4_K_M.gguf",
@@ -174,6 +211,7 @@ const QWEN35_2B: ModelSpec = ModelSpec {
         name: "Qwen3.5-2B-Q4_0.gguf",
         size: 1_214_873_856,
         sha256: "cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1",
+        retype: None,
         urls_cn: &[
             "https://modelscope.cn/models/unsloth/Qwen3.5-2B-GGUF/resolve/master/Qwen3.5-2B-Q4_0.gguf",
             "https://hf-mirror.com/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_0.gguf",
@@ -195,6 +233,7 @@ const QWEN35_4B: ModelSpec = ModelSpec {
         name: "Qwen3.5-4B-Q4_0.gguf",
         size: 2_583_221_408,
         sha256: "298fcb5fe7a77ccc79745ae24751560c5ac56874caff4bb39b1f2055bd72b8bb",
+        retype: None,
         urls_cn: &[
             "https://modelscope.cn/models/unsloth/Qwen3.5-4B-GGUF/resolve/master/Qwen3.5-4B-Q4_0.gguf",
             "https://hf-mirror.com/unsloth/Qwen3.5-4B-GGUF/resolve/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_0.gguf",
@@ -205,7 +244,7 @@ const QWEN35_4B: ModelSpec = ModelSpec {
     }],
 };
 
-pub(crate) const MODELS: &[&ModelSpec] = &[&HY_MT2, &QWEN3_TTS, &QWEN35_08B, &QWEN35_2B, &QWEN35_4B];
+pub(crate) const MODELS: &[&ModelSpec] = &[&HY_MT2, &HY_MT2_LITE, &QWEN3_TTS, &QWEN35_08B, &QWEN35_2B, &QWEN35_4B];
 
 /// 本机语音的参考音色: Qwen3-TTS Base 按一段参考录音的音色朗读。
 /// 两段录音由离线语音 Kokoro 的两个推荐音色合成 (zf_001 / zm_010, 生成方法见
@@ -262,6 +301,27 @@ fn part_path(dir: &Path, file: &ModelFile) -> PathBuf {
 pub(crate) fn installed(root: &Path, spec: &ModelSpec) -> bool {
     let dir = model_dir(root, spec.id);
     spec.files.iter().all(|f| std::fs::metadata(dir.join(f.name)).is_ok_and(|m| m.len() == f.size))
+}
+
+/// 需要改写类型编号的文件确认已改好 (幂等; 每个文件每次运行只检查一次)。
+/// 下载完成时已经改过, 这里兜住「改到一半应用被关」的情况。
+fn ensure_retyped(dir: &Path, spec: &ModelSpec) -> Result<(), String> {
+    static DONE: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    for f in spec.files {
+        let Some((from, to)) = f.retype else { continue };
+        let path = dir.join(f.name);
+        if DONE.lock().is_ok_and(|d| d.contains(&path)) {
+            continue;
+        }
+        let n = gguf::retype(&path, from, to)?;
+        if n > 0 {
+            log::info!("[local_llm] {}: retyped {n} tensors {from} -> {to}", spec.id);
+        }
+        if let Ok(mut d) = DONE.lock() {
+            d.push(path);
+        }
+    }
+    Ok(())
 }
 
 fn downloaded_bytes(root: &Path, spec: &ModelSpec) -> u64 {
@@ -625,6 +685,8 @@ async fn run_download(app: AppHandle, spec: &'static ModelSpec, root: PathBuf, p
         std::fs::rename(&part, &target).map_err(|e| format!("安装失败: {e}"))?;
         done_before += file.size;
     }
+    // 改写放在改名之后: 改过的文件过不了原文件的摘要, 留在 .part 里会被当成坏文件重下
+    ensure_retyped(&dir, spec)?;
     let _ = std::fs::remove_file(cpu_only_path(&root, spec.id));
     let _ = std::fs::remove_file(speed_path(&root, spec.id));
     let _ = std::fs::remove_file(marker_path(&root, spec.id));
@@ -743,6 +805,7 @@ pub async fn local_llm_generate(
     if settle_crash(&root, spec.id) == CrashState::Crashed {
         return Err(CRASHED_ERROR.into());
     }
+    ensure_retyped(&model_dir(&root, spec.id), spec)?;
     let dev = this_device(&root);
     let request = engine::GenRequest {
         model_id: spec.id.into(),
@@ -950,6 +1013,12 @@ mod tests {
             }
         }
         assert!(spec("hy-mt2-1.8b-q4").is_ok());
+        // 轻量翻译: 只给手机, 下载后改写类型编号 (与补丁里的 GGML_TYPE_STQ1_0 一致)
+        assert!(!HY_MT2_LITE.req.desktop_ok && HY_MT2_LITE.req.mobile_ok);
+        assert_eq!(HY_MT2_LITE.files[0].retype, Some((42, 43)));
+        let patch = include_str!("../../vendor/patches/llama-cpp-stq1_0.patch");
+        assert!(patch.contains("+        GGML_TYPE_STQ1_0  = 43,"));
+        assert_eq!(MODELS.iter().filter(|m| m.kind == "translate").count(), 2);
         assert!(spec("nope").is_err());
         for m in MODELS {
             assert_eq!(m.req.download, m.total_size(), "{}: 要求里的下载量与文件对不上", m.id);
@@ -992,7 +1061,7 @@ mod tests {
             n_ctx: 1024,
             tier: 0,
             req: Requirements::text(4, 1024),
-            files: &[ModelFile { name: "a.gguf", size: 4, sha256: "", urls_cn: &[], urls_global: &[] }],
+            files: &[ModelFile { name: "a.gguf", size: 4, sha256: "", retype: None, urls_cn: &[], urls_global: &[] }],
         };
         let root = temp_root();
         assert!(!installed(&root, &TINY));

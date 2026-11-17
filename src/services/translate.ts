@@ -20,7 +20,7 @@ import {
   translateMessages,
   type TranslateRequest,
 } from './translateCore'
-import { LOCAL_LLM_CRASHED, localGenerate, localModel, refreshLocalLlm } from './localLlm'
+import { LOCAL_LLM_CRASHED, localGenerate, localTranslateModel, refreshLocalLlm } from './localLlm'
 
 export type TranslateRoute = 'local' | 'own' | 'account' | 'login'
 type OnlineRoute = Exclude<TranslateRoute, 'local'>
@@ -35,7 +35,7 @@ function onlineRoute(): OnlineRoute {
 /** 这次翻译走哪条路: 本机模型 / 自己的服务 / 账号额度 / 需要先登录 */
 export function translateRoute(): TranslateRoute {
   const online = onlineRoute()
-  return shouldTranslateLocally(localModel(LOCAL_TRANSLATE_MODEL), useSettings().localTranslate, online !== 'login') ? 'local' : online
+  return shouldTranslateLocally(localTranslateModel(), useSettings().localTranslate, online !== 'login') ? 'local' : online
 }
 
 export type TranslateErrorCode = 'login' | 'quota' | 'budget' | 'rate' | 'failed'
@@ -68,9 +68,10 @@ export interface TranslateOptions {
 
 /** 本机模型逐段翻译: 一个自然段一次请求, 译文按原来的分段接起来 */
 async function* translateLocally(req: TranslateRequest, signal?: AbortSignal): AsyncGenerator<string> {
+  const model = localTranslateModel()?.id ?? LOCAL_TRANSLATE_MODEL
   for (const piece of splitForLocalTranslate(req.text, req.target)) {
     let first = true
-    for await (const chunk of localGenerate(LOCAL_TRANSLATE_MODEL, localTranslatePrompt(piece.text, req.target), translateMaxTokens(piece.text), { signal })) {
+    for await (const chunk of localGenerate(model, localTranslatePrompt(piece.text, req.target), translateMaxTokens(piece.text), { signal })) {
       // 模型有时以空白开头
       const text = first ? chunk.replace(/^\s+/, '') : chunk
       if (!text) continue

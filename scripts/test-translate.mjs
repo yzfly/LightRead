@@ -6,6 +6,7 @@ import {
   ACCOUNT_TRANSLATE_DAILY,
   LOCAL_TRANSLATE_PIECE_CHARS,
   localTranslatePrompt,
+  pickTranslateModel,
   shouldTranslateLocally,
   splitForLocalTranslate,
   mostlyChinese,
@@ -246,4 +247,24 @@ test('本机翻译: 装好且没停用才用; 实测太慢时有在线通道就�
   const slow = { ...ok, speed: 3 }
   assert.equal(shouldTranslateLocally(slow, true, true), false, '慢且能在线: 用在线')
   assert.equal(shouldTranslateLocally(slow, true, false), true, '慢但没有在线通道: 仍用本机')
+})
+
+test('本机翻译: 标准 / 轻量两档里用哪一档', () => {
+  const m = (id, more = {}) => ({ id, installed: false, supported: true, running: false, downloaded: 0, ...more })
+  const pick = (std, lite) => pickTranslateModel(std, lite)?.id
+  // 电脑上只有标准档 (轻量档带不动), K30 这类手机两档都带得动: 都默认标准档
+  assert.equal(pick(m('std'), m('lite', { supported: false })), 'std')
+  assert.equal(pick(m('std'), m('lite')), 'std')
+  // 4GB 手机: 标准档带不动, 给轻量档
+  assert.equal(pick(m('std', { supported: false }), m('lite')), 'lite')
+  // 已下载的优先; 两档都下了用标准档
+  assert.equal(pick(m('std'), m('lite', { installed: true })), 'lite')
+  assert.equal(pick(m('std', { installed: true }), m('lite', { installed: true })), 'std')
+  // 正在下 / 下了一半的轻量档优先显示 (进度看得到); 标准档也下了一半时仍显示标准档
+  assert.equal(pick(m('std'), m('lite', { running: true })), 'lite')
+  assert.equal(pick(m('std'), m('lite', { downloaded: 1 })), 'lite')
+  assert.equal(pick(m('std', { downloaded: 5 }), m('lite', { downloaded: 1 })), 'std')
+  // 都带不动: 返回标准档, 界面显示原因; 没有引擎时为空
+  assert.equal(pick(m('std', { supported: false }), m('lite', { supported: false })), 'std')
+  assert.equal(pick(undefined, undefined), undefined)
 })

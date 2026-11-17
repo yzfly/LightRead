@@ -4,21 +4,32 @@
  * 状态全局共享 (services/localLlm.ts); 这个版本不带引擎时什么都不显示。
  * kind: translate (默认, 设置页与翻译面板) 或 tts (听书面板, 用不用由朗读引擎的选择决定, 不放开关)。
  * compact: 面板里的精简形态 —— 没有标题与分隔线; 翻译面板里只在「还没下载」时出现。
+ * 翻译分标准 / 轻量 (实验, 只给手机) 两档, 显示哪一档见 translateCore 的 pickTranslateModel;
+ * 设置页里标准档还没下载时, 另给一个「轻量版」的下载按钮。
  */
 import { computed, onMounted, ref } from 'vue'
 import { t } from '../i18n'
 import { useSettings } from '../stores/settings'
 import { askConfirm } from '../services/confirm'
 import { toast } from '../services/toast'
-import { clearLocalLlmCrash, downloadLocalModel, localLlm, localModel, refreshLocalLlm, removeLocalModel } from '../services/localLlm'
-import { LOCAL_TRANSLATE_MODEL, LOCAL_TRANSLATE_SLOW_TPS } from '../services/translateCore'
+import { clearLocalLlmCrash, downloadLocalModel, localLlm, localModel, localTranslateModel, refreshLocalLlm, removeLocalModel } from '../services/localLlm'
+import { LOCAL_TRANSLATE_LITE_MODEL, LOCAL_TRANSLATE_MODEL, LOCAL_TRANSLATE_SLOW_TPS } from '../services/translateCore'
 import { LOCAL_VOICE_MODEL, LOCAL_VOICE_MIN_SPEED } from '../services/localVoiceCore'
 
 const props = defineProps<{ compact?: boolean; kind?: 'translate' | 'tts' }>()
 const emit = defineEmits<{ ready: [] }>()
 const settings = useSettings()
 const voice = computed(() => props.kind === 'tts')
-const modelId = computed(() => (voice.value ? LOCAL_VOICE_MODEL : LOCAL_TRANSLATE_MODEL))
+const modelId = computed(() => (voice.value ? LOCAL_VOICE_MODEL : (localTranslateModel()?.id ?? LOCAL_TRANSLATE_MODEL)))
+/** 当前显示的是轻量翻译 (实验) */
+const lite = computed(() => modelId.value === LOCAL_TRANSLATE_LITE_MODEL)
+/** 设置页: 标准档还没开始下载、而轻量档也带得动时, 多给一个轻量版的选择 */
+const liteOffer = computed(() => {
+  if (voice.value || props.compact || lite.value) return undefined
+  const m = model.value
+  const alt = localLlm.available ? localModel(LOCAL_TRANSLATE_LITE_MODEL) : undefined
+  return m && !m.installed && !m.running && alt?.supported && !alt.installed ? alt : undefined
+})
 /** 文案按种类分两套: localModel.* (翻译) / localVoice.* (语音) */
 const ns = computed(() => (voice.value ? 'localVoice' : 'localModel'))
 const model = computed(() => (localLlm.available ? localModel(modelId.value) : undefined))
@@ -27,10 +38,8 @@ const removing = ref(false)
 onMounted(() => void refreshLocalLlm())
 
 const mb = (n: number) => Math.round(n / 1048576)
-const sizeText = computed(() => {
-  const gb = (model.value?.size ?? 0) / 1073741824
-  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${mb(model.value?.size ?? 0)} MB`
-})
+const sizeOf = (bytes: number) => (bytes >= 1073741824 ? `${(bytes / 1073741824).toFixed(1)} GB` : `${mb(bytes)} MB`)
+const sizeText = computed(() => sizeOf(model.value?.size ?? 0))
 const percent = computed(() => {
   const m = model.value
   return m?.size ? Math.min(100, Math.floor((m.downloaded / m.size) * 100)) : 0
@@ -62,9 +71,9 @@ const visible = computed(() => {
   return props.compact && !voice.value ? !m.installed && m.supported : true
 })
 
-async function download() {
+async function download(id = modelId.value) {
   try {
-    await downloadLocalModel(modelId.value)
+    await downloadLocalModel(id)
     toast(t(`${ns.value}.ready`), 'success')
     emit('ready')
   } catch (e: any) {
@@ -102,7 +111,7 @@ async function retry() {
         <span class="mp-switch-track" aria-hidden="true"></span>
       </label>
     </div>
-    <p v-if="!(voice && model.installed)" class="mp-note">{{ t(compact ? `${ns}.offer` : `${ns}.desc`, { size: sizeText }) }}</p>
+    <p v-if="!(voice && model.installed)" class="mp-note">{{ t(compact ? `${ns}.offer` : lite ? 'localModel.liteDesc' : `${ns}.desc`, { size: sizeText }) }}</p>
 
     <template v-if="model.installed">
       <template v-if="model.crashed">
@@ -113,7 +122,7 @@ async function retry() {
         </div>
       </template>
       <template v-else>
-        <p class="mp-note">{{ t('localModel.installed', { size: sizeText }) }} · {{ speedText }}</p>
+        <p class="mp-note">{{ t(lite ? 'localModel.installedLite' : 'localModel.installed', { size: sizeText }) }} · {{ speedText }}</p>
         <div class="mp-actions">
           <button class="btn btn-sm" :disabled="removing" @click="remove">{{ t('localModel.remove') }}</button>
         </div>
@@ -123,8 +132,10 @@ async function retry() {
       <p v-if="!model.supported" class="mp-note danger">{{ t(`${ns}.unsupported`, { reasons: model.reasons.join('; ') }) }}</p>
       <template v-else>
         <div class="mp-actions">
-          <button class="btn btn-sm" :class="{ 'btn-primary': !compact }" :disabled="model.running" @click="download">{{ downloadLabel }}</button>
+          <button class="btn btn-sm" :class="{ 'btn-primary': !compact }" :disabled="model.running" @click="download()">{{ downloadLabel }}</button>
+          <button v-if="liteOffer" class="btn btn-sm" @click="download(liteOffer.id)">{{ t('localModel.liteDownload', { size: sizeOf(liteOffer.size) }) }}</button>
         </div>
+        <p v-if="liteOffer" class="mp-note">{{ t('localModel.liteHint') }}</p>
         <span
           v-if="model.running"
           class="mp-bar"
