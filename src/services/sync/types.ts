@@ -156,7 +156,7 @@ export type ApplyOp =
   | { op: 'deleteBook'; hash: string }
   | { op: 'updateBook'; hash: string; patch: Partial<Omit<BookMeta, 'id' | 'hasCover'>> }
   | { op: 'addAnnotation'; id: string; value: AnnotationVal }
-  | { op: 'updateAnnotation'; id: string; patch: Partial<Pick<AnnotationRec, 'note' | 'color'>> }
+  | { op: 'updateAnnotation'; id: string; patch: Partial<Pick<AnnotationRec, 'note' | 'color' | 'style'>> }
   | { op: 'deleteAnnotation'; id: string }
   | { op: 'addBooklist'; id: string; value: BooklistVal }
   | { op: 'renameBooklist'; id: string; name: string }

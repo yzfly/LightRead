@@ -15,6 +15,8 @@ import { isTextLike } from '../../services/format.ts'
 import { convertToEpub, TEXT_EPUB_LAYOUT } from '../../services/textToEpub.ts'
 import { tapZone } from '../../services/readerTapZone.ts'
 import { getReaderCSS, resolveReaderColors, resolveReaderTheme, HIGHLIGHT_COLORS, listenMarkStyle, type ListenMarkStyle } from '../services/readerTheme.ts'
+import { drawHighlight, storedHighlightStyle, type HighlightStyle } from '../../services/highlightStyle.ts'
+import HighlightStylePicker from '../../components/HighlightStylePicker.vue'
 import { resolvedTheme } from '../services/appearance.ts'
 import { setPageBarsDark, setSystemBarsHidden, setKeepScreenOn, setVolumeKeyHandler, setNativeSelectionMenu, type VolumeKey } from '../../services/systemBars.ts'
 import { useListenKeepAlive } from '../composables/useListenKeepAlive.ts'
@@ -2178,9 +2180,28 @@ async function recolorHighlight(color: string) {
   if (item) item.color = color
   try {
     await view.deleteAnnotation({ value: a.cfi })
-    await view.addAnnotation({ value: a.cfi, color })
+    await view.addAnnotation({ value: a.cfi, color, style: a.style })
   } catch { /* 当前分节未绘制时忽略 */ }
   dismissSelection()
+}
+
+/** 划线风格: 点已有划线时改这一条 (工具条保持打开, 还能接着换颜色); 选中文字时只记下新划线用的风格 */
+async function pickHighlightStyle(next: HighlightStyle) {
+  settings.highlightStyle = next
+  const a = hlMenu.value?.anno
+  if (!a) return
+  const style = storedHighlightStyle(next)
+  if (style === a.style) return
+  const storage = await getStorage()
+  await storage.updateAnnotation(a.id, { style })
+  for (const x of [a, annotations.value.find(y => y.id === a.id)]) {
+    if (!x) continue
+    if (style) x.style = style
+    else delete x.style
+  }
+  try {
+    await view.addAnnotation({ value: a.cfi, color: a.color, style })
+  } catch { /* 当前分节未绘制时忽略 */ }
 }
 
 function editHighlightNote() {
@@ -2736,7 +2757,7 @@ function onMarginClick(e: MouseEvent) {
 function drawStoredAnnotations() {
   for (const a of highlights.value) {
     try {
-      view.addAnnotation({ value: a.cfi, color: a.color })
+      view.addAnnotation({ value: a.cfi, color: a.color, style: a.style })
     } catch { /* 不属于当前分节的标注忽略 */ }
   }
 }
@@ -2752,11 +2773,13 @@ async function addHighlight(color: string, withNote = false) {
     color,
     createdAt: Date.now(),
   }
+  const style = storedHighlightStyle(settings.highlightStyle)
+  if (style) rec.style = style
   const id = await storage.addAnnotation(rec)
   const saved = { ...rec, id }
   annotations.value.push(saved)
   try {
-    view.addAnnotation({ value: rec.cfi, color })
+    view.addAnnotation({ value: rec.cfi, color, style: rec.style })
   } catch { /* 绘制失败不影响保存 */ }
   dismissSelection()
   if (withNote) {
@@ -3337,8 +3360,7 @@ onMounted(async () => {
     view.addEventListener('load', onSectionLoad)
     view.addEventListener('create-overlay', () => drawStoredAnnotations())
     view.addEventListener('draw-annotation', (e: CustomEvent) => {
-      const { draw, annotation } = e.detail
-      draw(Overlayer.highlight, { color: HIGHLIGHT_COLORS[annotation.color] ?? annotation.color })
+      drawHighlight(Overlayer, HIGHLIGHT_COLORS, e.detail)
     })
     view.addEventListener('show-annotation', (e: CustomEvent) => {
       const found = annotations.value.find(a => a.cfi === e.detail.value)
@@ -3717,7 +3739,7 @@ onBeforeUnmount(() => {
       :aria-label="t('reader.highlight')"
     >
       <div class="sel-colors">
-        <span class="hl-hint">{{ t('reader.highlight') }}</span>
+        <HighlightStylePicker large class="sel-style" :model-value="hlMenu ? hlMenu.anno.style : settings.highlightStyle" @update:model-value="pickHighlightStyle" />
         <button
           v-for="(hex, name) in HIGHLIGHT_COLORS"
           :key="name"
@@ -4498,11 +4520,6 @@ onBeforeUnmount(() => {
   padding-bottom: var(--space-1);
   border-bottom: 1px solid var(--border);
 }
-.hl-hint {
-  margin: 0 var(--space-2) 0 var(--space-3);
-  font-size: var(--fs-caption);
-  color: var(--text-3);
-}
 .sel-close {
   margin-left: auto;
   width: 44px;
@@ -4547,10 +4564,15 @@ onBeforeUnmount(() => {
 .hl-color.current::before {
   outline: 2px solid var(--text);
 }
+.sel-style {
+  flex: none;
+  margin: 0 var(--space-1);
+}
 .hl-color {
   display: grid;
   place-items: center;
-  flex: 0 0 44px;
+  flex: 0 1 44px;
+  min-width: 36px;
   width: 44px;
   height: 44px;
   padding: 0;

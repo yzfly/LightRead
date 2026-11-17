@@ -13,6 +13,8 @@ import { convertToEpub, TEXT_EPUB_LAYOUT } from '../services/textToEpub'
 import { textViewForBook } from '../services/plainText'
 import { tapZone } from '../services/readerTapZone'
 import { getReaderCSS, resolveReaderColors, resolveReaderTheme, HIGHLIGHT_COLORS, listenMarkStyle, type ListenMarkStyle } from '../services/readerTheme'
+import { drawHighlight, storedHighlightStyle, type HighlightStyle } from '../services/highlightStyle'
+import HighlightStylePicker from '../components/HighlightStylePicker.vue'
 import { resolvedTheme, setPageTheme } from '../services/appearance'
 import { setPageBarsDark, setSystemBarsHidden, setKeepScreenOn } from '../services/systemBars'
 import { injectFontIntoDoc, resolveFontFamily } from '../services/fonts'
@@ -2614,7 +2616,7 @@ function onMarginClick(e: MouseEvent) {
 function drawStoredAnnotations() {
   for (const a of highlights.value) {
     try {
-      view.addAnnotation({ value: a.cfi, color: a.color })
+      view.addAnnotation({ value: a.cfi, color: a.color, style: a.style })
     } catch { /* 不属于当前分节的标注忽略 */ }
   }
 }
@@ -2630,11 +2632,13 @@ async function addHighlight(color: string, withNote = false) {
     color,
     createdAt: Date.now(),
   }
+  const style = storedHighlightStyle(settings.highlightStyle)
+  if (style) rec.style = style
   const id = await storage.addAnnotation(rec)
   const saved = { ...rec, id }
   annotations.value.push(saved)
   try {
-    view.addAnnotation({ value: rec.cfi, color })
+    view.addAnnotation({ value: rec.cfi, color, style: rec.style })
   } catch { /* 绘制失败不影响保存 */ }
   dismissSelection()
   if (withNote) {
@@ -2680,6 +2684,23 @@ async function toggleBookmark() {
   const id = await storage.addAnnotation(rec)
   annotations.value.push({ ...rec, id })
   toast(t('reader.bookmarkAdded'), 'success')
+}
+
+/** 改已有划线的风格; 同时记作新划线的默认风格 */
+async function restyleAnnotation(a: AnnotationRec, next: HighlightStyle) {
+  settings.highlightStyle = next
+  const style = storedHighlightStyle(next)
+  if (style === a.style) return
+  const storage = await getStorage()
+  await storage.updateAnnotation(a.id, { style })
+  for (const x of [a, annotations.value.find(y => y.id === a.id)]) {
+    if (!x) continue
+    if (style) x.style = style
+    else delete x.style
+  }
+  try {
+    view.addAnnotation({ value: a.cfi, color: a.color, style })
+  } catch { /* 当前分节未绘制时忽略 */ }
 }
 
 async function removeAnnotation(a: AnnotationRec) {
@@ -3143,8 +3164,7 @@ onMounted(async () => {
     view.addEventListener('load', onSectionLoad)
     view.addEventListener('create-overlay', () => drawStoredAnnotations())
     view.addEventListener('draw-annotation', (e: CustomEvent) => {
-      const { draw, annotation } = e.detail
-      draw(Overlayer.highlight, { color: HIGHLIGHT_COLORS[annotation.color] ?? annotation.color })
+      drawHighlight(Overlayer, HIGHLIGHT_COLORS, e.detail)
     })
     view.addEventListener('show-annotation', (e: CustomEvent) => {
       const found = annotations.value.find(a => a.cfi === e.detail.value)
@@ -3511,6 +3531,7 @@ onBeforeUnmount(() => {
     <!-- 高亮选区浮条 -->
     <div v-if="selection" class="highlight-bar card">
       <span class="hl-hint">{{ t('reader.highlight') }}</span>
+      <HighlightStylePicker v-model="settings.highlightStyle" />
       <button
         v-for="(hex, name) in HIGHLIGHT_COLORS"
         :key="name"
@@ -3537,6 +3558,10 @@ onBeforeUnmount(() => {
     <!-- 标注详情 / 想法编辑浮层 -->
     <div v-if="activeAnnotation" class="annotation-pop card">
       <p class="quote">{{ activeAnnotation.text }}</p>
+      <div class="pop-style">
+        <span class="hl-hint">{{ t('reader.highlightStyle') }}</span>
+        <HighlightStylePicker :model-value="activeAnnotation.style" @update:model-value="restyleAnnotation(activeAnnotation!, $event)" />
+      </div>
       <textarea
         v-model="noteDraft"
         class="note-input"
@@ -4244,6 +4269,12 @@ onBeforeUnmount(() => {
   border-left: 3px solid var(--brand);
   padding-left: 10px;
   margin-bottom: 10px;
+}
+.pop-style {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 .pop-actions {
   display: flex;

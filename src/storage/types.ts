@@ -45,6 +45,8 @@ export interface AnnotationRec {
   /** 想法 / 笔记 */
   note?: string
   color: string
+  /** 划线风格: underline 下划线 / squiggly 波浪线; 缺省为色块高亮 (services/highlightStyle.ts) */
+  style?: 'underline' | 'squiggly'
   createdAt: number
 }
 

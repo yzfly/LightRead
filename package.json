@@ -52,7 +52,7 @@
     "e2e:booklists": "node scripts/e2e-booklists.mjs",
     "e2e:continuous-scroll": "node scripts/e2e-continuous-scroll.mjs",
     "test:epub-compat": "node --experimental-strip-types --test scripts/test-epub-compat.mjs",
-    "test:compat": "node --experimental-strip-types --test scripts/test-compat.mjs scripts/test-epub-compat.mjs scripts/test-system-language.mjs",
+    "test:compat": "node --experimental-strip-types --test scripts/test-compat.mjs scripts/test-epub-compat.mjs scripts/test-book-font-size.mjs scripts/test-system-language.mjs",
     "test:updater": "node --experimental-strip-types --test scripts/test-updater.mjs",
     "check:release": "node scripts/check-release.mjs",
     "test:listen-eta": "node --experimental-strip-types --test scripts/test-listen-eta.mjs",
@@ -85,7 +85,7 @@
     "e2e:transfer": "node scripts/e2e-transfer.mjs",
     "test:transfer": "node --experimental-strip-types --test scripts/test-transfer.mjs",
     "test:qr": "node --experimental-strip-types --test scripts/test-qr.mjs",
-    "test:notes-export": "node --experimental-strip-types --test scripts/test-notes-export.mjs",
+    "test:notes-export": "node --experimental-strip-types --test scripts/test-notes-export.mjs scripts/test-highlight-style.mjs",
     "test:quote-card": "node --experimental-strip-types --test scripts/test-quote-card.mjs",
     "e2e:notes-export": "node scripts/e2e-notes-export.mjs",
     "stats": "node scripts/stats.mjs",
@@ -104,6 +104,7 @@
     "e2e:window-chrome": "node scripts/e2e-window-chrome.mjs",
     "e2e:stealth": "node scripts/e2e-stealth.mjs",
     "e2e:desktop-select": "node scripts/e2e-desktop-select.mjs",
+    "e2e:highlight-style": "node scripts/e2e-highlight-style.mjs",
     "e2e:translate": "node scripts/e2e-translate.mjs"
   },
   "dependencies": {

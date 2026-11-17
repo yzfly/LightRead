@@ -31,8 +31,12 @@
  *  - The fixes vite.legacy.ts used to patch into the upstream file are applied here
  *    directly (no regex lookbehind; guards for documents emptied during unload).
  *  - View.expand() ignores documents that are already gone.
+ *  - Absolute font sizes in the book's CSS (px / pt / keywords) become rem so the reader's
+ *    font size applies to every book (services/bookFontSize.ts, issue #22).
  * Vite resolves `foliate-js/view.js`'s `./paginator.js` to this file (vite.config.ts).
  */
+import { relativizeBookResource } from '../../services/bookFontSize.ts'
+
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 const requestIdle = globalThis.requestIdleCallback
@@ -828,10 +832,15 @@ export class Paginator extends HTMLElement {
         this.#contBlocked = false
         this.#failed = new Set()
         book.transformTarget?.addEventListener('data', ({ detail }) => {
-            if (detail.type !== 'text/css') return
+            // LightRead: absolute font sizes -> rem (CSS, <style> and style="" in (X)HTML)
+            if (detail.type !== 'text/css') {
+                const type = detail.type
+                detail.data = Promise.resolve(detail.data).then(data => relativizeBookResource(type, data))
+                return
+            }
             const w = innerWidth
             const h = innerHeight
-            detail.data = Promise.resolve(detail.data).then(data => data
+            detail.data = Promise.resolve(detail.data).then(data => relativizeBookResource('text/css', data)
                 // unprefix as most of the props are (only) supported unprefixed
                 // LightRead: no lookbehind (Safari < 16.4), same result
                 .replace(/([{\s;])-epub-/gi, '$1')

@@ -1154,3 +1154,30 @@ test('documents from older clients (no booklistWanted field) do not drop wanted 
   // 没有任何待找条目时文档里不写这个字段
   assert.equal(mergeDocs([old], { deviceId: 'X', now: 1 }).booklistWanted, undefined)
 })
+
+test('highlight style (issue #21) syncs as an in-place update; back to marker clears it', () => {
+  const remote = new Map()
+  const A = new Device('A')
+  const B = new Device('B')
+  A.local.books.h1 = book('one')
+  A.local.annotations.a1 = anno('h1')
+  sync(A, remote, 100)
+  sync(B, remote, 200)
+  assert.equal('style' in B.local.annotations.a1, false, 'marker highlights carry no style field')
+
+  A.local.annotations.a1.style = 'squiggly'
+  sync(A, remote, 300)
+  assert.deepEqual(sync(B, remote, 400), [{ op: 'updateAnnotation', id: 'a1', patch: { style: 'squiggly' } }])
+  assert.equal(B.local.annotations.a1.style, 'squiggly')
+
+  delete B.local.annotations.a1.style
+  sync(B, remote, 500)
+  assert.deepEqual(sync(A, remote, 600), [{ op: 'updateAnnotation', id: 'a1', patch: { style: undefined } }])
+  assert.equal('style' in A.local.annotations.a1, false)
+
+  // 新建时带风格: 整条加过去
+  B.local.annotations.a2 = anno('h1', { style: 'underline', cfi: 'epubcfi(/6/10)' })
+  sync(B, remote, 700)
+  sync(A, remote, 800)
+  assert.equal(A.local.annotations.a2.style, 'underline')
+})

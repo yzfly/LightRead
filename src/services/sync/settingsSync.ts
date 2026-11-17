@@ -196,6 +196,8 @@ export const SETTINGS_SYNC_SPEC: SettingsSpec = {
     recommendedBooklists: SYNC,
     transfer: SYNC,
   },
+  /** 新划线的风格 */
+  highlightStyle: SYNC,
 }
 
 function flatten(spec: SettingsSpec, prefix = '', out: Record<string, SettingClass> = {}) {

@@ -7,6 +7,7 @@ import type {
   AnnotationVal, ApplyOp, BooklistWantedVal, BookMetaVal, BookSyncRec, LocalState, ProgressVal, ReadingLogDoc, Reg,
   SettingsDoc, SourceVal, Stamp, SyncDoc,
 } from './types'
+import { storedHighlightStyle } from '../highlightStyle.ts'
 
 // ---- 通用工具 ----
 
@@ -98,6 +99,7 @@ export function annotationFrom(a: AnnotationRec, bookHash: string): AnnotationVa
     createdAt: a.createdAt,
   }
   setOpt(v, 'note', a.note)
+  setOpt(v, 'style', storedHighlightStyle(a.style))
   return v
 }
 
@@ -520,15 +522,16 @@ export function planApply(merged: SyncDoc, local: LocalState): ApplyOp[] {
         annos.push({ op: 'addAnnotation', id, value: structuredClone(v) })
         continue
       }
-      const { note: vn, color: vc, ...vRest } = v
-      const { note: ln, color: lc, ...lRest } = la
+      const { note: vn, color: vc, style: vs, ...vRest } = v
+      const { note: ln, color: lc, style: ls, ...lRest } = la
       if (!same(vRest, lRest)) {
         annos.push({ op: 'deleteAnnotation', id }, { op: 'addAnnotation', id, value: structuredClone(v) })
         continue
       }
-      const patch: { note?: string; color?: string } = {}
+      const patch: { note?: string; color?: string; style?: AnnotationRec['style'] } = {}
       if ((vn ?? '') !== (ln ?? '')) patch.note = vn ?? ''
       if (vc !== lc) patch.color = vc
+      if (storedHighlightStyle(vs) !== storedHighlightStyle(ls)) patch.style = storedHighlightStyle(vs)
       if (Object.keys(patch).length) annos.push({ op: 'updateAnnotation', id, patch })
     } else if (la && bookAlive(la.bookHash)) {
       delAnnos.push({ op: 'deleteAnnotation', id })

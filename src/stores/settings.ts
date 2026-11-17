@@ -323,6 +323,8 @@ interface SettingsState {
   ambient: AmbientPrefs
   /** 可选功能开关 */
   features: FeaturePrefs
+  /** 新划线的风格: 色块高亮 / 下划线 / 波浪线 (services/highlightStyle.ts), 记住上次选的 */
+  highlightStyle: 'highlight' | 'underline' | 'squiggly'
 }
 
 const STORAGE_KEY = 'lightread-settings'
@@ -459,6 +461,7 @@ const defaults: SettingsState = {
     recommendedBooklists: false,
     transfer: false,
   },
+  highlightStyle: 'highlight',
 }
 
 /** 默认设置的副本 (设置同步判断「从没改过」、测试检查每项设置都已归类) */

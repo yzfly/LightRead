@@ -9,6 +9,7 @@ import type {
 import { BUILTIN_SOURCES, getLibraryRoot, newId } from './types'
 import { needsChunkedIpc, writeBlobInChunks } from './chunkedWrite'
 import { isUsableCoverBytes } from '../services/coverRepair'
+import { storedHighlightStyle } from '../services/highlightStyle'
 import { t } from '../i18n'
 
 type SqlDatabase = {
@@ -181,6 +182,7 @@ export class TauriStorage implements LibraryStorage {
       'ALTER TABLE sources ADD COLUMN password TEXT',
       'ALTER TABLE sources ADD COLUMN updated_at INTEGER',
       "ALTER TABLE annotations ADD COLUMN kind TEXT NOT NULL DEFAULT 'highlight'",
+      'ALTER TABLE annotations ADD COLUMN style TEXT',
       'ALTER TABLE books ADD COLUMN reading_seconds INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE books ADD COLUMN pinned_at INTEGER',
       "ALTER TABLE books ADD COLUMN kind TEXT NOT NULL DEFAULT 'book'",
@@ -605,22 +607,27 @@ export class TauriStorage implements LibraryStorage {
   async listAnnotations(bookId: string) {
     const rows = await this.db.select<Array<{
       id: string; book_id: string; kind: string | null; cfi: string; text: string
-      note: string | null; color: string; created_at: number
+      note: string | null; color: string; style: string | null; created_at: number
     }>>('SELECT * FROM annotations WHERE book_id = $1 ORDER BY created_at', [bookId])
-    return rows.map(r => ({
-      id: r.id, bookId: r.book_id,
-      kind: (r.kind ?? 'highlight') as AnnotationRec['kind'],
-      cfi: r.cfi, text: r.text,
-      note: r.note ?? undefined, color: r.color, createdAt: r.created_at,
-    }))
+    return rows.map(r => {
+      const rec: AnnotationRec = {
+        id: r.id, bookId: r.book_id,
+        kind: (r.kind ?? 'highlight') as AnnotationRec['kind'],
+        cfi: r.cfi, text: r.text,
+        note: r.note ?? undefined, color: r.color, createdAt: r.created_at,
+      }
+      const style = storedHighlightStyle(r.style)
+      if (style) rec.style = style
+      return rec
+    })
   }
 
   async addAnnotation(a: Omit<AnnotationRec, 'id'> & { id?: string }) {
     const id = a.id ?? newId()
     await this.db.execute(
-      `INSERT OR REPLACE INTO annotations (id, book_id, kind, cfi, text, note, color, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [id, a.bookId, a.kind ?? 'highlight', a.cfi, a.text, a.note ?? null, a.color, a.createdAt])
+      `INSERT OR REPLACE INTO annotations (id, book_id, kind, cfi, text, note, color, style, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, a.bookId, a.kind ?? 'highlight', a.cfi, a.text, a.note ?? null, a.color, storedHighlightStyle(a.style) ?? null, a.createdAt])
     return id
   }
 
@@ -633,6 +640,9 @@ export class TauriStorage implements LibraryStorage {
     }
     if (patch.text !== undefined) {
       await this.db.execute('UPDATE annotations SET text = $1 WHERE id = $2', [patch.text, id])
+    }
+    if ('style' in patch) {
+      await this.db.execute('UPDATE annotations SET style = $1 WHERE id = $2', [storedHighlightStyle(patch.style) ?? null, id])
     }
   }
 
