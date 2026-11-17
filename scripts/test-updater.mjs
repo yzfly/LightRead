@@ -641,3 +641,15 @@ test('a GitHub download that starts too slowly switches to the mirror', async t 
   assert.deepEqual([...state.written[0].data], [...bytes])
   assert.deepEqual(state.calls.map(c => c[0]).slice(0, 2), [`${GH_DL}/v1.4.0/app.dmg`, `${GC_DL}/v1.4.0/app.dmg`])
 })
+
+test('GitCode downloads get the app User-Agent (browser UA is answered with 418), other sites keep the browser UA', async () => {
+  const { remoteUserAgent, APP_USER_AGENT, BROWSER_USER_AGENT } = await import('../src/services/remoteUserAgent.ts')
+  assert.equal(remoteUserAgent('https://gitcode.com/langgpt/LightRead/releases/download/app-v2.10.7/SHA256SUMS'), APP_USER_AGENT)
+  assert.equal(remoteUserAgent('https://api.gitcode.com/api/v5/repos/langgpt/LightRead/releases'), APP_USER_AGENT)
+  assert.equal(remoteUserAgent('https://GITCODE.com/x'), APP_USER_AGENT)
+  assert.equal(remoteUserAgent('https://github.com/yzfly/LightRead/releases/download/v1/SHA256SUMS'), BROWSER_USER_AGENT)
+  assert.equal(remoteUserAgent('https://www.gutenberg.org/ebooks/1'), BROWSER_USER_AGENT)
+  assert.equal(remoteUserAgent('https://notgitcode.com/x'), BROWSER_USER_AGENT)
+  assert.equal(remoteUserAgent('not a url'), BROWSER_USER_AGENT)
+  assert.ok(!/Mozilla|Chrome/.test(APP_USER_AGENT))
+})

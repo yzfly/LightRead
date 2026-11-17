@@ -9,6 +9,7 @@ import { useSettings } from '../stores/settings'
 import { accountApiBase } from './account'
 import { webdavRelayUrl } from './webdavProviders'
 import { t } from '../i18n'
+import { BROWSER_USER_AGENT, remoteUserAgent } from './remoteUserAgent'
 
 export interface RequestAuth {
   username?: string
@@ -35,8 +36,7 @@ function applyCorsProxy(url: string): string {
     : proxy + encodeURIComponent(url)
 }
 
-export const REMOTE_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 LightRead'
+export const REMOTE_USER_AGENT = BROWSER_USER_AGENT
 
 const STATUS_HINTS: Record<number, string> = {
   401: 'net.authRequired',
@@ -66,8 +66,9 @@ export async function fetchRemote(
 ): Promise<Response> {
   const headers: Record<string, string> = {
     accept: 'application/atom+xml, application/xml, text/xml, */*',
-    // 部分站点 (如古登堡) 拦截非浏览器 UA; 浏览器环境此头会被忽略, 桌面端由 Rust 发送
-    'user-agent': REMOTE_USER_AGENT,
+    // 部分站点 (如古登堡) 拦截非浏览器 UA, GitCode 附件反而拦浏览器 UA (见 remoteUserAgent.ts);
+    // 浏览器环境此头会被忽略, 桌面端由 Rust 发送
+    'user-agent': remoteUserAgent(url),
     ...authHeader(auth),
     ...(init.headers ?? {}),
   }
