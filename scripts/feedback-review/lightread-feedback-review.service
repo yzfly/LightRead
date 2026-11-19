@@ -1,0 +1,8 @@
+[Unit]
+Description=LightRead feedback review (in-app feedback + GitHub issues, every 3 days)
+
+[Service]
+Type=oneshot
+ExecStart=/home/ubuntu/workspace/LightRead/scripts/feedback-review/run.sh
+TimeoutStartSec=5h
+Nice=10

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run LightRead feedback review every 3 days (10:17 Beijing time)
+
+[Timer]
+OnCalendar=*-*-01/3 10:17:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target
