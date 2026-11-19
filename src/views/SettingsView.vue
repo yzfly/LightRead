@@ -22,6 +22,7 @@ import type { SyncResult } from '../services/sync/types'
 import { accountState, isLoggedIn } from '../services/account'
 import AccountCard from '../components/settings/AccountCard.vue'
 import AboutLinks from '../components/settings/AboutLinks.vue'
+import FeedbackDialog from '../components/FeedbackDialog.vue'
 import { fetchRemote } from '../services/net'
 import { toast } from '../services/toast'
 import { errorText, redactUrls } from '../services/errorText'
@@ -49,6 +50,8 @@ import {
   type PaperAgentEngineStatus,
 } from '../services/paperAgent.ts'
 
+/** 设置首页「反馈问题或建议」 */
+const feedbackOpen = ref(false)
 const settings = useSettings()
 
 // ---- 摸鱼模式: 老板键用「点按后按下新组合键」录制, 格式与原生全局快捷键一致 ----
@@ -1107,8 +1110,13 @@ const APPEARANCE_OPTIONS = [
           <span class="pl-ico tone-success" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.5 5 8 4.5 4 4.5v13c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2v-13c-4 0-6.5.5-8 2zM12 6.5v13"/></svg></span>
           <span class="pl-text"><span class="pl-title">{{ t('manual.title') }}</span></span><svg class="pl-chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 6 6 6-6 6"/></svg>
         </button>
+        <button type="button" class="pl-row feedback-row" @click="feedbackOpen = true">
+          <span class="pl-ico tone-brand" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16v10H9l-4 3.5v-3.5H4z"/><path d="M8 9.5h8M8 12.5h5"/></svg></span>
+          <span class="pl-text"><span class="pl-title">{{ t('feedback.entry') }}</span><span class="pl-desc">{{ t('feedback.entryDesc') }}</span></span><svg class="pl-chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m9 6 6 6-6 6"/></svg>
+        </button>
       </div>
       <div class="pl-end" />
+      <FeedbackDialog v-if="feedbackOpen" @close="feedbackOpen = false" />
     </div>
 
     <!-- 账号与同步 -->

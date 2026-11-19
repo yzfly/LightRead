@@ -175,3 +175,21 @@ CREATE TABLE IF NOT EXISTS drops (
   expires_at    INTEGER NOT NULL            -- 创建后 10 分钟或 1 小时
 );
 CREATE INDEX IF NOT EXISTS drops_expires ON drops(expires_at);
+
+-- ---- 读者反馈 (与 migrations/0003_feedback.sql 相同) ----
+CREATE TABLE IF NOT EXISTS feedback (
+  id            TEXT    PRIMARY KEY,        -- crypto.randomUUID()
+  created_at    INTEGER NOT NULL,
+  kind          TEXT    NOT NULL,           -- bug|feature|other
+  text          TEXT    NOT NULL,
+  contact       TEXT    NOT NULL DEFAULT '',
+  version       TEXT    NOT NULL DEFAULT '',
+  platform      TEXT    NOT NULL DEFAULT '',
+  account_id    TEXT,
+  account_email TEXT,
+  log_size      INTEGER NOT NULL DEFAULT 0,
+  status        TEXT    NOT NULL DEFAULT 'new', -- new|seen|planned|done|wontfix
+  note          TEXT    NOT NULL DEFAULT ''     -- 维护者备注 (结论 / 对应提交)
+);
+CREATE INDEX IF NOT EXISTS feedback_created ON feedback(created_at);
+CREATE INDEX IF NOT EXISTS feedback_status ON feedback(status, created_at);

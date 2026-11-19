@@ -164,6 +164,23 @@ drops     (id TEXT PK, code TEXT UNIQUE, account_id TEXT NULL, owner_hash TEXT, 
 
 管理员令牌是 Worker secret `ADMIN_TOKEN`，本机备份在 `~/.config/lightread/stats-admin-token`（600）。轮换：生成新值写入该文件，再 `tr -d '\n' < ~/.config/lightread/stats-admin-token | npx wrangler secret put ADMIN_TOKEN -c wrangler.jsonc`。查看：浏览器打开 <https://sync.jiangshu.ai/admin>（首次输入令牌，只存在该浏览器的 localStorage），或在仓库里 `npm run stats`（`-- --days 90`、`-- --json`）。
 
+## 读者反馈
+
+应用内「反馈问题或建议」（设置首页「关于」分组，以及关于页「遇到问题」）。匿名可用；带有效 `Authorization: Bearer <token>` 时记下账号（无效 token 按匿名处理）。实现：`sync-server/src/feedback.ts`，客户端 `src/services/feedback.ts` + `components/FeedbackDialog.vue`。
+
+| 方法 路径 | 请求 | 成功 | 失败 |
+|-----------|------|------|------|
+| `POST /v1/feedback` | `{ kind, text, contact?, version, platform, log? }`（见下） | `201 { id }` | `400 invalid_kind / invalid_text / invalid_log / invalid_feedback`；`413 too_large`；`429 rate_limited`（每 IP 每北京日 10 条，`retryAfter` 到北京时间零点） |
+| `GET /v1/admin/feedback?status=new&since=<ms>&limit=100` | `ADMIN_TOKEN`；`status` 为 `new / seen / planned / done / wontfix / all`（默认 all），`limit` ≤200，新的在前 | `200 { items, counts }` | `401`；`400 invalid_status / invalid_since` |
+| `GET /v1/admin/feedback/<id>/log` | `ADMIN_TOKEN` | `200` zip | `401`；`404 not_found` |
+| `POST /v1/admin/feedback/<id>` | `ADMIN_TOKEN`；`{ status?, note? }`（备注 ≤2000 字） | `200` 更新后的条目 | `401`；`400 invalid_status / invalid_note / invalid_body`；`404` |
+
+- `kind`：`bug | feature | other`；`text` 去首尾空白后 1–4000 字；`contact` ≤200 字（默认填账号邮箱，可清空）；`version` / `platform` ≤32 字
+- `log`：用户勾选「同时提交诊断日志」（默认勾选）时附上的诊断包 zip（与「导出诊断日志」同一份，写入与导出各脱敏一次），base64，解码后 ≤2.5 MB 且以 `PK` 开头；客户端超过 2.4 MB 时只带当前日志 `lightread.log`
+- 存储：D1 表 `feedback`（`migrations/0003_feedback.sql`），日志存 R2 `feedback/<id>.zip`；**180 天后定时任务删日志，文字保留**；注销账号时反馈与账号脱钩（`account_id` / `account_email` 置空）
+- 条目字段：`id, createdAt, kind, text, contact, version, platform, accountEmail, logSize, status, note`
+- 查看：管理页 <https://sync.jiangshu.ai/admin> 最下面的「读者反馈」（改状态、写备注、下载日志），或 `node scripts/feedback-digest.mjs`（`--all`、`--since 2026-11-01`、`--logs <目录>`、`--json`、`--mark-seen`）。维护者每三天集中看一次新反馈，分成问题 / 建议 / 其他，**用户确认后才动手实现**
+
 ## 客户端
 
 - `src/services/account.ts`：登录状态（localStorage `lightread-account`）与上述接口的封装

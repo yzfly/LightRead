@@ -1,11 +1,13 @@
 <script setup lang="ts">
-/** 读者群模块内的问题反馈: 导出诊断日志, 发到群里。桌面与 App 共用。 */
+/** 读者群模块内的问题反馈: 应用内直接反馈 (可附日志), 或导出诊断日志发到群里。桌面与 App 共用。 */
 import { ref } from 'vue'
+import FeedbackDialog from '../FeedbackDialog.vue'
 import { t } from '../../i18n'
 import { exportDiagnostics, openFeedback } from '../../services/diagnostics'
 import { toast } from '../../services/toast'
 
 const busy = ref(false)
+const feedbackOpen = ref(false)
 
 async function exportLogs() {
   if (busy.value) return
@@ -26,9 +28,11 @@ async function exportLogs() {
     <h3 class="diagnostics-title">{{ t('settings.diagnosticsTitle') }}</h3>
     <p class="diagnostics-desc">{{ t('settings.diagnosticsDesc') }}</p>
     <div class="diagnostics-actions">
+      <button class="btn btn-sm btn-primary feedback-open" @click="feedbackOpen = true">{{ t('feedback.entry') }}</button>
       <button class="btn btn-sm" :disabled="busy" @click="exportLogs">{{ t('settings.diagnosticsExport') }}</button>
       <a class="diagnostics-github" href="javascript:void 0" @click="openFeedback">{{ t('settings.diagnosticsGithub') }}</a>
     </div>
+    <FeedbackDialog v-if="feedbackOpen" @close="feedbackOpen = false" />
   </div>
 </template>
 

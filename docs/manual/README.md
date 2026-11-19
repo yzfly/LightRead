@@ -34,6 +34,6 @@
 
 ## 反馈
 
-遇到问题或有建议，欢迎到 [GitHub Issues](https://github.com/yzfly/LightRead/issues) 反馈，也可以在应用的「设置 → 关于」里找到入口。
+遇到问题或有建议，直接在应用里「设置 → 反馈问题或建议」提交（可附诊断日志），也可以加读者群或到 [GitHub Issues](https://github.com/yzfly/LightRead/issues) 反馈。
 
 > 本手册对应 **v1.7.0**。应用里也能离线查看：「设置 → 关于 → 使用手册」。

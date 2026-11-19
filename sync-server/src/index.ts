@@ -10,6 +10,7 @@
  *
  *  - 匿名使用统计: POST /v1/ping 心跳, GET /v1/admin/stats + /admin 统计页 (ADMIN_TOKEN 保护), 见 src/stats.ts
  *  - 互传: /v1/devices, /v1/transfers (账号内设备间) 与 /v1/drops, /d/<code> (匿名取件码), 见 src/transfer.ts
+ *  - 读者反馈: POST /v1/feedback (匿名可用, 可附诊断日志), /v1/admin/feedback 管理, 见 src/feedback.ts
  *
  * 部署: cd sync-server && npx wrangler deploy -c wrangler.jsonc
  * 配置密钥: npx wrangler secret put RESEND_API_KEY -c wrangler.jsonc (以及 ADMIN_TOKEN)
@@ -19,6 +20,7 @@
 import ADMIN_HTML from './admin.html'
 import { MAX_STATS_DAYS, beijingDay, computeStats, djRollupStatements, parsePing, recordPing, rollupStatements } from './stats'
 import { accountTransferCleanup, cleanupExpired, isTransferRoute, routeDrops, routeTransfers } from './transfer'
+import { cleanupFeedbackLogs, feedbackLog, listFeedback, submitFeedback, updateFeedback } from './feedback'
 
 // ---- 运行时类型 (只声明用到的部分, 免装 @cloudflare/workers-types) ----
 
@@ -417,6 +419,8 @@ async function deleteMe(session: Session, env: Env): Promise<Response> {
     env.DB.prepare('DELETE FROM codes WHERE email = ?1').bind(email),
     env.DB.prepare('DELETE FROM counters WHERE key = ?1').bind(`put:${id}`),
     env.DB.prepare('DELETE FROM users WHERE id = ?1').bind(id),
+    // 反馈保留文字, 但与已注销的账号脱钩
+    env.DB.prepare('UPDATE feedback SET account_id = NULL, account_email = NULL WHERE account_id = ?1').bind(id),
   ])
   return noContent()
 }
@@ -572,7 +576,7 @@ async function handlePing(request: Request, env: Env): Promise<Response> {
 }
 
 /** Bearer 与 ADMIN_TOKEN 比对: 先各自 SHA-256 再定长逐字节异或, 不因前缀匹配长度泄露时间差 */
-async function isAdmin(request: Request, env: Env): Promise<boolean> {
+export async function isAdmin(request: Request, env: Env): Promise<boolean> {
   const expected = env.ADMIN_TOKEN
   if (!expected) return false
   const m = /^Bearer\s+(\S{1,512})$/.exec(request.headers.get('authorization') ?? '')
@@ -627,6 +631,21 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (method === 'POST' && pathname === '/v1/ping') return handlePing(request, env)
   if (method === 'GET' && pathname === '/v1/admin/stats') return adminStats(request, env, search)
   if (method === 'GET' && (pathname === '/admin' || pathname === '/admin/')) return adminPage()
+  if (method === 'POST' && pathname === '/v1/feedback') {
+    // 登录可选: 带了有效 token 就记下账号, 无效 token 当匿名处理
+    const session = await authenticate(request, env)
+    const now = Date.now()
+    return submitFeedback(request, env, session?.account ?? null, beijingDay(now), secondsToBeijingMidnight(now))
+  }
+  if (pathname === '/v1/admin/feedback' || pathname.startsWith('/v1/admin/feedback/')) {
+    if (!(await isAdmin(request, env))) return json(401, { error: 'unauthorized' }, NO_STORE)
+    if (method === 'GET' && pathname === '/v1/admin/feedback') return listFeedback(env.DB, search)
+    const log = /^\/v1\/admin\/feedback\/([^/]+)\/log$/.exec(pathname)
+    if (log && method === 'GET') return feedbackLog(env.DOCS, log[1])
+    const one = /^\/v1\/admin\/feedback\/([^/]+)$/.exec(pathname)
+    if (one && method === 'POST') return updateFeedback(request, env.DB, one[1])
+    return fail(404, 'not_found')
+  }
 
   // 取件码 (匿名, 可选登录) 与分享链接 /d/<code>
   const drop = routeDrops(request, env, pathname)
@@ -679,5 +698,6 @@ export default {
     )
     ctx.waitUntil(env.DB.batch(djRollupStatements(env.DB, beijingDay(now))).catch(e => console.warn('dj rollup failed', e?.message)))
     ctx.waitUntil(cleanupExpired(env, now))
+    ctx.waitUntil(cleanupFeedbackLogs(env, now).catch(e => console.warn('feedback cleanup failed', e?.message)))
   },
 }

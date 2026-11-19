@@ -29,7 +29,7 @@ function call(method, path, { body, token, raw, headers = {} } = {}) {
   if (raw && h['content-length'] === undefined && (typeof body === 'string' || body instanceof Uint8Array)) {
     h['content-length'] = String(typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength)
   }
-  if ((path === '/v1/auth/code' || path === '/v1/ping' || path.startsWith('/v1/drops')) && !h['cf-connecting-ip']) {
+  if ((path === '/v1/auth/code' || path === '/v1/ping' || path === '/v1/feedback' || path.startsWith('/v1/drops')) && !h['cf-connecting-ip']) {
     ++ipSeq
     h['cf-connecting-ip'] = `10.${(ipSeq >> 16) & 255}.${(ipSeq >> 8) & 255}.${ipSeq & 255}`
   }
@@ -1227,4 +1227,104 @@ test('心跳: 点睛汇总 dj 可选; 合法的日子入库, 不合法的那天�
   assert.ok(t.keyAdoption > 0 && t.keyAdoption <= 1)
   assert.ok(t.aiUsable > 0 && t.aiUsable <= 1)
   assert.equal(stats.dianjing.daily.find(r => r.day === day(1)).usersKey, 2)
+})
+
+// ---- 读者反馈 ----
+
+/** 最小的合法 zip (空归档: 只有中央目录结束记录, 以 PK 开头) */
+const EMPTY_ZIP = Buffer.from([0x50, 0x4b, 0x05, 0x06, ...new Array(18).fill(0)])
+
+test('反馈: 匿名提交文字 → 201; 管理接口能看到, 状态 new; 字段校验 → 400', async () => {
+  const ok = await call('POST', '/v1/feedback', {
+    body: { kind: 'bug', text: '  翻页卡住  ', contact: 'wx: reader1', version: '2.10.8', platform: 'android', extra: 1 },
+  })
+  assert.equal(ok.status, 201)
+  assert.equal(ok.headers.get('access-control-allow-origin'), '*')
+  const { id } = await jsonOf(ok)
+  assert.match(id, /^[0-9a-f-]{36}$/)
+
+  for (const [body, error] of [
+    [{ kind: 'nope', text: 'x' }, 'invalid_kind'],
+    [{ kind: 'bug', text: '   ' }, 'invalid_text'],
+    [{ kind: 'bug', text: 'x'.repeat(4001) }, 'invalid_text'],
+    [{ kind: 'bug', text: 'x', log: 'bm90IGEgemlw' }, 'invalid_log'],
+    [{ kind: 'bug', text: 'x', log: 42 }, 'invalid_log'],
+    ['not json', 'invalid_feedback'],
+  ]) {
+    const res = await call('POST', '/v1/feedback', typeof body === 'string' ? { body, raw: true } : { body })
+    assert.equal(res.status, 400, error)
+    assert.equal((await jsonOf(res)).error, error)
+  }
+
+  const list = await jsonOf(await admin('/v1/admin/feedback?status=new'))
+  const item = list.items.find(i => i.id === id)
+  assert.deepEqual(
+    { kind: item.kind, text: item.text, contact: item.contact, version: item.version, platform: item.platform, logSize: item.logSize, status: item.status, accountEmail: item.accountEmail },
+    { kind: 'bug', text: '翻页卡住', contact: 'wx: reader1', version: '2.10.8', platform: 'android', logSize: 0, status: 'new', accountEmail: null },
+  )
+  assert.ok(list.counts.new >= 1)
+})
+
+test('反馈: 登录后附带账号; 日志 zip 存 R2, 管理员可下载原样字节; 无效 token 按匿名', async () => {
+  const { token } = await login('feedback-user@example.com')
+  const res = await call('POST', '/v1/feedback', {
+    token,
+    body: { kind: 'feature', text: '想要单手模式', log: EMPTY_ZIP.toString('base64') },
+  })
+  assert.equal(res.status, 201)
+  const { id } = await jsonOf(res)
+  const anon = await call('POST', '/v1/feedback', { token: 'x'.repeat(43), body: { kind: 'other', text: 'hi' } })
+  assert.equal(anon.status, 201)
+  const anonId = (await jsonOf(anon)).id
+
+  const { items } = await jsonOf(await admin('/v1/admin/feedback'))
+  const mine = items.find(i => i.id === id)
+  assert.equal(mine.accountEmail, 'feedback-user@example.com')
+  assert.equal(mine.logSize, EMPTY_ZIP.length)
+  assert.equal(items.find(i => i.id === anonId).accountEmail, null)
+
+  const log = await admin(`/v1/admin/feedback/${id}/log`)
+  assert.equal(log.status, 200)
+  assert.equal(log.headers.get('content-type'), 'application/zip')
+  assert.deepEqual(Buffer.from(await log.arrayBuffer()), EMPTY_ZIP)
+  assert.equal((await admin(`/v1/admin/feedback/${anonId}/log`)).status, 404)
+
+  // 注销账号: 反馈留下, 与账号脱钩
+  assert.equal((await call('DELETE', '/v1/me', { token })).status, 204)
+  const after = (await jsonOf(await admin('/v1/admin/feedback'))).items.find(i => i.id === id)
+  assert.equal(after.accountEmail, null)
+  assert.equal(after.text, '想要单手模式')
+})
+
+test('反馈管理: 鉴权; 改状态 / 备注; 按状态与时间筛选; 非法值 400', async () => {
+  for (const token of [null, 'wrong-token']) {
+    const headers = token ? { authorization: `Bearer ${token}` } : {}
+    assert.equal((await call('GET', '/v1/admin/feedback', { headers })).status, 401)
+    assert.equal((await call('POST', `/v1/admin/feedback/${randomUUID()}`, { headers, body: { status: 'seen' } })).status, 401)
+  }
+  const before = Date.now()
+  const { id } = await jsonOf(await call('POST', '/v1/feedback', { body: { kind: 'bug', text: '状态测试' } }))
+  const upd = (body) => call('POST', `/v1/admin/feedback/${id}`, { headers: { authorization: `Bearer ${ADMIN_TOKEN}` }, body })
+  const r = await upd({ status: 'planned', note: '下个版本修' })
+  assert.equal(r.status, 200)
+  assert.deepEqual([(await jsonOf(r)).status, (await jsonOf(await upd({ note: '已排期' }))).note], ['planned', '已排期'])
+  assert.equal((await upd({ status: 'bogus' })).status, 400)
+  assert.equal((await upd({})).status, 400)
+  assert.equal((await call('POST', `/v1/admin/feedback/${randomUUID()}`, { headers: { authorization: `Bearer ${ADMIN_TOKEN}` }, body: { status: 'seen' } })).status, 404)
+
+  const planned = await jsonOf(await admin(`/v1/admin/feedback?status=planned&since=${before}`))
+  assert.deepEqual(planned.items.map(i => i.id), [id])
+  assert.equal((await jsonOf(await admin('/v1/admin/feedback?status=new'))).items.some(i => i.id === id), false)
+  assert.equal((await admin('/v1/admin/feedback?status=bogus')).status, 400)
+  assert.equal((await admin('/v1/admin/feedback/../x/log')).status === 200, false)
+})
+
+test('反馈限流: 每个 IP 每天 10 条 → 429 + retryAfter', async () => {
+  const headers = { 'cf-connecting-ip': '203.0.113.77' }
+  for (let i = 0; i < 10; i++) {
+    assert.equal((await call('POST', '/v1/feedback', { headers, body: { kind: 'other', text: `第 ${i} 条` } })).status, 201)
+  }
+  const res = await call('POST', '/v1/feedback', { headers, body: { kind: 'other', text: '超了' } })
+  assert.equal(res.status, 429)
+  assert.ok((await jsonOf(res)).retryAfter > 0)
 })

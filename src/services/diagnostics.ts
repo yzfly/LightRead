@@ -106,15 +106,21 @@ export async function diagnosticsEnv(): Promise<DiagnosticsEnv> {
   }
 }
 
-/** 打成 zip: 日志 (再脱敏一次) + 系统信息。不含书籍、划线、设置和密钥 */
-export async function buildDiagnosticsBundle(): Promise<{ blob: Blob; fileName: string }> {
+/**
+ * 打成 zip: 日志 (再脱敏一次) + 系统信息。不含书籍、划线、设置和密钥。
+ * latestOnly: 只带当前日志 lightread.log, 不带轮转出的历史 (应用内反馈的包太大时用)
+ */
+export async function buildDiagnosticsBundle(opts: { latestOnly?: boolean } = {}): Promise<{ blob: Blob; fileName: string }> {
   await flush()
   const files: Record<string, Uint8Array> = {}
   if (isTauri()) {
     try {
       const { invoke } = await import('@tauri-apps/api/core')
       const logs = await invoke<Array<{ name: string; text: string }>>('diagnostics_read_logs')
-      for (const log of logs) files[`logs/${log.name}`] = strToU8(redact(log.text))
+      for (const log of logs) {
+        if (opts.latestOnly && log.name !== 'lightread.log') continue
+        files[`logs/${log.name}`] = strToU8(redact(log.text))
+      }
     } catch (e) {
       logEvent('warn', 'diagnostics', 'read logs failed', e)
     }

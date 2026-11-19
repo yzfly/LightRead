@@ -128,6 +128,14 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 12px; text-align: ce
   .kpi .value { font-size: 24px; }
   .bar { grid-template-columns: 64px 1fr 84px; }
 }
+.fb-list { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.fb-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); }
+.fb-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 12px; color: var(--text-3); }
+.fb-kind { font-weight: 600; color: var(--text); }
+.fb-text { margin: 6px 0; white-space: pre-wrap; word-break: break-word; font-size: 14px; color: var(--text); }
+.fb-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
+.fb-actions select, .fb-actions input { font: inherit; padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); }
+.fb-actions input { flex: 1; min-width: 160px; }
 </style>
 </head>
 <body>
@@ -192,10 +200,19 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 12px; text-align: ce
         <div class="ret-sum" id="dj-sum"></div>
         <div class="tablewrap"><table id="dj-table"></table></div>
       </section>
+
+      <section class="card" style="margin-top:12px">
+        <h2>读者反馈 <small id="fb-counts"></small></h2>
+        <div class="seg" role="group" aria-label="反馈状态" id="fb-filter">
+          <button type="button" data-status="new" aria-pressed="true">新的</button>
+          <button type="button" data-status="all" aria-pressed="false">全部</button>
+        </div>
+        <div id="fb-list" class="fb-list"></div>
+      </section>
     </div>
   </main>
 
-  <footer>数据只含随机安装 ID、平台、版本、语言（以及当天是否打开过阅读器）、点睛阅读的按天汇总数字；不记录 IP、设备信息、账号或任何阅读内容。</footer>
+  <footer>统计数据只含随机安装 ID、平台、版本、语言（以及当天是否打开过阅读器）、点睛阅读的按天汇总数字；不记录 IP、设备信息、账号或任何阅读内容。读者反馈是用户主动提交的文字、联系方式与（勾选时）脱敏后的诊断日志。</footer>
 </div>
 
 <script>
@@ -242,10 +259,10 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 12px; text-align: ce
   })
   $('logout').addEventListener('click', function () { setToken(''); showGate('') })
   $('refresh').addEventListener('click', function () { load() })
-  Array.prototype.forEach.call(document.querySelectorAll('.seg button'), function (b) {
+  Array.prototype.forEach.call(document.querySelectorAll('header .seg button'), function (b) {
     b.addEventListener('click', function () {
       days = Number(b.getAttribute('data-days'))
-      Array.prototype.forEach.call(document.querySelectorAll('.seg button'), function (x) {
+      Array.prototype.forEach.call(document.querySelectorAll('header .seg button'), function (x) {
         x.setAttribute('aria-pressed', String(x === b))
       })
       load()
@@ -271,6 +288,7 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 12px; text-align: ce
         $('status').hidden = true
         $('content').hidden = false
         render()
+        loadFeedback()
       })
       .catch(function (err) {
         $('content').hidden = true
@@ -443,6 +461,83 @@ footer { margin-top: 24px; color: var(--text-3); font-size: 12px; text-align: ce
   window.addEventListener('resize', function () {
     clearTimeout(resizeTimer)
     resizeTimer = setTimeout(function () { if (data && !$('content').hidden) drawChart() }, 150)
+  })
+
+  // ---- 读者反馈 ----
+  var FB_KIND = { bug: '问题', feature: '建议', other: '其他' }
+  var FB_STATUS = { new: '新的', seen: '已看', planned: '要做', done: '已做', wontfix: '不做' }
+  var fbStatus = 'new'
+  Array.prototype.forEach.call(document.querySelectorAll('#fb-filter button'), function (b) {
+    b.addEventListener('click', function () {
+      fbStatus = b.getAttribute('data-status')
+      Array.prototype.forEach.call(document.querySelectorAll('#fb-filter button'), function (x) {
+        x.setAttribute('aria-pressed', String(x === b))
+      })
+      loadFeedback()
+    })
+  })
+  function authed(path, init) {
+    init = init || {}
+    init.headers = Object.assign({ authorization: 'Bearer ' + getToken() }, init.headers || {})
+    init.cache = 'no-store'
+    return fetch(path, init)
+  }
+  function loadFeedback() {
+    $('fb-list').textContent = '加载中…'
+    authed('/v1/admin/feedback?limit=200&status=' + fbStatus)
+      .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json() })
+      .then(renderFeedback)
+      .catch(function (err) { $('fb-list').textContent = '反馈加载失败：' + err.message })
+  }
+  function renderFeedback(d) {
+    var c = d.counts || {}
+    $('fb-counts').textContent = Object.keys(FB_STATUS).filter(function (k) { return c[k] }).map(function (k) { return FB_STATUS[k] + ' ' + c[k] }).join(' · ')
+    if (!d.items.length) { $('fb-list').textContent = fbStatus === 'new' ? '没有新反馈。' : '还没有反馈。'; return }
+    $('fb-list').innerHTML = d.items.map(function (it) {
+      var opts = Object.keys(FB_STATUS).map(function (k) {
+        return '<option value="' + k + '"' + (k === it.status ? ' selected' : '') + '>' + FB_STATUS[k] + '</option>'
+      }).join('')
+      return '<div class="fb-item" data-id="' + esc(it.id) + '">' +
+        '<div class="fb-head"><span class="fb-kind">' + esc(FB_KIND[it.kind] || it.kind) + '</span>' +
+        '<span>' + esc(new Date(it.createdAt).toLocaleString('zh-CN', { hour12: false })) + '</span>' +
+        '<span>' + esc(it.platform || '?') + ' v' + esc(it.version || '?') + '</span>' +
+        (it.contact ? '<span>联系：' + esc(it.contact) + '</span>' : '') +
+        (it.accountEmail ? '<span>账号：' + esc(it.accountEmail) + '</span>' : '') +
+        '<span>#' + esc(it.id.slice(0, 8)) + '</span></div>' +
+        '<p class="fb-text">' + esc(it.text) + '</p>' +
+        '<div class="fb-actions"><select aria-label="状态">' + opts + '</select>' +
+        '<input type="text" aria-label="备注" placeholder="备注（结论 / 对应提交）" value="' + esc(it.note || '') + '">' +
+        '<button class="btn" type="button" data-act="save">保存</button>' +
+        (it.logSize ? '<button class="btn link" type="button" data-act="log">下载日志 (' + Math.ceil(it.logSize / 1024) + ' KB)</button>' : '') +
+        '</div></div>'
+    }).join('')
+  }
+  $('fb-list').addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-act]')
+    if (!btn) return
+    var item = btn.closest('.fb-item'), id = item.getAttribute('data-id')
+    if (btn.getAttribute('data-act') === 'log') {
+      authed('/v1/admin/feedback/' + id + '/log')
+        .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.blob() })
+        .then(function (blob) {
+          var a = document.createElement('a')
+          a.href = URL.createObjectURL(blob)
+          a.download = 'feedback-' + id.slice(0, 8) + '.zip'
+          a.click()
+          setTimeout(function () { URL.revokeObjectURL(a.href) }, 5000)
+        })
+        .catch(function (err) { alert('下载失败：' + err.message) })
+      return
+    }
+    btn.disabled = true
+    authed('/v1/admin/feedback/' + id, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: item.querySelector('select').value, note: item.querySelector('input').value }),
+    })
+      .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); btn.textContent = '已保存' })
+      .catch(function (err) { alert('保存失败：' + err.message) })
+      .then(function () { btn.disabled = false })
   })
 
   load()
