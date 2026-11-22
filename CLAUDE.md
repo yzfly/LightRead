@@ -199,6 +199,7 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 
 通用规则：
 - 提交信息用 `release: vX.Y.Z`（桌面）或 `release: app-vX.Y.Z`（App），正文写用户可见变化、修复、验证与已知限制，作为 Release 说明。
+- **Release 说明和提交信息不写内部开发细节（2026-11-22 用户要求）**：不提构建机、签名机、设备代号与内部流程（t9、MacAir、jiangshuMac、K30 真机、tmux、内部路径等）；验证写成读者能懂的结果，如「已在 Android / macOS 上验证」。
 - 推送用 yzfly 账号（`gh auth switch -u yzfly`）。获得发版授权后才创建并推送 annotated tag；只整理发版规范的任务不推送、不发布。
 - 仓库变量 `RELEASE_BUILD_MODE=manual`：推 tag 不自动构建，由下面的 `gh workflow run` 显式触发。
 - 任一环节失败都保留草稿，修复后用同一 tag 重跑；workflow 只续建草稿，拒绝覆盖已公开版本，也不移动已有 tag。审核脚本取自本次 workflow 的固定 SHA，旧 tag 不必自带新版脚本。
