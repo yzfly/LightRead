@@ -300,6 +300,8 @@ interface SettingsState {
   localTranslate: boolean
   /** 正文简繁转换: 关闭 / 繁→简 / 简→繁 (本地 OpenCC, 见 services/zhConvert.ts) */
   zhConvert: ZhConvertMode
+  /** 双语对照 (issue #23): 用本机翻译模型逐段翻译, 译文接在每段原文下面 (services/bilingual.ts); 没下载模型时不生效 */
+  bilingual: boolean
   /** 摸鱼模式 (桌面): 无边框 + 半透明 + 老板键, 见 services/stealth.ts */
   stealth: StealthPrefs
   /** AI 辅读: 设置页选择的本机引擎与可选手动可执行文件路径 */
@@ -392,6 +394,7 @@ const defaults: SettingsState = {
   translateTarget: 'auto',
   localTranslate: true,
   zhConvert: 'off',
+  bilingual: false,
   stealth: {
     autoEnter: false,
     bgOpacity: 0.85,

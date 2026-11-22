@@ -395,7 +395,7 @@ export class ListenPlayer {
           if (!alive()) continue
           // 合成 / 播放失败: 已排上的照常播完, 余下 (含失败块) 改用系统语音
           reportNeuralFailure(e)
-          if (this.cb.canUseSystemSpeech?.() === false) {
+          if (this.cb.canUseSystemSpeech?.() === false && !neuralEngine()) {
             // Finish audio already scheduled, then report the original service error.
             // Do not enter a system engine the host cannot provide.
             if (!(await waitForClock(this.clock, this.tail, alive))) continue

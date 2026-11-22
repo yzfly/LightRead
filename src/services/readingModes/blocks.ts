@@ -9,6 +9,7 @@
  * - 只读 DOM, 不改结构, 不影响 CFI 与 foliate 排版。
  */
 import { locateIn } from './pacing.ts'
+import { INERT_ATTR } from '../bilingualCore.ts'
 
 const BLOCK_TAGS = new Set([
   'article', 'aside', 'audio', 'blockquote', 'caption',
@@ -55,7 +56,7 @@ export class SectionText {
         acceptNode: node => {
           if (node.nodeType !== 1) return NodeFilter.FILTER_ACCEPT
           const name = (node as Element).localName?.toLowerCase() ?? ''
-          if (SKIP_TAGS.has(name)) return NodeFilter.FILTER_REJECT
+          if (SKIP_TAGS.has(name) || (node as Element).hasAttribute(INERT_ATTR)) return NodeFilter.FILTER_REJECT
           if (ATOM_TAGS.has(name)) {
             this.atoms.push({ offset: length, el: node as Element })
             return NodeFilter.FILTER_REJECT

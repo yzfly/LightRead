@@ -10,6 +10,7 @@
  */
 import { locateOffset, splitSentences, type Span } from '../readAloud.ts'
 import type { SectionBlock } from './chunker.ts'
+import { INERT_ATTR } from '../bilingualCore.ts'
 
 const BLOCK_TAGS = new Set([
   'article', 'aside', 'audio', 'blockquote', 'caption',
@@ -56,7 +57,7 @@ export class SectionTextModel {
     }
     const walker = this.doc.createTreeWalker(body, 0x1 | 0x4, {
       acceptNode: (n: Node) => {
-        if (n.nodeType === 1 && SKIP_TAGS.has((n as Element).tagName.toLowerCase())) return 2 // REJECT
+        if (n.nodeType === 1 && (SKIP_TAGS.has((n as Element).tagName.toLowerCase()) || (n as Element).hasAttribute(INERT_ATTR))) return 2 // REJECT (含双语译文)
         return 1 // ACCEPT
       },
     })

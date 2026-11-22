@@ -101,12 +101,14 @@
     "test:mobile-messages": "node --test scripts/test-mobile-messages.mjs",
     "e2e:mobile-messages": "node scripts/e2e-mobile-messages.mjs",
     "test:zh-segment-wasm": "node --experimental-strip-types --test scripts/test-zh-segment-wasm.mjs",
+    "test:bilingual": "node --experimental-strip-types --test scripts/test-bilingual.mjs",
     "test:translate": "node --experimental-strip-types --test scripts/test-translate.mjs",
     "test:stealth": "node --experimental-strip-types --test scripts/test-stealth.mjs",
     "e2e:window-chrome": "node scripts/e2e-window-chrome.mjs",
     "e2e:stealth": "node scripts/e2e-stealth.mjs",
     "e2e:desktop-select": "node scripts/e2e-desktop-select.mjs",
     "e2e:highlight-style": "node scripts/e2e-highlight-style.mjs",
+    "e2e:bilingual": "node scripts/e2e-bilingual.mjs",
     "e2e:translate": "node scripts/e2e-translate.mjs"
   },
   "dependencies": {

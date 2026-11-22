@@ -23,7 +23,7 @@ import { useListenKeepAlive } from '../composables/useListenKeepAlive.ts'
 import { copyText } from '../../services/shareOut.ts'
 import { injectFontIntoDoc, resolveFontFamily } from '../../services/fonts.ts'
 import { isTauri } from '../../storage/types.ts'
-import { listVoicesSorted, warmUpSpeech, resetEdgeFailure, systemSpeechAvailable } from '../services/tts.ts'
+import { listenErrorKey, listVoicesSorted, warmUpSpeech, resetEdgeFailure, systemSpeechAvailable } from '../services/tts.ts'
 import { ListenPlayer, type ListenFeed } from '../../services/listenPlayer.ts'
 import { SentenceCursor, loadListenBookmark, saveListenBookmark, agoBucket, type CursorPos, type ListenBookmark } from '../../services/readAloud.ts'
 import { readingArea, followTarget, jumpLine, isOnScreen, followHeld, scrollMotion, prefersReducedMotion, type Area } from '../../services/readingFocus.ts'
@@ -55,6 +55,8 @@ import { useReadingModes } from '../composables/useReadingModes.ts'
 import TranslateSheet from '../../components/TranslateSheet.vue'
 import { isWholeParagraph, paragraphRange } from '../../services/selectParagraph.ts'
 import { zhConvertController } from '../../services/zhConvert.ts'
+import { bilingualController, bilingualModelReady } from '../../services/bilingual.ts'
+import { localLlm, localTranslateModel, refreshLocalLlm } from '../../services/localLlm.ts'
 import ListenCapsule from '../../components/ListenCapsule.vue'
 import AmbientPanel from '../../components/AmbientPanel.vue'
 import ReadingModeLayer from '../../components/ReadingModeLayer.vue'
@@ -240,7 +242,7 @@ const isBookmarked = computed(() => bookmarks.value.some(b => b.cfi === currentC
 // 听书
 const ttsPanel = ref(false)
 const ttsOptions = ref<'rate' | 'sleep' | 'voice' | null>(null)
-const ttsFailure = ref(false)
+const ttsFailure = ref('')
 const ttsEnded = ref(false)
 const listenToc = ref(false)
 const listenQuote = computed(() => currentListenKey.value ? listenTexts.get(currentListenKey.value) || '' : listenBookmark.value?.snippet || '')
@@ -252,7 +254,7 @@ const listenChapter = computed(() => {
   const pos = listenPosition.value
   return ttsState.value !== 'stopped' && pos ? chapterAtFraction(pos.fraction, pos.index) || chapterLabel.value : chapterLabel.value
 })
-const ttsStatus = computed(() => unavailableVoice.value || (ttsFailure.value ? t('tts.error') : ttsBuffering.value ? t('tts.buffering') : ttsState.value === 'playing' ? t('tts.reading') : ttsState.value === 'paused' ? t('tts.paused') : ttsEnded.value ? t('tts.bookFinished') : t('v2.listenReady')))
+const ttsStatus = computed(() => unavailableVoice.value || (ttsFailure.value ? t(ttsFailure.value) : ttsBuffering.value ? t('tts.buffering') : ttsState.value === 'playing' ? t('tts.reading') : ttsState.value === 'paused' ? t('tts.paused') : ttsEnded.value ? t('tts.bookFinished') : t('v2.listenReady')))
 /** 点了当前用不了的语音来源时, 在选择器下方说明原因 (触屏上没有悬停提示) */
 const engineNote = ref('')
 function chooseEngine(engine: 'local' | 'system') {
@@ -651,6 +653,9 @@ let leaving = false
 
 function onRelocate(e: CustomEvent) {
   if (leaving) return
+  // 页首落在双语译文里时, 保存的位置改到该段原文末尾 (要在读取 cfi 之前)
+  if (view) bi.fixRelocate(e.detail, (i, r) => view.getCFI(i, r))
+  bi.onRelocate(e.detail)
   // 翻页 / 滚动后工具条的位置已经不对: 划线菜单收起, 选区工具条跟着选区重新定位
   hlMenu.value = null
   if (selection.value) placeSelTools(selectionRange)
@@ -1503,11 +1508,11 @@ const listenPlayer = new ListenPlayer({
     else if (sleepAt.value && !sleepFading.value && Date.now() >= sleepAt.value - SLEEP_FADE_SECONDS * 1000) void sleepNow()
     listenChain = listenChain.then(() => onListenSentence(key)).catch(() => {})
   },
-  onEnd: reason => {
+  onEnd: (reason, error) => {
     ttsBuffering.value = false
-    ttsFailure.value = reason === 'error'
+    ttsFailure.value = reason === 'error' ? listenErrorKey(error) : ''
     ttsEnded.value = reason === 'finished'
-    if (reason === 'error' && !ttsPanel.value) toast(t('tts.error'), 'error')
+    if (ttsFailure.value && !ttsPanel.value) toast(t(ttsFailure.value), 'error')
     if (reason === 'finished') toast(t('tts.bookFinished'), 'success')
     if (reason !== 'stopped') finishListenSession()
   },
@@ -1892,7 +1897,7 @@ type ListenFrom = 'auto' | 'page' | 'bookmark' | { range: Range }
 async function startTTS(from: ListenFrom = 'auto') {
   if (!view) return
   if (unavailableVoice.value) { ttsOptions.value = 'voice'; ttsPanel.value = true; return }
-  ttsFailure.value = false
+  ttsFailure.value = ''
   ttsEnded.value = false
   modes.stopForExternal('tts')
   if (autoReading.value) toast(t('readingMode.autoStopped'))
@@ -2116,6 +2121,17 @@ const zh = zhConvertController(
   () => toast(t('reader.zhConvertFailed'), 'error'),
 )
 watch(() => settings.zhConvert, mode => { void zh.setMode(mode) }, { immediate: true })
+
+// ---- 双语对照 (services/bilingual, issue #23): 本机翻译模型逐段翻译, 译文挂在段落末尾, 划线与进度不受影响 ----
+const bi = bilingualController({
+  docs: () => (view?.renderer?.getContents?.() ?? []).map((c: { doc?: Document }) => c.doc).filter((d: Document | undefined): d is Document => !!d),
+  bookId: () => bookId,
+  onError: () => toast(t('reader.bilingualFailed'), 'error'),
+})
+if (settings.bilingual && !localLlm.loaded) void refreshLocalLlm()
+// 开关、模型下载好 / 删掉、换了模型档位都重新开始
+watch(() => (settings.bilingual && bilingualModelReady() ? localTranslateModel()?.id ?? '' : ''), id => { void bi.setEnabled(!!id) }, { immediate: true })
+onBeforeUnmount(() => bi.destroy())
 
 /** 点已有划线时弹出的同一个工具条 (改颜色 / 想法 / 复制 / 卡片 / 删除) */
 const hlMenu = shallowRef<{ anno: AnnotationRec } | null>(null)
@@ -2444,6 +2460,8 @@ function onRendererUnload(e: Event) {
 function onSectionLoad(e: CustomEvent) {
   // 简繁转换最先做: 打字机 / 点睛读到的已是转换后的文字 (等长替换, 偏移不变)
   try { zh.onSectionLoad(e.detail.doc) } catch { /* 忽略 */ }
+  // 双语对照: 同步贴上已缓存的译文 (在定位之前, 不会跳动)
+  try { bi.onSectionLoad(e.detail.doc) } catch { /* 忽略 */ }
   // 打字机: 在新章节首次绘制前隐藏未打出的文字
   modes.onSectionLoad(e.detail)
   dj.onSectionLoad(e.detail)
@@ -3896,6 +3914,9 @@ onBeforeUnmount(() => {
         <button @click="ttsOptions = 'rate'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 19a9 9 0 1 1 16 0M12 13l5-6"/></svg><small>{{ t('tts.rate') }}</small><strong>{{ rateText(settings.ttsRate) }}</strong></button>
       </div>
       <p class="listen-state" :class="{ error: ttsFailure }" role="status">{{ ttsStatus }}</p>
+      <div v-if="ttsFailure === 'tts.onlineConnectionFailed' && settings.ttsEngine === 'edge' && localTtsAvailable()" class="tts-notice">
+        <button class="btn btn-sm" @click="chooseEngine('local'); ttsOptions = 'voice'; ttsFailure = ''">{{ t('tts.offlineVoiceOptions') }}</button>
+      </div>
       <div v-if="unavailableVoice && edgeAvailable()" class="tts-notice">
         <button class="btn btn-sm btn-primary" @click="switchToOnline">{{ t('tts.useOnline') }}</button>
       </div>
@@ -4016,7 +4037,7 @@ onBeforeUnmount(() => {
         </AppSelect>
       </div>
       <p v-show="ttsOptions === 'voice' && (settings.ttsEngine !== 'cloud' || !edgeAvailable())" class="tts-hint">
-        {{ !edgeAvailable() ? t('tts.hintSystem') : settings.ttsEngine === 'edge' ? t(systemSpeechAvailable() ? 'tts.hintEdge' : 'tts.hintEdgeNoSystem') : settings.ttsEngine === 'local' ? t('tts.hintLocal') : t('tts.hintSystem') }}
+        {{ !edgeAvailable() ? t('tts.hintSystem') : settings.ttsEngine === 'edge' ? t(localInstalled ? 'tts.hintEdgeOffline' : systemSpeechAvailable() ? 'tts.hintEdge' : 'tts.hintEdgeNoSystem') : settings.ttsEngine === 'local' ? t('tts.hintLocal') : t('tts.hintSystem') }}
       </p>
         </div>
       </AppModal>

@@ -82,6 +82,7 @@ import { effectivePdfLayout } from '../../services/portraitLayout'
 import { toast } from '../../services/toast'
 import { printPdf, revealStoredBook, savePdfAs } from '../../services/pdfFileActions'
 import {
+  listenErrorKey,
   speakText,
   prefetchSpeech,
   warmUpSpeech,
@@ -3407,7 +3408,7 @@ async function startTTS() {
     }
   } catch (e) {
     console.error(e)
-    toast(t('tts.error'), 'error')
+    toast(t(listenErrorKey(e)), 'error')
   }
   if (session === ttsSession) ttsState.value = 'stopped'
 }

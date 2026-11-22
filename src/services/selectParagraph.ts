@@ -3,6 +3,7 @@
  * 段落按常见块元素认; 都不是时取最近一个按块显示的祖先, 到 body 为止。
  * 结果去掉段首尾空白, 免得划线 / 翻译带上缩进。
  */
+import { isInertNode } from './bilingualCore.ts'
 const BLOCK_SELECTOR = 'p, li, blockquote, h1, h2, h3, h4, h5, h6, dd, dt, td, th, figcaption, pre, caption'
 const BLOCK_DISPLAY = /^(block|list-item|table-cell|table-caption|flow-root)$/
 
@@ -29,7 +30,7 @@ function edge(root: Element, fromStart: boolean): { node: Text; offset: number }
   const doc = root.ownerDocument
   const walker = doc.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */)
   const texts: Text[] = []
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) texts.push(n as Text)
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) if (!isInertNode(n)) texts.push(n as Text)
   const list = fromStart ? texts : texts.reverse()
   for (const node of list) {
     const s = node.data

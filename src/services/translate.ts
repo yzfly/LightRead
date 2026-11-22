@@ -66,8 +66,8 @@ export interface TranslateOptions {
   onRoute?: (route: TranslateRoute) => void
 }
 
-/** 本机模型逐段翻译: 一个自然段一次请求, 译文按原来的分段接起来 */
-async function* translateLocally(req: TranslateRequest, signal?: AbortSignal): AsyncGenerator<string> {
+/** 本机模型逐段翻译: 一个自然段一次请求, 译文按原来的分段接起来 (双语对照 services/bilingual.ts 也只走这条) */
+export async function* translateLocal(req: TranslateRequest, signal?: AbortSignal): AsyncGenerator<string> {
   const model = localTranslateModel()?.id ?? LOCAL_TRANSLATE_MODEL
   for (const piece of splitForLocalTranslate(req.text, req.target)) {
     let first = true
@@ -89,7 +89,7 @@ export async function* translateText(req: TranslateRequest, opts: TranslateOptio
   if (route === 'local') {
     let produced = false
     try {
-      for await (const chunk of translateLocally(req, opts.signal)) {
+      for await (const chunk of translateLocal(req, opts.signal)) {
         produced = true
         yield chunk
       }

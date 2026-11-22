@@ -8,6 +8,7 @@
  * - 段内用 Intl.Segmenter 断句, 并修正几类常见问题 (见 splitSentences);
  * - 句子 Range 惰性计算并按段缓存, 20 万字的 TXT 分节也只在读到时才断句。
  */
+import { INERT_ATTR } from './bilingualCore.ts'
 
 const BLOCK_TAGS = new Set([
   'article', 'aside', 'audio', 'blockquote', 'caption',
@@ -357,6 +358,8 @@ function sentenceRanges(doc: Document, block: Range, lang: string): Range[] {
         const name = (n as Element).tagName.toLowerCase()
         // 脚注角标 / 注音 (rt) 不读
         if (name === 'script' || name === 'style' || name === 'rt' || name === 'rp') return NodeFilter.FILTER_REJECT
+        // 双语对照的译文 (services/bilingual.ts) 不读
+        if ((n as Element).hasAttribute(INERT_ATTR)) return NodeFilter.FILTER_REJECT
         return NodeFilter.FILTER_SKIP
       }
       return NodeFilter.FILTER_ACCEPT

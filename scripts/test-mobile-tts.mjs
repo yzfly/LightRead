@@ -5,6 +5,8 @@ import { test } from 'node:test'
 // Exercise the real scheduler with controllable native synthesis and playback.
 const state = {
   settings: { ttsEngine: 'local', localVoiceId: 50, ttsRate: 1, ttsVoice: '' },
+  pack: { installed: false, crashed: false },
+  edge: () => Promise.reject(new Error('unexpected Edge call')),
   synthesize: () => Promise.resolve(new Blob(['wav'])),
   warmup: () => Promise.resolve(),
   play: () => Promise.resolve('end'),
@@ -34,13 +36,13 @@ const modules = {
   './localTts.ts': `export const localTtsAvailable = () => true;
     export const localTtsWarmup = () => globalThis.__ttsTest.warmup();
     export const localTtsSynthesize = (...args) => globalThis.__ttsTest.synthesize(...args);
-    export const localPack = { crashed: false };
+    export const localPack = globalThis.__ttsTest.pack;
     export const isLocalCrashError = e => String(e?.message ?? e).includes('LOCAL_TTS_CRASHED')`,
-  '../../services/edgeTts.ts': `export const edgeAvailable = () => false;
+  '../../services/edgeTts.ts': `export const edgeAvailable = () => true;
     export const edgePause = () => {};
     export const edgeResume = () => {};
     export const edgeStop = () => {};
-    export const edgeSynthesize = () => { throw new Error('unexpected Edge call') };
+    export const edgeSynthesize = (...args) => globalThis.__ttsTest.edge(...args);
     export const playAudio = async blob => { globalThis.__ttsTest.played.push(blob); return globalThis.__ttsTest.play(blob) }`,
 }
 const hook = registerHooks({
@@ -53,7 +55,7 @@ const hook = registerHooks({
 })
 const {
   speakText, stopSpeech, resetEdgeFailure, prefetchSpeech, pauseSpeech, resumeSpeech,
-  splitSpeechText, forgetLocalModel, LOCAL_LOADING_HINT_MS, getVoices, reportNeuralFailure,
+  splitSpeechText, forgetLocalModel, LOCAL_LOADING_HINT_MS, getVoices, reportNeuralFailure, listenErrorKey,
 } = await import(ttsUrl)
 hook.deregister()
 
@@ -308,6 +310,45 @@ test('native synthesis can play, pause, resume and stop without Web Speech globa
     globalThis.speechSynthesis = speech
     globalThis.SpeechSynthesisUtterance = utterance
     state.settings.ttsEngine = 'local'
+    reset()
+  }
+})
+
+test('a reset Edge connection continues offline from the failed text and retries Edge next session', async () => {
+  reset()
+  const webSpeech = globalThis.speechSynthesis
+  const failure = '连接语音服务失败: IO error: Connection reset by peer (os error 104)'
+  const text = '这一句要补读。'
+  const offline = []
+  try {
+    delete globalThis.speechSynthesis
+    state.settings.ttsEngine = 'edge'
+    state.edge = async () => { throw failure }
+    state.pack.installed = true
+    state.synthesize = async text => { offline.push(text); return new Blob([text]) }
+    prefetchSpeech(text)
+    assert.equal(await speakText(text), 'end')
+    assert.equal(await speakText('下一句。'), 'end')
+    assert.deepEqual(offline, [text, '下一句。'])
+    assert.equal(state.notices.filter(n => n[0] === 'tts.continueOffline').length, 1)
+    assert.equal(state.settings.ttsEngine, 'edge')
+    resetEdgeFailure()
+    state.edge = async () => new Blob(['online'])
+    assert.equal(await speakText(text), 'end')
+    assert.equal(offline.length, 2)
+
+    for (const pack of [{ installed: false, crashed: false }, { installed: true, crashed: true }]) {
+      Object.assign(state.pack, pack)
+      state.edge = async () => { throw failure }
+      resetEdgeFailure()
+      await assert.rejects(speakText(text), error => error === failure && listenErrorKey(error) === 'tts.onlineConnectionFailed')
+    }
+    assert.equal(offline.length, 2)
+    assert.equal(listenErrorKey(new Error('decode failed')), 'tts.error')
+  } finally {
+    globalThis.speechSynthesis = webSpeech
+    state.settings.ttsEngine = 'local'
+    Object.assign(state.pack, { installed: false, crashed: false })
     reset()
   }
 })

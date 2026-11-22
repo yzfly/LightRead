@@ -19,6 +19,9 @@ import { listSystemFonts, importFontFile } from '../services/fonts'
 import { isTauri } from '../storage/types'
 import { toast } from '../services/toast'
 import { DIM_MAX } from '../services/readingModes/eyeCare'
+import LocalModelPack from './LocalModelPack.vue'
+import { localLlm, refreshLocalLlm } from '../services/localLlm'
+import { bilingualModelReady } from '../services/bilingual'
 import type { ReadingModes } from '../composables/useReadingModes'
 
 export type TypographySection = 'text' | 'color' | 'page'
@@ -137,6 +140,8 @@ function onMoreToggle(which: 'text', e: Event) {
 }
 
 onMounted(async () => {
+  // 双语对照只在带本机模型引擎的版本出现; 状态要问一次原生层
+  void refreshLocalLlm()
   void loadSystemFonts()
   if (!props.focus) return
   await nextTick()
@@ -335,6 +340,16 @@ let systemFontsLoading = false
         </div>
       </div>
       <p v-if="settings.zhConvert !== 'off'" class="set-note" role="note">{{ t('reader.zhConvertHint') }}</p>
+      <template v-if="localLlm.available">
+        <div class="tp-portrait">
+          <span>{{ t('reader.bilingual') }}<small>{{ t('reader.bilingualHint') }}</small></span>
+          <button type="button" class="tp-switch" role="switch" :aria-checked="settings.bilingual" :aria-label="t('reader.bilingual')" @click="settings.bilingual = !settings.bilingual"><span aria-hidden="true" /></button>
+        </div>
+        <template v-if="settings.bilingual && !bilingualModelReady()">
+          <p class="set-note" role="note">{{ t('reader.bilingualNeedsModel') }}</p>
+          <LocalModelPack compact />
+        </template>
+      </template>
     </section>
   </section>
 </template>

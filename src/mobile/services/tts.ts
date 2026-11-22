@@ -103,11 +103,11 @@ import {
 import { isLocalCrashError, localPack, localTtsAvailable, localTtsSynthesize, localTtsWarmup } from './localTts.ts'
 import { cloudErrorCode, cloudSignature, cloudSynthesize, isTransientCloudError } from '../../services/cloudTts.ts'
 
-/** 神经引擎失败后本次会话回退系统语音, 避免每段都等超时 */
-let neuralFailed = false
+/** 仅为本次朗读选择备用引擎；下次开始时重试用户选择的音色 */
+let fallback: 'local' | 'system' | null = null
 // 停止期间后台合成可能仍在运行；完成后不得重新开始播放。
 let speechGeneration = 0
-export const resetEdgeFailure = () => { neuralFailed = false }
+export const resetEdgeFailure = () => { fallback = null }
 
 /**
  * 离线合成切块: 先按句切, 再把短句合并到 maxLen 以内; 超长句按逗号/空白再切, 最后硬切.
@@ -173,11 +173,12 @@ export interface NeuralEngine {
 /** 当前设置下的神经合成器 (edge 在线 / local 离线); 不可用或本次会话已失败返回 null (用系统语音) */
 export function neuralEngine(): NeuralEngine | null {
   const settings = useSettings()
-  if (neuralFailed) return null
-  if (settings.ttsEngine === 'edge' && edgeAvailable()) {
+  if (fallback === 'system') return null
+  const kind = fallback ?? settings.ttsEngine
+  if (kind === 'edge' && edgeAvailable()) {
     return { kind: 'edge', local: false, synth: text => edgeSynthesize(text, settings.edgeVoice, settings.ttsRate) }
   }
-  if (settings.ttsEngine === 'cloud' && edgeAvailable()) {
+  if (kind === 'cloud' && edgeAvailable()) {
     return {
       kind: 'cloud',
       local: false,
@@ -185,7 +186,7 @@ export function neuralEngine(): NeuralEngine | null {
       synth: text => cloudSynthesize(settings, text, settings.ttsRate),
     }
   }
-  if (settings.ttsEngine === 'local' && localTtsAvailable()) {
+  if (kind === 'local' && localTtsAvailable()) {
     return {
       kind: 'local',
       local: true,
@@ -225,11 +226,23 @@ function warmLocal(): Promise<void> {
   return localWarm
 }
 
-/** 神经引擎出错: 本次会话改用系统语音 (resetEdgeFailure 后恢复), 提示一次 */
+// 原生命令在连接、传输和超时时区分错误；解码 / 播放失败另行报告。
+export function listenErrorKey(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return /^(连接语音服务失败|连接语音服务超时|发送配置失败|发送合成请求失败|接收音频失败)/.test(message)
+    ? 'tts.onlineConnectionFailed' : 'tts.error'
+}
+
+/** 神经引擎出错: 在线失败可用已安装的离线语音补读；离线也失败时再尝试系统语音 */
 export function reportNeuralFailure(error: unknown) {
   console.error(error)
-  if (neuralFailed) return
-  neuralFailed = true
+  if (fallback === 'system') return
+  if (!fallback && useSettings().ttsEngine === 'edge' && localTtsAvailable() && localPack.installed && !localPack.crashed) {
+    fallback = 'local'
+    toast(t('tts.continueOffline'), 'info', 6000)
+    return
+  }
+  fallback = 'system'
   const cloudCode = cloudErrorCode(error)
   if (cloudCode) {
     toast(t(`tts.cloudError.${cloudCode}`), 'error', 6000)
@@ -251,7 +264,7 @@ export function forgetLocalModel() {
 /** 打开听书面板时预加载离线模型, 点「开始」时就不必再等; 失败静默 (未安装等) */
 export function warmUpSpeech() {
   const settings = useSettings()
-  if (neuralFailed || settings.ttsEngine !== 'local' || !localTtsAvailable() || localPack.crashed) return
+  if (fallback || settings.ttsEngine !== 'local' || !localTtsAvailable() || localPack.crashed) return
   warmLocal().catch(() => { /* 开始朗读时再报错 */ })
 }
 
@@ -329,14 +342,14 @@ function enqueue(engine: NeuralEngine, text: string, priority: number): CacheEnt
 
 const synthCache = new Map<string, CacheEntry>()
 const MAX_CACHE = 32
-const cacheKey = (text: string) => {
+const cacheKey = (engine: NeuralEngine, text: string) => {
   const s = useSettings()
-  return `${s.ttsEngine}|${s.edgeVoice}|${s.localVoiceId}|${s.ttsRate}|${s.ttsEngine === 'cloud' ? cloudSignature(s) : ''}|${text}`
+  return `${engine.kind}|${s.edgeVoice}|${s.localVoiceId}|${s.ttsRate}|${s.ttsEngine === 'cloud' ? cloudSignature(s) : ''}|${text}`
 }
 
 /** 取 (或发起) 一块文本的合成; priority 越小越先合成 */
 function requestSynth(engine: NeuralEngine, text: string, priority: number): CacheEntry {
-  const key = cacheKey(text)
+  const key = cacheKey(engine, text)
   let entry = synthCache.get(key)
   if (entry) {
     if (entry.job && entry.job.priority > priority) entry.job.priority = priority
@@ -349,7 +362,9 @@ function requestSynth(engine: NeuralEngine, text: string, priority: number): Cac
     entry = { promise: engine.synth(text) }
   }
   // 预取的结果可能没人 await (停止/跳转), 避免未处理的 rejection
-  entry.promise.catch(() => {})
+  entry.promise.catch(() => {
+    if (synthCache.get(key) === entry) synthCache.delete(key)
+  })
   synthCache.set(key, entry)
   if (synthCache.size > MAX_CACHE) {
     const first = synthCache.keys().next().value
@@ -406,7 +421,7 @@ export async function speakText(text: string): Promise<'end' | 'cancelled'> {
     try {
       for (; index < parts.length; index++) {
         const blob = await entries[index].promise
-        synthCache.delete(cacheKey(parts[index]))
+        synthCache.delete(cacheKey(engine, parts[index]))
         if (generation !== speechGeneration) return 'cancelled'
         await waitWhileSpeechPaused()
         if (generation !== speechGeneration) return 'cancelled'
@@ -417,8 +432,9 @@ export async function speakText(text: string): Promise<'end' | 'cancelled'> {
     } catch (e) {
       if (generation !== speechGeneration || e instanceof SpeechCancelled) return 'cancelled'
       reportNeuralFailure(e)
-      // 只用系统语音补读尚未播放的部分
       remaining = parts.slice(index).join(' ') || text
+      if (fallback === 'local') return speakText(remaining)
+      if (!systemSpeechAvailable()) throw e
     }
   }
   const voice = await pickVoice(settings.ttsVoice, remaining)

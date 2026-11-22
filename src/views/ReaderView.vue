@@ -32,7 +32,7 @@ import { KOKORO_VOICES, DEFAULT_KOKORO_SID, kokoroVoiceLabel } from '../services
 import { localPack, localTtsSynthesize, refreshLocalPack } from '../services/localTts'
 import LocalTtsPack from '../components/LocalTtsPack.vue'
 import QwenVoiceRow from '../components/QwenVoiceRow.vue'
-import { localVoiceOffered, localVoiceReady } from '../services/localLlm'
+import { localLlm, localTranslateModel, localVoiceOffered, localVoiceReady, refreshLocalLlm } from '../services/localLlm'
 import LevelSlider from '../components/LevelSlider.vue'
 import { useReadingTimer } from '../composables/useReadingTimer'
 import { usePortraitView } from '../composables/usePortraitView'
@@ -59,6 +59,7 @@ import { useReadingModes } from '../composables/useReadingModes'
 import TranslateSheet from '../components/TranslateSheet.vue'
 import { isWholeParagraph, paragraphRange } from '../services/selectParagraph'
 import { zhConvertController } from '../services/zhConvert'
+import { bilingualController, bilingualModelReady } from '../services/bilingual'
 import ListenCapsule from '../components/ListenCapsule.vue'
 import AmbientPanel from '../components/AmbientPanel.vue'
 import ReadingModeLayer from '../components/ReadingModeLayer.vue'
@@ -595,6 +596,9 @@ let leaving = false
 
 function onRelocate(e: CustomEvent) {
   if (leaving) return
+  // 页首落在双语译文里时, 保存的位置改到该段原文末尾 (要在读取 cfi 之前)
+  if (view) bi.fixRelocate(e.detail, (i, r) => view.getCFI(i, r))
+  bi.onRelocate(e.detail)
   modes.onRelocate(e.detail)
   dj.onRelocate(e.detail)
   // 朗读跟随翻页 / 打字机、歌词自动推进都不能无限续命计时
@@ -2047,6 +2051,17 @@ const zh = zhConvertController(
 )
 watch(() => settings.zhConvert, mode => { void zh.setMode(mode) }, { immediate: true })
 
+// ---- 双语对照 (services/bilingual, issue #23): 本机翻译模型逐段翻译, 译文挂在段落末尾, 划线与进度不受影响 ----
+const bi = bilingualController({
+  docs: () => (view?.renderer?.getContents?.() ?? []).map((c: { doc?: Document }) => c.doc).filter((d: Document | undefined): d is Document => !!d),
+  bookId: () => bookId,
+  onError: () => toast(t('reader.bilingualFailed'), 'error'),
+})
+if (settings.bilingual && !localLlm.loaded) void refreshLocalLlm()
+// 开关、模型下载好 / 删掉、换了模型档位都重新开始
+watch(() => (settings.bilingual && bilingualModelReady() ? localTranslateModel()?.id ?? '' : ''), id => { void bi.setEnabled(!!id) }, { immediate: true })
+onBeforeUnmount(() => bi.destroy())
+
 /** 选中文字 → 从这里开始听 */
 function listenFromSelection() {
   const range = selectionRange
@@ -2280,6 +2295,8 @@ function onRendererUnload(e: Event) {
 function onSectionLoad(e: CustomEvent) {
   // 简繁转换最先做: 打字机 / 点睛读到的已是转换后的文字 (等长替换, 偏移不变)
   try { zh.onSectionLoad(e.detail.doc) } catch { /* 忽略 */ }
+  // 双语对照: 同步贴上已缓存的译文 (在定位之前, 不会跳动)
+  try { bi.onSectionLoad(e.detail.doc) } catch { /* 忽略 */ }
   // 打字机: 在新章节首次绘制前隐藏未打出的文字
   modes.onSectionLoad(e.detail)
   dj.onSectionLoad(e.detail)

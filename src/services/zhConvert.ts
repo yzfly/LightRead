@@ -7,6 +7,7 @@
  * 词组转换改变了长度时, 该节点退回逐字转换 (同样只采用等长的字)。
  * EPUB、TXT 以及 App 里 PDF 重排后的正文都经阅读页的分节加载钩子调用这里。
  */
+import { isInertNode } from './bilingualCore.ts'
 export type ZhConvertMode = 'off' | 't2s' | 's2t'
 
 export type Convert = (text: string) => string
@@ -52,7 +53,7 @@ function textNodes(doc: Document): Text[] {
   const root = doc.body ?? doc.documentElement
   if (!root) return []
   const walker = doc.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */, {
-    acceptNode: n => (SKIP.has(n.parentElement?.tagName ?? '') ? 2 /* REJECT */ : 1 /* ACCEPT */),
+    acceptNode: n => (SKIP.has(n.parentElement?.tagName ?? '') || isInertNode(n) ? 2 /* REJECT */ : 1 /* ACCEPT */),
   })
   const out: Text[] = []
   for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n as Text)
