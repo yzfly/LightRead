@@ -5,7 +5,7 @@ let readerReturnBooklist: string | null = null
 <script setup lang="ts">
 import BookCover from '../components/BookCover.vue'
 import RecommendedBooklists from '../components/RecommendedBooklists.vue'
-import { askConfirm } from '../../services/confirm.ts'
+import { askConfirm, deleteConfirmOptions } from '../../services/confirm.ts'
 import AppSelect from '../../components/AppSelect.vue'
 import AppModal from '../../components/AppModal.vue'
 import { shortAuthor, shortTitle } from '../../services/displayTitle.ts'
@@ -359,7 +359,7 @@ async function removeBook(book: BookMeta) {
     : book.format === 'pdf'
       ? 'library.deletePdfConfirm'
       : 'library.deleteConfirm'
-  if (!(await askConfirm(t(confirmation, { title: book.title })))) return
+  if (!(await askConfirm(t(confirmation, { title: book.title }), deleteConfirmOptions()))) return
   try {
     await library.removeBook(book.id)
     toast(t('library.deleted'), 'success')
@@ -432,7 +432,7 @@ async function batchDelete() {
     : includesPdf
       ? 'library.batchDeleteWithAgentConfirm'
       : 'library.batchDeleteConfirm'
-  if (!count || !(await askConfirm(t(confirmation, { count })))) return
+  if (!count || !(await askConfirm(t(confirmation, { count }), deleteConfirmOptions(t('library.batchDeleteTitle', { count }))))) return
   let deleted = 0
   try {
     for (const id of selectedIds.value) {
@@ -566,7 +566,7 @@ async function renameBooklist(id: string) {
 
 async function deleteBooklist(id: string) {
   const item = library.booklists.find(booklist => booklist.id === id)
-  if (!item || !(await askConfirm(t('library.deleteBooklistConfirm', { name: item.name })))) return
+  if (!item || !(await askConfirm(t('library.deleteBooklistConfirm', { name: item.name }), deleteConfirmOptions()))) return
   await library.deleteBooklist(id)
   if (activeBooklistId.value === id) activeBooklistId.value = ''
   delete booklistRenames.value[id]
@@ -650,7 +650,7 @@ async function renameTag(oldName: string) {
 }
 
 async function deleteTag(tag: string) {
-  if (!(await askConfirm(t('library.deleteTagConfirm', { tag })))) return
+  if (!(await askConfirm(t('library.deleteTagConfirm', { tag }), deleteConfirmOptions()))) return
   const storage = await (await import('../../storage/index.ts')).getStorage()
   for (const book of library.books) {
     if (!book.tags.includes(tag)) continue
@@ -1410,7 +1410,7 @@ async function batchClearTags() {
     <AppModal v-if="showBooklistPicker" :title="t('library.chooseBooklist')" @close="showBooklistPicker = false">
       <div class="booklist-modal dialog-content">
         <p class="modal-description">
-          {{ t('library.chooseBooklistHint', { count: pickerBookIds.length }) }}
+          {{ t(library.booklists.length ? 'library.chooseBooklistHint' : 'library.chooseBooklistEmptyHint', { count: pickerBookIds.length }) }}
         </p>
         <div v-if="library.booklists.length" class="booklist-picker-list">
           <button
@@ -1427,8 +1427,9 @@ async function batchClearTags() {
             <span class="booklist-picker-add">{{ t('common.add') }}</span>
           </button>
         </div>
-        <div class="booklist-create-inline">
-          <div class="inline-label">{{ t('library.createNewBooklist') }}</div>
+        <!-- 还没有书单: 不说「或者」, 也不画分隔线 -->
+        <div class="booklist-create-inline" :class="{ first: !library.booklists.length }">
+          <div class="inline-label">{{ t(library.booklists.length ? 'library.createNewBooklist' : 'library.booklistName') }}</div>
           <div class="inline-fields">
             <input
               v-model="pickerDraft"
@@ -1998,6 +1999,11 @@ async function batchClearTags() {
   margin-top: 14px;
   padding-top: 13px;
   border-top: 1px solid var(--border);
+}
+.booklist-create-inline.first {
+  margin-top: var(--space-2);
+  padding-top: 0;
+  border-top: 0;
 }
 .inline-label {
   margin-bottom: 7px;

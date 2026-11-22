@@ -5055,7 +5055,7 @@ onBeforeUnmount(() => {
         <button class="btn btn-sm" :disabled="ttsState === 'stopped'" @click="stopTTS"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>{{ t('common.stop') }}</button>
         <button class="icon-btn" :title="t('common.close')" @click="ttsPanel = false; stopTTS()" :aria-label="t('common.close')"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M6.3 6.3a1 1 0 0 1 1.4 0L12 10.58l4.3-4.3a1 1 0 1 1 1.4 1.42L13.42 12l4.3 4.3a1 1 0 0 1-1.42 1.4L12 13.42l-4.3 4.3a1 1 0 0 1-1.4-1.42L10.58 12l-4.3-4.3a1 1 0 0 1 0-1.4z"/></svg></button>
       </div>
-      <div class="tts-row">
+      <div class="tts-row tts-rate-row">
         <label>{{ t('tts.rate') }}</label>
         <LevelSlider
           v-model="settings.ttsRate"
@@ -5064,8 +5064,8 @@ onBeforeUnmount(() => {
           :step="0.05"
           :stops="TTS_RATE_STOPS.map(v => ({ value: v, label: v === 1 ? t('tts.rateNormal') : rateText(v), minor: TTS_RATE_MINOR_STOPS.includes(v) }))"
           :label="t('tts.rate')"
+          :value-text="rateText(settings.ttsRate)"
         />
-        <span class="tts-value">{{ rateText(settings.ttsRate) }}</span>
       </div>
       <div v-if="edgeAvailable()" class="tts-row">
         <label>{{ t('tts.engine') }}</label>
@@ -6928,11 +6928,12 @@ onBeforeUnmount(() => {
   flex: 1;
   height: 30px;
 }
-.tts-value {
-  font-size: 12px;
-  color: var(--text-3);
-  width: 36px;
-  text-align: right;
+/* 语速: 标签与当前值对齐滑轨那一行, 不跟着下面的档位名一起居中 */
+.tts-rate-row {
+  align-items: flex-start;
+}
+.tts-rate-row label {
+  line-height: 22px;
 }
 .seg {
   display: flex;

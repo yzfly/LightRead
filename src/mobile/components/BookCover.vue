@@ -20,7 +20,9 @@ const vertical = computed(() => /^[\p{Script=Han}\p{Punctuation}\s]+$/u.test(pro
 .book-art { position: relative; width: 100%; height: 100%; overflow: clip; background: var(--cover-paper); color: var(--cover-ink); border-radius: 3px 5px 5px 3px; border-inline-start: 3px solid color-mix(in srgb, var(--cover-ink) 12%, transparent); display: flex; flex-direction: column; justify-content: space-between; padding: 12% 10%; }
 .book-art:has(img) { padding: 0; border: 0; }
 .book-art img { width: 100%; height: 100%; object-fit: cover; }
-.art-title { position: relative; z-index: 1; font-family: var(--font-book); font-size: clamp(15px, 4.8vw, 24px); line-height: 1.5; font-weight: 400; overflow: hidden; overflow-wrap: anywhere; max-height: 76%; }
+.art-title { position: relative; z-index: 1; font-family: var(--font-book); font-size: clamp(15px, 4.8vw, 24px); line-height: 1.5; font-weight: 400; overflow: hidden; word-break: keep-all; overflow-wrap: anywhere; text-wrap: pretty; max-height: 76%; }
+/* 横排书名按整行截断, 不把最后一行切成半截字 */
+.book-art:not(.vertical) .art-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; max-height: none; }
 .vertical .art-title { writing-mode: vertical-rl; align-self: flex-start; letter-spacing: .08em; }
 .art-lines { position: absolute; width: 120%; left: -6%; bottom: 14%; opacity: .2; stroke: currentColor; stroke-width: .7; }
 small { position: relative; z-index: 1; font-size: 9px; letter-spacing: .08em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

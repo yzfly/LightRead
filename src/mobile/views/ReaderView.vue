@@ -3994,7 +3994,8 @@ onBeforeUnmount(() => {
         <div class="listen-setting-body">
       <TtsRateControl v-if="ttsOptions === 'rate'" v-model="settings.ttsRate" />
       <div v-show="ttsOptions === 'sleep'" class="tts-row tts-row-stacked">
-        <label>{{ t('tts.sleep') }}</label>
+        <!-- 弹窗标题已是「定时关闭」, 行标签只留给读屏 -->
+        <label class="sr-only">{{ t('tts.sleep') }}</label>
         <div class="seg">
           <button v-for="c in SLEEP_CHOICES" :key="c.mode" :class="{ active: sleepMode === c.mode }" @click="setSleep(c.mode)">{{ t(c.key) }}</button>
         </div>
@@ -4586,6 +4587,22 @@ onBeforeUnmount(() => {
 }
 .sel-actions::-webkit-scrollbar {
   display: none;
+}
+/* 操作多于一屏时在被裁的一侧渐隐, 提示还能横滑; 放得下时滚动时间线不生效, 不加遮罩 */
+@property --sel-fade-start { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --sel-fade-end { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@keyframes sel-actions-fade {
+  from { --sel-fade-start: 0px; --sel-fade-end: 32px; }
+  12% { --sel-fade-start: 32px; }
+  88% { --sel-fade-end: 32px; }
+  to { --sel-fade-start: 32px; --sel-fade-end: 0px; }
+}
+@supports (animation-timeline: scroll()) {
+  .sel-actions {
+    mask-image: linear-gradient(to right, transparent, #000 var(--sel-fade-start), #000 calc(100% - var(--sel-fade-end)), transparent);
+    animation: sel-actions-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
 }
 .sel-act {
   flex: 1 0 64px;
@@ -5515,7 +5532,9 @@ onBeforeUnmount(() => {
 .listen-ambient { align-self: center; color: var(--text-3); border: 0; background: transparent; min-height: 44px; padding: 8px 16px; }
 
 
-.listen-cover :deep(.art-title) { font-size: 32px; }
+/* 听书页大封面: 书名随封面宽度缩放 (封面 120–172px 宽; 用 cqw 不用 cqi, 竖排书名的行内方向是纵向); 固定 32px 时竖排书名排成三列, 超出封面被裁掉 */
+.listen-cover { container-type: inline-size; }
+.listen-cover :deep(.art-title) { font-size: 24px; font-size: 18cqw; }
 .tts-panel { gap: 16px; }
 .tts-message-slot { display: contents; }
 .tts-head { position: relative; top: auto; display: grid; grid-template-columns: minmax(44px, 1fr) auto minmax(44px, 1fr); gap: 8px; }

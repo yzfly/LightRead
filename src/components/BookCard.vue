@@ -361,7 +361,10 @@ function onKeydown(e: KeyboardEvent) {
 .cover-fallback-title {
   font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', serif;
   font-size: var(--fs-subtitle);
+  /* 中文书名只在标点处换行 (「理想国 / （节选）」, 不拆成「（节 / 选）」); 一段放不下才逐字断 */
+  word-break: keep-all;
   overflow-wrap: anywhere;
+  text-wrap: pretty;
   font-weight: var(--fw-semibold);
   line-height: 1.4;
   letter-spacing: 0.03em;

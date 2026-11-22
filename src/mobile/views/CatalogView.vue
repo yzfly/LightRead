@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { askConfirm } from '../../services/confirm.ts'
+import { askConfirm, deleteConfirmOptions } from '../../services/confirm.ts'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { getStorage, type CatalogSourceRec, isTauri } from '../../storage/index.ts'
 import {
@@ -930,7 +930,7 @@ async function saveSource() {
 }
 
 async function removeSource(s: CatalogSourceRec) {
-  if (!(await askConfirm(t('catalog.deleteSourceConfirm', { title: s.title })))) return
+  if (!(await askConfirm(t('catalog.deleteSourceConfirm', { title: s.title }), deleteConfirmOptions()))) return
   const storage = await getStorage()
   await storage.deleteSource(s.id)
   forgetSearchTemplate(s.id)

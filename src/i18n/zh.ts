@@ -139,6 +139,7 @@ export default {
   'library.booklistBooks': '{count} 本',
   'library.chooseBooklist': '加入书单',
   'library.chooseBooklistHint': '选择书单，加入这 {count} 本书',
+  'library.chooseBooklistEmptyHint': '还没有书单，起个名字新建一个，加入这 {count} 本书',
   'library.addToBooklist': '加入书单',
   'library.removeFromBooklist': '从书单移出',
   'library.addedToBooklist': '已将 {count} 本书加入「{name}」',

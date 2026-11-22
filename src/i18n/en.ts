@@ -139,6 +139,7 @@ export default {
   'library.booklistBooks': '{count} books',
   'library.chooseBooklist': "Add to booklist",
   'library.chooseBooklistHint': 'Choose a booklist for these {count} books.',
+  'library.chooseBooklistEmptyHint': 'No booklists yet. Name a new one to add these {count} books.',
   'library.addToBooklist': "Add to booklist",
   'library.removeFromBooklist': "Remove from booklist",
   'library.addedToBooklist': 'Added {count} books to “{name}”',

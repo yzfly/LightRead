@@ -108,12 +108,21 @@ export function getReaderCSS(prefs: ReaderPrefs, appDark: boolean, style?: Reade
       hyphens: auto;
     }
     a:any-link { color: ${colors.link}; }
+    /* 长章节标题均衡分行, 不在最后一行留单字 (旧 WebView 不认就照常换行) */
+    h1, h2, h3, h4 { text-wrap: balance; }
+    ${selectionCSS(colors.link)}
     /* 脚注弹出场景保持可读 */
     aside[epub|type~="footnote"] { background: ${colors.bg}; }
     ${readingModeCSS(colors, theme, style)}
     ${modeStyleCSS(style)}
     ${dianjingCSS(djThemeName(theme, !!style?.eink))}
   `
+}
+
+/** 正文选区跟随主题强调色, 不用系统蓝 (护眼底色 / 夜间下太刺眼); 非十六进制的自选色不处理 */
+function selectionCSS(accent: string): string {
+  const bg = withAlpha(accent, 0.26)
+  return bg === accent ? '' : `::selection { background: ${bg}; }`
 }
 
 /** 墨水屏 / 大字附加的正文样式 (只在开关切换时随 setStyles 重排一次) */

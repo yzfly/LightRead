@@ -1511,7 +1511,7 @@ async function batchClearTags() {
       <div class="modal booklist-modal" role="dialog" aria-modal="true" aria-labelledby="booklist-picker-title">
         <h3 id="booklist-picker-title">{{ t('library.chooseBooklist') }}</h3>
         <p class="modal-description">
-          {{ t('library.chooseBooklistHint', { count: pickerBookIds.length }) }}
+          {{ t(library.booklists.length ? 'library.chooseBooklistHint' : 'library.chooseBooklistEmptyHint', { count: pickerBookIds.length }) }}
         </p>
         <div v-if="library.booklists.length" class="booklist-picker-list">
           <button
@@ -1528,8 +1528,9 @@ async function batchClearTags() {
             <span class="booklist-picker-add">{{ t('common.add') }}</span>
           </button>
         </div>
-        <div class="booklist-create-inline">
-          <div class="inline-label">{{ t('library.createNewBooklist') }}</div>
+        <!-- 还没有书单: 不说「或者」, 也不画分隔线 -->
+        <div class="booklist-create-inline" :class="{ first: !library.booklists.length }">
+          <div class="inline-label">{{ t(library.booklists.length ? 'library.createNewBooklist' : 'library.booklistName') }}</div>
           <div class="inline-fields">
             <input
               v-model="pickerDraft"
@@ -2123,6 +2124,11 @@ async function batchClearTags() {
   margin-top: 14px;
   padding-top: 13px;
   border-top: 1px solid var(--border);
+}
+.booklist-create-inline.first {
+  margin-top: var(--space-2);
+  padding-top: 0;
+  border-top: 0;
 }
 .inline-label {
   margin-bottom: 7px;

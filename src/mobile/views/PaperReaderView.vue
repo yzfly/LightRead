@@ -6798,11 +6798,20 @@ onBeforeUnmount(() => clearTimeout(phoneBarsTimer))
   flex: 1;
   height: 30px;
 }
+/* 语速: 标签与当前值对齐滑轨那一行, 不跟着下面的档位名一起居中 */
+.tts-rate-row {
+  align-items: flex-start;
+}
+.tts-rate-row label,
+.tts-rate-row .tts-value {
+  line-height: 22px;
+}
 .tts-value {
   font-size: 12px;
   color: var(--text-3);
   width: 36px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .seg {
   display: flex;

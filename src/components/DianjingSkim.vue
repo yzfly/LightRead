@@ -139,10 +139,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   gap: 2px;
   width: 100%;
   text-align: left;
-  border: none;
-  border-left: 2px solid var(--border-strong);
+  border: 1px solid var(--border);
   background: var(--card);
-  border-radius: 0 var(--radius) var(--radius) 0;
+  border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
   font: inherit;
   color: var(--text);
