@@ -79,8 +79,10 @@ function verifyApkMetadata(badging, certificates, expected) {
   assert.equal(targetSdk, ANDROID_TARGET_SDK, 'APK target Android API changed')
   const abis = [...(badging.match(/^native-code:(.+)$/m)?.[1] ?? '').matchAll(/'([^']+)'/g)].map(match => match[1])
   assert.deepEqual(abis, ['arm64-v8a'], 'APK must contain exactly the arm64-v8a ABI')
-  const fingerprints = [...certificates.matchAll(/^Signer #\d+ certificate SHA-256 digest:\s*([\da-f:]+)\s*$/gmi)]
-    .map(match => match[1].replaceAll(':', '').toLowerCase())
+  // apksigner ≤ 36: "Signer #1 certificate SHA-256 digest: …"; build-tools 37 按签名方案逐行列出:
+  // "V2 Signer: certificate SHA-256 digest: …" (V2 / V3 同一张证书各一行), 去重后只能剩固定证书这一张
+  const fingerprints = [...new Set([...certificates.matchAll(/^(?:Signer #\d+|V\d+(?:\.\d+)? Signer(?: #\d+)?:) certificate SHA-256 digest:\s*([\da-f:]+)\s*$/gmi)]
+    .map(match => match[1].replaceAll(':', '').toLowerCase()))]
   const expectedCert = expected.cert?.replaceAll(':', '').trim().toLowerCase()
   assert.match(expectedCert ?? '', /^[a-f\d]{64}$/, 'expected Android certificate SHA-256 is required')
   assert.deepEqual(fingerprints, [expectedCert], 'APK signing certificate changed')
@@ -96,6 +98,10 @@ function selfTest() {
   const badging = "package: name='com.yzfly.lightread.debug' versionCode='1003000' versionName='1.3.0'\nsdkVersion:'24'\ntargetSdkVersion:'36'\nnative-code: 'arm64-v8a'"
   const certificates = `Signer #1 certificate SHA-256 digest: ${cert}`
   assert.equal(verifyApkMetadata(badging, certificates, expected).packageName, ANDROID_PACKAGE)
+  const v37 = `V2 Signer: certificate SHA-256 digest: ${cert}\nV3 Signer: certificate SHA-256 digest: ${cert}`
+  assert.equal(verifyApkMetadata(badging, v37, expected).certificateSha256, cert)
+  assert.throws(() => verifyApkMetadata(badging, `V2 Signer: certificate SHA-256 digest: ${'cd'.repeat(32)}`, expected))
+  assert.throws(() => verifyApkMetadata(badging, `${v37}\nV3 Signer #2: certificate SHA-256 digest: ${'cd'.repeat(32)}`, expected))
   for (const [from, to] of [['.debug', ''], ['1003000', '1002000'], ['1.3.0', '1.2.0'], ["sdkVersion:'24'", "sdkVersion:'26'"], ["targetSdkVersion:'36'", "targetSdkVersion:'35'"], ['arm64-v8a', 'x86_64']]) {
     assert.throws(() => verifyApkMetadata(badging.replace(from, to), certificates, expected))
   }

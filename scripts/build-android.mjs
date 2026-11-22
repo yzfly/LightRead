@@ -6,15 +6,17 @@
 //  - 先 :app:clean, 防止增量 ZIP 留下整份旧原生库的空洞;
 //  - gen/android 不入库: 打包前把入库的 src-tauri/android/MainActivity.kt 覆盖进去并打清单补丁
 //    (app-v2.4.0 曾用旧工程里的 MainActivity 打包, 缺了 LightReadLifecycle 桥);
-//  - 必须有固定签名 LIGHTREAD_ANDROID_KEYSTORE;
+//  - 必须有固定签名 LIGHTREAD_ANDROID_KEYSTORE (按调试签名约定: androiddebugkey / android)。`--debug` 构建只认
+//    $ANDROID_USER_HOME/debug.keystore, 这里放进临时目录交给 Gradle, 不碰本机 ~/.android;
+//    以前没接上, 本机调试签名与固定签名不同的机器会打出换了签名的包 (发版检查才拦下);
 //  - 本机模型引擎 (llama.cpp, src-tauri/src/local_llm) 要 cmake 在 PATH 里, 生成绑定要 libclang:
 //    没设 LIBCLANG_PATH 时用 NDK 自带的那份;
 //  - 离线语音 (sherpa-onnx, src-tauri/src/local_tts.rs) 动态链接上游预编译库: 由 fetch-sherpa-android.mjs 取到本机缓存,
 //    经 SHERPA_ONNX_LIB_DIR 交给 Rust 链接, 并放进 jniLibs 随 APK 分发;
 //  - 打完立即跑 verifyApkLayout / verifyNativeLibraries, 不合格直接失败。
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { verifyApkLayout, verifyNativeLibraries } from './apk-layout.mjs'
 import { SHERPA_ANDROID, ensureSherpaAndroid } from './fetch-sherpa-android.mjs'
@@ -37,6 +39,11 @@ if (!env.LIGHTREAD_ANDROID_KEYSTORE) {
   env.LIGHTREAD_ANDROID_KEYSTORE = key
 }
 
+const userHome = mkdtempSync(join(tmpdir(), 'lightread-android-user-'))
+process.on('exit', () => rmSync(userHome, { recursive: true, force: true }))
+copyFileSync(env.LIGHTREAD_ANDROID_KEYSTORE, join(userHome, 'debug.keystore'))
+env.ANDROID_USER_HOME = userHome
+
 const project = 'src-tauri/gen/android'
 const run = (cmd, args) => execFileSync(cmd, args, { env, stdio: 'inherit' })
 const activity = join(project, 'app/src/main/java/com/yzfly/lightread/MainActivity.kt')
@@ -49,6 +56,10 @@ env.SHERPA_ONNX_LIB_DIR = sherpaDir
 const jniLibs = join(project, 'app/src/main/jniLibs/arm64-v8a')
 mkdirSync(jniLibs, { recursive: true })
 for (const lib of Object.keys(SHERPA_ANDROID.libs)) copyFileSync(join(sherpaDir, lib), join(jniLibs, lib))
+// 刚 init 的工程在第一次 tauri android build 之前没有这两个文件, settings.gradle / app 构建脚本却要引用; 先放空壳, build 时会重写
+for (const file of ['tauri.settings.gradle', 'app/tauri.build.gradle.kts']) {
+  if (!existsSync(join(project, file))) writeFileSync(join(project, file), '// tauri android build 会重写\n')
+}
 run(join(project, 'gradlew'), ['-q', '-p', project, ':app:clean'])
 run('npx', ['tauri', 'android', 'build', '--apk', '--target', 'aarch64', '--debug'])
 
