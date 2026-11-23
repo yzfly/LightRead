@@ -47,6 +47,8 @@ jobs:
           packages: build-tools;35.0.0
       - run: npm ci
       - run: npm run test:pdf-reflow
+      # 读者反馈过的问题 (scripts/test-reader-feedback.mjs), 不过不发版
+      - run: npm run test:reader-feedback
       - name: Verify source, platform version, APK identity, fixed signature and ZIP layout
         env:
           AAPT: ${{ env.ANDROID_SDK_ROOT }}/build-tools/35.0.0/aapt

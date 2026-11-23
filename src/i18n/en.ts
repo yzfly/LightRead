@@ -109,6 +109,7 @@ export default {
   'library.setTags': "Set tags",
   'library.tagModalTitle': 'Set tags for {count} books',
   'library.tagPlaceholder': 'Separate tags with commas, e.g. sci-fi, to-read',
+  'library.existingTags': 'Pick existing tags',
   'library.clearTags': "Clear tags",
   'library.dropHint': "Drop to add books",
   'library.importSuccess': "Added {count} books",

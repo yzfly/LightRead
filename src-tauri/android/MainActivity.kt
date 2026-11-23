@@ -164,6 +164,105 @@ class MainActivity : TauriActivity() {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     Thread { cleanInstalledUpdates() }.start()
+    // 重建 Activity (savedInstanceState 非空) 或从最近任务回来时, 这份 intent 已经处理过
+    val fromHistory = ((intent?.flags ?: 0) and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+    if (savedInstanceState == null && !fromHistory) receiveOpenIntent(intent)
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    receiveOpenIntent(intent)
+  }
+
+  // ---- 用轻阅打开 / 分享到轻阅 ----
+  // 清单里的文件关联由 Tauri 按 tauri.conf.json 的 fileAssociations 生成, 但系统交来的是 content:// 地址,
+  // Rust 侧 (lib.rs 的 RunEvent::Opened) 转不成文件路径就丢了。这里趁授权还在把内容拷进 cache/open-inbox/,
+  // 网页经 LightReadOpen.take() 取路径, 再由 read_open_file 读出并删除 (services/externalOpen.ts)。
+
+  private val openPending = mutableListOf<String>()
+
+  private fun openInbox(): File = File(cacheDir, "open-inbox").apply {
+    mkdirs()
+    // 上次没来得及导入的副本 (应用被杀) 留一天
+    val dayAgo = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+    listFiles()?.forEach { if (it.lastModified() < dayAgo) it.delete() }
+  }
+
+  private fun openUris(intent: Intent): List<Uri> {
+    val uris = mutableListOf<Uri>()
+    when (intent.action) {
+      Intent.ACTION_VIEW -> intent.data?.let { uris.add(it) }
+      Intent.ACTION_SEND -> {
+        @Suppress("DEPRECATION")
+        (intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))?.let { uris.add(it) }
+      }
+      Intent.ACTION_SEND_MULTIPLE -> {
+        @Suppress("DEPRECATION")
+        intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.let { uris.addAll(it) }
+      }
+    }
+    return uris.filter { it.scheme == "content" || it.scheme == "file" }.distinct()
+  }
+
+  private fun displayName(uri: Uri): String {
+    var name: String? = null
+    try {
+      contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+        if (c.moveToFirst()) name = c.getString(0)
+      }
+    } catch (e: Exception) { /* 有的提供方不支持查询 */ }
+    var base = (name ?: uri.lastPathSegment ?: "document").substringAfterLast('/')
+      .replace(Regex("[\\\\:*?\"<>|\\u0000-\\u001f]"), "_").trim().take(120)
+    if (base.isEmpty() || base.startsWith(".")) base = "document$base"
+    // 没有扩展名时按类型补上, 导入流程靠扩展名认格式 (认不出的再看内容是不是纯文本)
+    if (!base.contains('.')) {
+      val type = try { contentResolver.getType(uri) } catch (e: Exception) { null }
+      val ext = type?.let { android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+      if (ext != null) base = "$base.$ext"
+    }
+    return base
+  }
+
+  /** 同名已在收件箱里 (还没导入) 时加序号, 书名取自文件名, 所以不加时间戳前缀 */
+  private fun inboxTarget(dir: File, name: String): File {
+    var target = File(dir, name)
+    var n = 2
+    val stem = name.substringBeforeLast('.', name)
+    val ext = if (name.contains('.')) "." + name.substringAfterLast('.') else ""
+    while (target.exists()) target = File(dir, "$stem ($n)$ext").also { n++ }
+    return target
+  }
+
+  private fun receiveOpenIntent(intent: Intent?) {
+    val uris = intent?.let(::openUris).orEmpty()
+    if (uris.isEmpty()) return
+    Thread {
+      val dir = openInbox()
+      val copied = uris.mapNotNull { uri ->
+        try {
+          val target = inboxTarget(dir, displayName(uri))
+          contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+            ?: return@mapNotNull null
+          target.absolutePath
+        } catch (e: Exception) {
+          null
+        }
+      }
+      if (copied.isEmpty()) return@Thread
+      synchronized(openPending) { openPending.addAll(copied) }
+      // 冷启动时网页可能还没加载: 它启动后会自己来取 (startExternalOpen)
+      runOnUiThread { webView?.evaluateJavascript("window.__lightreadOpenFiles?.()", null) }
+    }.start()
+  }
+
+  private inner class OpenBridge {
+    /** 取走待导入的文件路径 (JSON 数组) */
+    @JavascriptInterface
+    fun take(): String {
+      val paths = synchronized(openPending) { openPending.toList().also { openPending.clear() } }
+      return org.json.JSONArray(paths).toString()
+    }
   }
 
   @Volatile
@@ -228,6 +327,7 @@ class MainActivity : TauriActivity() {
     webView.addJavascriptInterface(LifecycleBridge(), "LightReadLifecycle")
     webView.addJavascriptInterface(ShareBridge(), "LightReadShare")
     webView.addJavascriptInterface(ListenBridge(), "LightReadListen")
+    webView.addJavascriptInterface(OpenBridge(), "LightReadOpen")
 
     ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
       val bars = insets.getInsets(

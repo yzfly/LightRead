@@ -47,6 +47,8 @@ env.ANDROID_USER_HOME = userHome
 
 const project = 'src-tauri/gen/android'
 const run = (cmd, args) => execFileSync(cmd, args, { env, stdio: 'inherit' })
+// 读者反馈过的问题先过一遍, 不过不打包 (发版 workflow 还会再跑)
+run('npm', ['run', '--silent', 'test:reader-feedback'])
 const activity = join(project, 'app/src/main/java/com/yzfly/lightread/MainActivity.kt')
 if (!existsSync(activity)) throw new Error(`找不到 ${activity}: 先运行 npx tauri android init`)
 copyFileSync('src-tauri/android/MainActivity.kt', activity)

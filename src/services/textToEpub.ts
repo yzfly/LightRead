@@ -265,6 +265,19 @@ export function navTree(headings: Heading[], hrefOf: (id: string) => string): st
 }
 
 /** 将文本类文件封装为 EPUB Blob (txt 里的代码类文件按代码视图排版, 见 plainText.ts) */
+/**
+ * 文本类书籍的书名。Markdown 用文件名: 笔记、文档的第一个标题多是「概述」「简介」「Day 1」这类小标题,
+ * 拿来当书名会让一堆 MD 在书架上认不出来 (2026-11-23 读者反馈)。源码 / 配置保留扩展名
+ * (package.json 不该显示成 package); HTML 有 <title> 用 <title>。
+ */
+export function textBookTitle(fileName: string, format: 'txt' | 'md' | 'html', htmlTitle?: string): string {
+  const name = fileName.split(/[\\/]/).pop() || fileName
+  const baseName = name.replace(/\.[^.]+$/, '') || name
+  if (format === 'txt' && textViewForBook(fileName) === 'code') return name
+  if (format === 'html' && htmlTitle?.trim()) return htmlTitle.trim()
+  return baseName
+}
+
 export async function convertToEpub(
   blob: Blob,
   fileName: string,
@@ -274,21 +287,18 @@ export async function convertToEpub(
   const text = await decodeText(blob)
 
   let chapters: Chapter[]
-  let title = baseName
+  let title = textBookTitle(fileName, format)
   let pageCss = ''
   if (format === 'txt' && textViewForBook(fileName) === 'code') {
-    // 源码 / 配置 / 日志: 等宽 + 行号, 标题保留扩展名 (package.json 不该显示成 package)
     chapters = codeChapters(text, fileName)
-    title = fileName.split(/[\\/]/).pop() || baseName
   } else if (format === 'txt') {
     chapters = splitTxtChapters(text, baseName)
   } else if (format === 'md') {
     chapters = splitMdChapters(text, baseName)
-    if (chapters.length && chapters[0].title !== baseName) title = chapters[0].title
   } else {
     // HTML: 整页一章, 保留页面自带样式, 目录取文中标题
     const { body, title: htmlTitle, css, headings } = toWellFormedBody(text, { keepStyles: true, headingIds: true })
-    if (htmlTitle) title = htmlTitle
+    title = textBookTitle(fileName, format, htmlTitle)
     pageCss = css
     chapters = [{ title, html: body || '<p>(空文件)</p>', headings }]
   }

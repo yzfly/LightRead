@@ -122,6 +122,7 @@ export default {
   'library.setTags': '设置标签',
   'library.tagModalTitle': '为 {count} 本书设置标签',
   'library.tagPlaceholder': '如：科幻，待读（逗号分隔）',
+  'library.existingTags': '点选已有标签',
   'library.clearTags': '清空标签',
   'library.dropHint': '松开添加书籍',
   'library.importSuccess': '已添加 {count} 本书',

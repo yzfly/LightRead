@@ -206,6 +206,34 @@ export function detectReadableFormat(fileName: string): BookFormat | null {
 /** 文件选择框: 书籍扩展名 + 常见文本 MIME (其余文本文件可拖入或用系统「打开方式」) */
 export const ACCEPT_READABLE = ACCEPT + ',text/*,application/json,application/xml,application/x-yaml,application/toml,application/javascript,application/x-sh'
 
+/**
+ * App 的文件选择框。Android 的选择器只认 MIME: wry 把 `.azw3` 这类扩展名查系统 MimeTypeMap, 查不到就丢掉,
+ * 文件管理器又把 azw / azw3 报成 application/octet-stream 或 Kindle 的 MIME, 结果这些书在选择器里是灰的,
+ * 读者只能改名成 .epub 才选得上 (2026-11-23 读者反馈)。这里把电子书的 MIME 列全, 再带上 octet-stream;
+ * 多出来能选的其他文件由导入流程按扩展名和内容拒收。iOS 同理 (没有 UTI 的扩展名也选不上)。
+ */
+export const APP_BOOK_MIME_TYPES = [
+  'application/epub+zip',
+  'application/pdf',
+  'application/x-mobipocket-ebook',
+  'application/vnd.amazon.ebook',
+  'application/vnd.amazon.mobi8-ebook',
+  'application/x-mobi8-ebook',
+  'application/x-fictionbook+xml',
+  'application/x-fb2',
+  'application/vnd.comicbook+zip',
+  'application/vnd.comicbook-rar',
+  'application/x-cbz',
+  'application/x-cbr',
+  'image/vnd.djvu',
+  'image/x-djvu',
+  'application/zip',
+  'text/markdown',
+  'text/x-markdown',
+  'application/octet-stream',
+] as const
+export const ACCEPT_APP = ACCEPT_READABLE + ',' + APP_BOOK_MIME_TYPES.join(',')
+
 /** 书卡上的格式角标: 代码 / 配置类 txt 显示真实扩展名 (JSON / PY / Dockerfile …) */
 export function formatLabelOf(book: { format: BookFormat; fileName?: string }): string {
   if (book.format === 'txt' && book.fileName && !/\.txt$/i.test(book.fileName)) {

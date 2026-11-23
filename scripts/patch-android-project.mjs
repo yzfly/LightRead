@@ -11,6 +11,9 @@
 // 后台听书 (MainActivity.kt 末尾的 ListenService) 需要:
 //  4. 前台服务 / 媒体播放类型 / 唤醒锁 / 通知权限, 以及 <service> 声明 (foregroundServiceType="mediaPlayback");
 //     缺了任何一项, 熄屏或切到后台几分钟后系统会冻结应用, 听书中断 (红米 / 小米最明显)。
+// 用轻阅打开 / 分享到轻阅 (MainActivity.kt 的 receiveOpenIntent, 2026-11-23 读者反馈「只能添加后才能打开」):
+//  5. Tauri 按 fileAssociations 生成的过滤器只认各格式的标准 MIME; 文件管理器 / 聊天软件对 azw3 等常报
+//     application/octet-stream 或 Kindle 的其他 MIME, 轻阅就不出现在「打开方式」里。这里补一组。
 // 脚本是幂等的。
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -26,6 +29,40 @@ const LISTEN_PERMISSIONS = [
 ]
 
 const LISTEN_SERVICE = '<service\n            android:name=".ListenService"\n            android:exported="false"\n            android:foregroundServiceType="mediaPlayback" />'
+
+/** 系统对电子书常报的非标准 MIME; 标准的那些由 Tauri 的 fileAssociations 生成 */
+export const EXTRA_OPEN_MIME_TYPES = [
+  'application/octet-stream',
+  'application/vnd.amazon.mobi8-ebook',
+  'application/x-mobi8-ebook',
+  'application/x-mobipocket',
+  'application/x-fb2',
+  'application/x-cbz',
+  'application/x-cbr',
+  'image/vnd.djvu',
+  'image/x-djvu',
+  'text/x-markdown',
+]
+const OPEN_FILTER_MARK = '<!-- lightread-open-with -->'
+
+function patchOpenWith(xml) {
+  if (xml.includes(OPEN_FILTER_MARK)) return xml
+  const activity = xml.match(/<activity\b[^>]*android:name="\.MainActivity"[\s\S]*?<\/activity>/)
+  if (!activity) throw new Error('AndroidManifest.xml 缺少 .MainActivity')
+  const indent = '            '
+  const filter = [
+    OPEN_FILTER_MARK,
+    '<intent-filter>',
+    '    <action android:name="android.intent.action.VIEW" />',
+    '    <action android:name="android.intent.action.SEND" />',
+    '    <action android:name="android.intent.action.SEND_MULTIPLE" />',
+    '    <category android:name="android.intent.category.DEFAULT" />',
+    ...EXTRA_OPEN_MIME_TYPES.map(type => `    <data android:mimeType="${type}" />`),
+    '</intent-filter>',
+  ].map(line => indent + line).join('\n')
+  const at = activity.index + activity[0].lastIndexOf('</activity>')
+  return `${xml.slice(0, at).trimEnd()}\n${filter}\n        ${xml.slice(at)}`
+}
 
 /** 接在最后一条权限声明之后 (没有就放在 <manifest> 开头), 不打乱已有顺序; 已有则不动 */
 function addPermission(xml, name) {
@@ -53,7 +90,7 @@ export function patchManifest(xml) {
   if (!/android:authorities="\$\{applicationId\}\.fileprovider"/.test(xml) || !xml.includes('androidx.core.content.FileProvider')) {
     throw new Error('AndroidManifest.xml 缺少 ${applicationId}.fileprovider 的 FileProvider, 应用内更新无法安装')
   }
-  return patchListenService(patchProcessTextQuery(addPermission(xml, 'android.permission.REQUEST_INSTALL_PACKAGES')))
+  return patchOpenWith(patchListenService(patchProcessTextQuery(addPermission(xml, 'android.permission.REQUEST_INSTALL_PACKAGES'))))
 }
 
 function patchProcessTextQuery(xml) {

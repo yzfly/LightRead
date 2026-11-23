@@ -59,6 +59,7 @@ jobs:
           npm run test:about-links
           npm run test:notes-export
           npm run test:quote-card
+          npm run test:reader-feedback
           npm run check:style-tokens
           node --experimental-strip-types --test scripts/test-mobile-updater.mjs scripts/test-platform-boundary.mjs
       - name: 在构建前准备 Release 草稿
@@ -117,6 +118,7 @@ jobs:
           npm run test:native-drop
           npm run test:folder-pick
           cargo test --locked --manifest-path src-tauri/Cargo.toml library_import
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib inbox
 
       - name: 验证论文 Agent 前端契约
         run: npm run test:paper-agent

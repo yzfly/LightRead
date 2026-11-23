@@ -99,16 +99,21 @@ fn read_open_file(
   state: tauri::State<'_, OpenFilesState>,
   path: String,
 ) -> Result<tauri::ipc::Response, String> {
-  if !state.0.lock().unwrap().allowed.contains(&path) {
+  let file = Path::new(&path);
+  // Android「用轻阅打开」: 系统给的是 content:// 地址 (tao 交来的 Opened 事件里转不成文件路径),
+  // MainActivity.kt 先把内容拷进 cache/open-inbox/, 网页经 LightReadOpen.take() 拿到路径再来读。
+  // 扩展名由导入流程判断 (认不出的纯文本也能收), 这里只认收件箱位置。
+  let android_inbox = is_android_inbox_copy(file);
+  if !android_inbox && !state.0.lock().unwrap().allowed.contains(&path) {
     return Err("未获授权的文件".into());
   }
-  let file = Path::new(&path);
-  if !file.is_file() || !is_supported_path(file) {
+  if !file.is_file() || (!android_inbox && !is_supported_path(file)) {
     return Err("无效或不支持的文件".into());
   }
   let bytes = std::fs::read(file).map_err(|error| format!("读取文件失败: {error}"))?;
-  // iOS「用轻阅打开」交来的是系统拷进 Documents/Inbox 的副本, 读完即删, 否则每打开一次多占一份空间
-  if is_ios_inbox_copy(file) {
+  // iOS「用轻阅打开」交来的是系统拷进 Documents/Inbox 的副本, Android 是自己拷进 open-inbox 的副本:
+  // 读完即删, 否则每打开一次多占一份空间
+  if is_ios_inbox_copy(file) || android_inbox {
     state.0.lock().unwrap().allowed.remove(&path);
     let _ = std::fs::remove_file(file);
   }
@@ -117,6 +122,21 @@ fn read_open_file(
 
 fn is_ios_inbox_copy(path: &Path) -> bool {
   cfg!(target_os = "ios") && is_inbox_path(path)
+}
+
+fn is_android_inbox_copy(path: &Path) -> bool {
+  cfg!(target_os = "android") && is_android_inbox_path(path)
+}
+
+/// 应用缓存目录下 open-inbox/ 的直接子文件 (…/cache/open-inbox/<名字>), 路径里不许有 `..`
+fn is_android_inbox_path(path: &Path) -> bool {
+  use std::path::Component;
+  if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)) {
+    return false;
+  }
+  let mut parents = path.parent().into_iter().flat_map(Path::ancestors);
+  parents.next().and_then(Path::file_name) == Some("open-inbox".as_ref())
+    && parents.next().and_then(Path::file_name) == Some("cache".as_ref())
 }
 
 fn is_inbox_path(path: &Path) -> bool {
@@ -164,6 +184,18 @@ mod tests {
     assert!(!is_inbox_path(Path::new("/var/mobile/Containers/Data/Application/X/Documents/book.epub")));
     assert!(!is_inbox_path(Path::new("/Users/me/Inbox/book.epub")));
     assert!(!is_inbox_path(Path::new("/x/Documents/Inbox/sub/book.epub")));
+  }
+
+  #[test]
+  fn android_open_inbox_only_accepts_direct_children_without_parent_dirs() {
+    use super::is_android_inbox_path;
+    assert!(is_android_inbox_path(Path::new("/data/user/0/com.yzfly.lightread.debug/cache/open-inbox/1-book.azw3")));
+    assert!(is_android_inbox_path(Path::new("/data/user/0/com.yzfly.lightread.debug/cache/open-inbox/笔记")));
+    assert!(!is_android_inbox_path(Path::new("/data/user/0/com.yzfly.lightread.debug/cache/book.epub")));
+    assert!(!is_android_inbox_path(Path::new("/data/user/0/x/cache/open-inbox/sub/book.epub")));
+    assert!(!is_android_inbox_path(Path::new("/data/user/0/x/cache/open-inbox/../../files/library.db")));
+    assert!(!is_android_inbox_path(Path::new("/sdcard/open-inbox/book.epub")));
+    assert!(!is_android_inbox_path(Path::new("cache/open-inbox/book.epub")));
   }
 }
 

@@ -19,7 +19,7 @@ import { importFromUrl } from '../../services/urlImport.ts'
 import { sendBookToDevices } from '../../services/transfer/index.ts'
 import { canConvertToEpub } from '../../services/format.ts'
 import { MQ, useMediaQuery } from '../../composables/useMediaQuery.ts'
-import { ACCEPT_READABLE } from '../../services/plainText.ts'
+import { ACCEPT_APP } from '../../services/plainText.ts'
 import { toast } from '../../services/toast.ts'
 import { formatReadingTime } from '../../composables/useReadingTimer.ts'
 import { readerPath } from '../../services/readerRoute.ts'
@@ -34,6 +34,7 @@ import BooklistShareDialog from '../../components/BooklistShareDialog.vue'
 import BooklistImportDialog from '../../components/BooklistImportDialog.vue'
 import type { BookMeta } from '../../storage/index.ts'
 import { t } from '../../i18n/index.ts'
+import { draftHasTag, parseTagDraft, toggleTagInDraft } from '../../services/tagDraft.ts'
 import { useSettings } from '../../stores/settings.ts'
 
 const router = useRouter()
@@ -448,7 +449,7 @@ async function batchDelete() {
 }
 
 async function batchTag() {
-  const tags = tagDraft.value.split(/[,，、]/).map(t => t.trim()).filter(Boolean)
+  const tags = parseTagDraft(tagDraft.value)
   const storage = await (await import('../../storage/index.ts')).getStorage()
   for (const id of selectedIds.value) {
     const book = library.books.find(b => b.id === id)
@@ -913,7 +914,7 @@ async function batchClearTags() {
       </div>
       <!-- 手机端换行点: 标题+今日+添加 一行, 搜索一行 (排序 / 选择在书格上方的列表标题里) -->
       <span class="row-break" aria-hidden="true" />
-      <input ref="fileInput" type="file" multiple :accept="ACCEPT_READABLE" hidden @change="onPick" />
+      <input ref="fileInput" type="file" multiple :accept="ACCEPT_APP" hidden @change="onPick" />
       <!-- 选文件夹: 不带 multiple, e2e 的 input[type=file][multiple] 仍只指向上面的文件输入框 -->
       <input v-if="folderSupported" ref="folderInput" type="file" webkitdirectory hidden data-folder-input @change="onFolderPick" />
     </header>
@@ -1492,7 +1493,20 @@ async function batchClearTags() {
     <!-- 批量标签弹窗 -->
     <AppModal v-if="showTagModal" :title="t('library.tagModalTitle', { count: selectedIds.size })" @close="showTagModal = false">
       <div class="dialog-content">
-        <input v-model="tagDraft" class="input full" :placeholder="t('library.tagPlaceholder')" :aria-label="t('library.setTags')" autofocus @keyup.enter="batchTag" />
+        <!-- 有已有标签时不自动弹键盘, 免得盖住下面的标签 -->
+        <input v-model="tagDraft" class="input full" :placeholder="t('library.tagPlaceholder')" :aria-label="t('library.setTags')" :autofocus="!allTags.length" @keyup.enter="batchTag" />
+        <div v-if="allTags.length" class="tag-picks" role="group" :aria-label="t('library.existingTags')">
+          <span class="tag-picks-label">{{ t('library.existingTags') }}</span>
+          <button
+            v-for="tag in allTags"
+            :key="tag"
+            type="button"
+            class="tag-chip"
+            :class="{ active: draftHasTag(tagDraft, tag) }"
+            :aria-pressed="draftHasTag(tagDraft, tag)"
+            @click="tagDraft = toggleTagInDraft(tagDraft, tag)"
+          >{{ tag }}</button>
+        </div>
         <div class="form-actions">
           <button class="btn btn-sm" @click="batchClearTags">{{ t('library.clearTags') }}</button>
           <button class="btn btn-sm" @click="showTagModal = false">{{ t('common.cancel') }}</button>
@@ -1840,6 +1854,21 @@ async function batchClearTags() {
   flex-wrap: wrap;
   margin-bottom: 16px;
 }
+.tag-picks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  max-height: 160px;
+  overflow-y: auto;
+}
+.tag-picks-label {
+  width: 100%;
+  color: var(--text-3);
+  font-size: var(--fs-caption);
+}
+
 .tag-chip {
   height: 28px;
   padding: 0 12px;

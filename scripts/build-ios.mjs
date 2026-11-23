@@ -66,6 +66,8 @@ if (Object.keys(exported).length) {
 }
 
 const run = (cmd, argv) => execFileSync(cmd, argv, { env, stdio: 'inherit' })
+// 读者反馈过的问题先过一遍, 不过不打包; TestFlight 上传不经过发版 workflow, 这里就是关卡
+run('npm', ['run', '--silent', 'test:reader-feedback'])
 const project = 'src-tauri/gen/apple'
 if (args.includes('--fresh')) rmSync(project, { recursive: true, force: true })
 if (!existsSync(project)) run('npx', ['tauri', 'ios', 'init'])

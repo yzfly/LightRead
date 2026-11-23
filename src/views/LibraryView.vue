@@ -31,6 +31,7 @@ import BooklistShareDialog from '../components/BooklistShareDialog.vue'
 import BooklistImportDialog from '../components/BooklistImportDialog.vue'
 import type { BookMeta } from '../storage'
 import { t } from '../i18n'
+import { draftHasTag, parseTagDraft, toggleTagInDraft } from '../services/tagDraft'
 import { useSettings } from '../stores/settings'
 
 const router = useRouter()
@@ -494,7 +495,7 @@ async function batchDelete() {
 }
 
 async function batchTag() {
-  const tags = tagDraft.value.split(/[,，、]/).map(t => t.trim()).filter(Boolean)
+  const tags = parseTagDraft(tagDraft.value)
   const storage = await (await import('../storage')).getStorage()
   for (const id of selectedIds.value) {
     const book = library.books.find(b => b.id === id)
@@ -1603,6 +1604,18 @@ async function batchClearTags() {
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tag-modal-title">
         <h3 id="tag-modal-title">{{ t('library.tagModalTitle', { count: selectedIds.size }) }}</h3>
         <input v-model="tagDraft" class="input full" :placeholder="t('library.tagPlaceholder')" :aria-label="t('library.setTags')" v-autofocus @keyup.enter="batchTag" />
+        <div v-if="allTags.length" class="tag-picks" role="group" :aria-label="t('library.existingTags')">
+          <span class="tag-picks-label">{{ t('library.existingTags') }}</span>
+          <button
+            v-for="tag in allTags"
+            :key="tag"
+            type="button"
+            class="tag-chip"
+            :class="{ active: draftHasTag(tagDraft, tag) }"
+            :aria-pressed="draftHasTag(tagDraft, tag)"
+            @click="tagDraft = toggleTagInDraft(tagDraft, tag)"
+          >{{ tag }}</button>
+        </div>
         <div class="form-actions">
           <button class="btn btn-sm" @click="batchClearTags">{{ t('library.clearTags') }}</button>
           <button class="btn btn-sm" @click="showTagModal = false">{{ t('common.cancel') }}</button>
@@ -1967,6 +1980,21 @@ async function batchClearTags() {
   flex-wrap: wrap;
   margin-bottom: 16px;
 }
+.tag-picks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  max-height: 160px;
+  overflow-y: auto;
+}
+.tag-picks-label {
+  width: 100%;
+  color: var(--text-3);
+  font-size: var(--fs-caption);
+}
+
 .tag-chip {
   height: 28px;
   padding: 0 12px;

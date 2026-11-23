@@ -26,7 +26,7 @@
 
 没有 iPhone 真机：在 MacAir（Xcode 26.6 + iOS 模拟器，源码副本 `~/workspace/lightread-ios-build`）用模拟器验收，做法见 [iOS 模拟器验收](docs/testing/ios-simulator.md)，设计与分阶段计划见 `docs/plans/ios-app.md`。
 - 只用 `npm run ios:sim` 出模拟器包、`npm run ios:ipa` 出未签名真机包、`npm run ios:appstore -- --upload` 出 App Store 签名包并传 TestFlight（都是 `scripts/build-ios.mjs`）；`gen/apple` 不入库。
-- **分发走 TestFlight（2026-11-14 用户决定），不发未签名 IPA**：App Store Connect 的 App 是「轻阅 LightRead」（`com.yzfly.lightread`）。签名在 MacAir：Apple Distribution 证书在签名钥匙串，描述文件「LightRead App Store」，跑之前先解锁钥匙串并载入 `~/.config/apple-signing/env`（见 jiangshu-infra `reports/macos-signing.md`）。外部测试组「公开测试」的公开链接写在 `aboutLinks.ts` 的 `IOS_TESTFLIGHT_URL`（关于页、官网下载区、`/download/ios` 都用它）；新构建加进这个组并提交 Beta 审核后才对测试者生效。同一 `CFBundleVersion` 只能传一次；TestFlight 构建 90 天过期，随 App 发版上传。隐私政策 `docs/privacy.md`（官网 `privacy.html`），新增联网功能要同步更新。
+- **分发走 TestFlight（2026-11-14 用户决定），不发未签名 IPA**：App Store Connect 的 App 是「轻阅 LightRead」（`com.yzfly.lightread`）。签名在 MacAir：Apple Distribution 证书在签名钥匙串，描述文件「LightRead App Store」，跑之前先解锁钥匙串并载入 `~/.config/apple-signing/env`（见 jiangshu-infra `reports/macos-signing.md`）。外部测试组「公开测试」的公开链接写在 `aboutLinks.ts` 的 `IOS_TESTFLIGHT_URL`（关于页、官网下载区、`/download/ios` 都用它）；新构建加进这个组并提交 Beta 审核后才对测试者生效。App Store Connect API 密钥只能上传构建、写「测试内容」，加测试组、提交 Beta 审核、过期旧构建都返回 403：这些网页步骤**在 MacAir 的 Ego Lite 里操作**（用户 2026-11-23 要求，ego-browser，未登录时 `handOff()` 交给用户登录）。同一 `CFBundleVersion` 只能传一次；TestFlight 构建 90 天过期，随 App 发版上传。隐私政策 `docs/privacy.md`（官网 `privacy.html`），新增联网功能要同步更新。
 - iOS 构建不提供影子图书馆书源（Z-Library、Anna's Archive，`webBookSources.ts` 的 `shadowLibrary`），免得审核以版权为由拒绝；其他平台不变。
 - iOS 专属内容在 `src-tauri/tauri.ios.conf.json`、`src-tauri/Info.ios.plist`、`src-tauri/plugins/ios-shell/`（Swift 原生壳，对应 Android 的 `MainActivity.kt`；网页经 `services/iosShell.ts` → 主程序 `ios_shell` 命令调用）。
 - 「用轻阅打开」的文档类型写在 `tauri.ios.conf.json` 的 `fileAssociations`（iOS 只认类型标识；写进 `Info.ios.plist` 会被 Tauri 生成的那份盖掉）。系统把文件拷进 `Documents/Inbox`，`read_open_file` 读完删除。
@@ -74,6 +74,7 @@ npm run test:read-aloud      # 听书: 句子游标断句 + 播放管线 (分块
 npm run test:reading-modes   # 阅读模式: 打字机出字节奏 / 断句 / 按行分组 (纯函数)
 npm run test:reading-focus   # 阅读焦点: 舒适区 25%–65% / 焦点线 38% / 长句 / 手动滚动后暂停跟随 (听书跟随与跳转落点, 纯函数)
 npm run test:reader-tap-zone # 轻点分区: 横屏左·中·右 / 竖屏上·中·下 / 自动阅读时无翻页区 / 单手翻页 (App 默认: 整屏下一页, 双击呼出菜单, 右滑上一页) 与双击识别 (纯函数)
+npm run test:reader-feedback # 读者反馈回归 (发版关卡): MD 书名取文件名 / App 选文件认 azw·azw3 / Android「用轻阅打开」/ 批量标签点选已有标签
 npm run test:display-title   # 手机书架短书名 / 短作者: 只去末尾长营销括注, 作者取分号前第一段 (src/services/displayTitle.ts)
 npm run test:about-links      # 关于页全平台下载 (桌面 v / App app-v 各取最新, 镜像只认已校验版本) + 读者群二维码过期 (src/services/aboutLinks.ts)
 npm run check:style-tokens    # 样式档位棘轮: 裸 px 字号 / 圆角 / 阴影 / 非 400·500·600 字重只许减少; 替换一批后 node scripts/check-style-tokens.mjs --update
@@ -201,6 +202,7 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 - 提交信息用 `release: vX.Y.Z`（桌面）或 `release: app-vX.Y.Z`（App），正文写用户可见变化、修复、验证与已知限制，作为 Release 说明。
 - **Release 说明和提交信息不写内部开发细节（2026-11-22 用户要求）**：不提构建机、签名机、设备代号与内部流程（t9、MacAir、jiangshuMac、K30 真机、tmux、内部路径等）；验证写成读者能懂的结果，如「已在 Android / macOS 上验证」。
 - **发版后图标不能出错（2026-11-22 用户要求，代码强制）**：app-v2.11.0 的 APK 和 2.11.0 及以前的 TestFlight 构建都带着 Tauri 默认图标发了出去，原因是 `gen/android`、`gen/apple` 不入库，`tauri android|ios init` 生成的是默认图标。现在 `build-android.mjs` / `build-ios.mjs` 每次打包都把 `src-tauri/icons/android`、`src-tauri/icons/ios` 整套覆盖进去，并逐字节核对；`check-release.mjs --apk`（本机和 `release-mobile.yml` 都跑）用 `verifyApkIcons` 核对 APK 里的启动器图标，不一致或缺失就拒绝发布。不要绕开这两个脚本打包，也不要删这项检查；换图标只改 `src-tauri/icons/`（`npx tauri icon <源图>`；iOS 图标必须是不透明的无圆角正方形，App Store 拒收带透明通道的，由 `node scripts/build-ios-icons.mjs` 从 `source/ios-icon.svg` 生成，`build-ios.mjs` 会拒绝带透明通道的图标）。桌面安装包直接取 `tauri.conf.json` 的 `bundle.icon`，发版后仍要看一眼安装包里的图标。
+- **读者反馈过的问题沉淀为发版关卡（2026-11-23 用户要求）**：每修好一条读者反馈，在 `scripts/test-reader-feedback.mjs`（`npm run test:reader-feedback`）加一组用例，写明反馈日期和现象，并先确认用例在修复前失败。`release.yml`、`release-mobile.yml`、`build-android.mjs`、`build-ios.mjs`（TestFlight 上传不经过 workflow）都会先跑它，不过就不发版；原生部分另有 `cargo test --lib inbox`。用例不删不放宽；行为确实要改时，先问用户。
 - 推送用 yzfly 账号（`gh auth switch -u yzfly`）。获得发版授权后才创建并推送 annotated tag；只整理发版规范的任务不推送、不发布。
 - 仓库变量 `RELEASE_BUILD_MODE=manual`：推 tag 不自动构建，由下面的 `gh workflow run` 显式触发。
 - 任一环节失败都保留草稿，修复后用同一 tag 重跑；workflow 只续建草稿，拒绝覆盖已公开版本，也不移动已有 tag。审核脚本取自本次 workflow 的固定 SHA，旧 tag 不必自带新版脚本。

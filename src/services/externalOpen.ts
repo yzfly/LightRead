@@ -9,6 +9,21 @@ import { toast } from './toast'
 let draining = false
 let rerun = false
 
+declare global {
+  interface Window {
+    /** Android: MainActivity.kt 把「用轻阅打开」的文件拷进 cache/open-inbox/ 后交出路径 (JSON 数组) */
+    LightReadOpen?: { take(): string }
+    __lightreadOpenFiles?: () => void
+  }
+}
+
+/** 系统交来的文件: 桌面 / iOS 由 Rust 排队, Android 由 MainActivity 拷好副本 */
+async function takeOpenFiles(): Promise<string[]> {
+  const paths = await invoke<string[]>('take_open_files')
+  const android = window.LightReadOpen?.take()
+  return android ? [...paths, ...(JSON.parse(android) as string[])] : paths
+}
+
 /** 导入并打开由操作系统交给 LightRead 的电子书文件。 */
 async function drainOpenFiles(router: Router) {
   if (draining) {
@@ -19,7 +34,7 @@ async function drainOpenFiles(router: Router) {
   try {
     do {
       rerun = false
-      const paths = await invoke<string[]>('take_open_files')
+      const paths = await takeOpenFiles()
       let lastBookId: string | undefined
       let lastFormat: ReturnType<typeof detectFormat> = null
       for (const path of paths) {
@@ -60,6 +75,10 @@ async function drainOpenFiles(router: Router) {
 /** 同时覆盖冷启动和应用已运行时的系统文件打开事件。 */
 export async function startExternalOpen(router: Router): Promise<UnlistenFn> {
   const unlisten = await listen('open-files', () => drainOpenFiles(router))
+  window.__lightreadOpenFiles = () => { void drainOpenFiles(router) }
   await drainOpenFiles(router)
-  return unlisten
+  return () => {
+    unlisten()
+    delete window.__lightreadOpenFiles
+  }
 }
