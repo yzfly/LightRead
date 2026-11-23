@@ -94,7 +94,8 @@ export function verifyApkIcons(data, iconsDir = 'src-tauri/icons/android') {
   const entries = new Map(zipEntries(data).entries.map(entry => [entry.name, entry]))
   const checked = []
   for (const [name, source] of androidIconFiles(iconsDir)) {
-    const entry = entries.get(name)
+    // aapt2 给密度目录补上最低 API 限定符: res/mipmap-hdpi/x.png 在 APK 里是 res/mipmap-hdpi-v4/x.png
+    const entry = entries.get(name) ?? entries.get(name.replace(/^res\/([^/]+)\//, 'res/$1-v4/'))
     assert.ok(entry, `APK is missing launcher icon ${name}; build with npm run android:build (it copies src-tauri/icons/android)`)
     if (!name.endsWith('.png')) { checked.push(name); continue }
     assert.ok(entry.method === 0 || entry.method === 8, `${name} uses unsupported ZIP compression ${entry.method}`)

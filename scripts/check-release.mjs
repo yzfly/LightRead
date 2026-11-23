@@ -115,6 +115,7 @@ function iconSelfTest() {
     writeFileSync(join(dir, 'mipmap-anydpi-v26/ic_launcher.xml'), adaptive)
     const good = [['res/mipmap-mdpi/ic_launcher.png', icon], ['res/mipmap-anydpi-v26/ic_launcher.xml', Buffer.from('binary xml')]]
     assert.equal(verifyApkIcons(storedZip(good), dir).length, 2)
+    assert.equal(verifyApkIcons(storedZip([['res/mipmap-mdpi-v4/ic_launcher.png', icon], good[1]]), dir).length, 2)
     assert.throws(() => verifyApkIcons(storedZip([['res/mipmap-mdpi/ic_launcher.png', Buffer.from('\x89PNG tauri')], good[1]]), dir), /differs/)
     assert.throws(() => verifyApkIcons(storedZip([good[0]]), dir), /missing/)
   } finally {
