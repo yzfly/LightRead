@@ -13,12 +13,13 @@
 //    没设 LIBCLANG_PATH 时用 NDK 自带的那份;
 //  - 离线语音 (sherpa-onnx, src-tauri/src/local_tts.rs) 动态链接上游预编译库: 由 fetch-sherpa-android.mjs 取到本机缓存,
 //    经 SHERPA_ONNX_LIB_DIR 交给 Rust 链接, 并放进 jniLibs 随 APK 分发;
-//  - 打完立即跑 verifyApkLayout / verifyNativeLibraries, 不合格直接失败。
+//  - 启动器图标: 打包前把 src-tauri/icons/android 整套覆盖进 res (init 生成的是 Tauri 默认图标);
+//  - 打完立即跑 verifyApkLayout / verifyNativeLibraries / verifyApkIcons, 不合格直接失败。
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { verifyApkLayout, verifyNativeLibraries } from './apk-layout.mjs'
+import { dirname, join } from 'node:path'
+import { androidIconFiles, verifyApkIcons, verifyApkLayout, verifyNativeLibraries } from './apk-layout.mjs'
 import { SHERPA_ANDROID, ensureSherpaAndroid } from './fetch-sherpa-android.mjs'
 
 const env = { ...process.env, CARGO_PROFILE_DEV_DEBUG: '0' }
@@ -49,6 +50,12 @@ const run = (cmd, args) => execFileSync(cmd, args, { env, stdio: 'inherit' })
 const activity = join(project, 'app/src/main/java/com/yzfly/lightread/MainActivity.kt')
 if (!existsSync(activity)) throw new Error(`找不到 ${activity}: 先运行 npx tauri android init`)
 copyFileSync('src-tauri/android/MainActivity.kt', activity)
+// 启动器图标: init 生成的是 Tauri 默认图标 (app-v2.11.0 带着它发了出去), 每次打包用入库的整套覆盖
+for (const [name, source] of androidIconFiles()) {
+  const target = join(project, 'app/src/main', name)
+  mkdirSync(dirname(target), { recursive: true })
+  copyFileSync(source, target)
+}
 run('node', ['scripts/patch-android-project.mjs', project])
 // 离线语音的两个动态库: 链接时要找得到, 运行时要在 APK 里
 const sherpaDir = await ensureSherpaAndroid()
@@ -67,7 +74,8 @@ const apk = join(project, 'app/build/outputs/apk/universal/debug/app-universal-d
 const bytes = readFileSync(apk)
 verifyApkLayout(bytes)
 const libraries = verifyNativeLibraries(bytes)
+const icons = verifyApkIcons(bytes)
 for (const lib of Object.keys(SHERPA_ANDROID.libs)) {
   if (!libraries.some(l => l.name === `lib/arm64-v8a/${lib}`)) throw new Error(`APK 里缺少 ${lib} (离线语音启动即崩溃)`)
 }
-console.log(`\n${apk}\n${(statSync(apk).size / 1048576).toFixed(1)} MB; ${libraries.map(lib => `${lib.name} ${(lib.bytes / 1048576).toFixed(1)} MB`).join(', ')}; no debug sections`)
+console.log(`\n${apk}\n${(statSync(apk).size / 1048576).toFixed(1)} MB; ${libraries.map(lib => `${lib.name} ${(lib.bytes / 1048576).toFixed(1)} MB`).join(', ')}; no debug sections; ${icons.length} launcher icons match src-tauri/icons/android`)

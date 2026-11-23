@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 
 function zipEntries(data) {
@@ -72,4 +74,34 @@ export function verifyNativeLibraries(data) {
   }
   assert.ok(libraries.length > 0, 'APK contains no native libraries')
   return libraries
+}
+
+/** 入库图标 (src-tauri/icons/android) 下的全部文件, 键是 APK 里的路径 res/<目录>/<文件> */
+export function androidIconFiles(iconsDir = 'src-tauri/icons/android') {
+  const files = new Map()
+  for (const dir of readdirSync(iconsDir)) {
+    for (const file of readdirSync(join(iconsDir, dir))) files.set(`res/${dir}/${file}`, join(iconsDir, dir, file))
+  }
+  assert.ok(files.size > 0, `${iconsDir} has no icons`)
+  return files
+}
+
+/**
+ * gen/android 不入库, `tauri android init` 生成的工程带的是 Tauri 默认图标 (app-v2.11.0 就这样发了出去)。
+ * 启动器图标必须与入库图标逐字节一致: PNG 原样打包 (debug 构建不压 PNG), 自适应图标 XML 被编译成二进制, 只查存在。
+ */
+export function verifyApkIcons(data, iconsDir = 'src-tauri/icons/android') {
+  const entries = new Map(zipEntries(data).entries.map(entry => [entry.name, entry]))
+  const checked = []
+  for (const [name, source] of androidIconFiles(iconsDir)) {
+    const entry = entries.get(name)
+    assert.ok(entry, `APK is missing launcher icon ${name}; build with npm run android:build (it copies src-tauri/icons/android)`)
+    if (!name.endsWith('.png')) { checked.push(name); continue }
+    assert.ok(entry.method === 0 || entry.method === 8, `${name} uses unsupported ZIP compression ${entry.method}`)
+    const raw = data.subarray(entry.start, entry.end)
+    const bytes = entry.method === 8 ? inflateRawSync(raw) : raw
+    assert.ok(bytes.equals(readFileSync(source)), `APK launcher icon ${name} differs from ${source} (default Tauri icon?)`)
+    checked.push(name)
+  }
+  return checked
 }

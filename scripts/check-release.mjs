@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { verifyApkLayout, verifyNativeLibraries } from './apk-layout.mjs'
+import { verifyApkIcons, verifyApkLayout, verifyNativeLibraries } from './apk-layout.mjs'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { parseArgs } from 'node:util'
 
 // Existing experimental Android installs must remain upgrade-compatible.
@@ -89,6 +90,38 @@ function verifyApkMetadata(badging, certificates, expected) {
   return { packageName, versionName, versionCode: Number(rawCode), minSdk, targetSdk, abis, certificateSha256: fingerprints[0] }
 }
 
+/** 只含 stored 条目的最小 ZIP, 给图标自检用 */
+function storedZip(files) {
+  const locals = [], centrals = []
+  let offset = 0
+  for (const [name, data] of files) {
+    const nameBytes = Buffer.from(name)
+    const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(nameBytes.length, 26)
+    const central = Buffer.alloc(46); central.writeUInt32LE(0x02014b50, 0); central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(nameBytes.length, 28); central.writeUInt32LE(offset, 42)
+    locals.push(local, nameBytes, data); centrals.push(central, nameBytes)
+    offset += 30 + nameBytes.length + data.length
+  }
+  const directory = Buffer.concat(centrals)
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10); end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...locals, directory, end])
+}
+
+function iconSelfTest() {
+  const dir = mkdtempSync(join(tmpdir(), 'lightread-icons-'))
+  try {
+    mkdirSync(join(dir, 'mipmap-mdpi')); mkdirSync(join(dir, 'mipmap-anydpi-v26'))
+    const icon = Buffer.from('\x89PNG lightread'), adaptive = Buffer.from('<adaptive-icon/>')
+    writeFileSync(join(dir, 'mipmap-mdpi/ic_launcher.png'), icon)
+    writeFileSync(join(dir, 'mipmap-anydpi-v26/ic_launcher.xml'), adaptive)
+    const good = [['res/mipmap-mdpi/ic_launcher.png', icon], ['res/mipmap-anydpi-v26/ic_launcher.xml', Buffer.from('binary xml')]]
+    assert.equal(verifyApkIcons(storedZip(good), dir).length, 2)
+    assert.throws(() => verifyApkIcons(storedZip([['res/mipmap-mdpi/ic_launcher.png', Buffer.from('\x89PNG tauri')], good[1]]), dir), /differs/)
+    assert.throws(() => verifyApkIcons(storedZip([good[0]]), dir), /missing/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 function selfTest() {
   assert.equal(validateVersions({ 'package.json': '1.3.0', cargo: '1.3.0' }, 'v1.3.0'), '1.3.0')
   assert.throws(() => validateVersions({ 'package.json': '1.3.0', cargo: '1.2.0' }, 'v1.3.0'))
@@ -107,7 +140,8 @@ function selfTest() {
   }
   assert.throws(() => verifyApkMetadata(badging, certificates, { ...expected, cert: 'cd'.repeat(32) }))
   assert.throws(() => verifyApkMetadata(badging, '', expected))
-  console.log('Release checks: 12 assertions passed (versions, tag, Android identity, APIs, ABI, certificate).')
+  iconSelfTest()
+  console.log('Release checks: 13 assertions passed (versions, tag, Android identity, APIs, ABI, certificate, launcher icons).')
 }
 
 try {
@@ -125,9 +159,10 @@ try {
       const bytes = readFileSync(values.apk)
       const layout = verifyApkLayout(bytes)
       const nativeLibraries = verifyNativeLibraries(bytes)
+      const launcherIcons = verifyApkIcons(bytes)
       const sha256 = createHash('sha256').update(bytes).digest('hex')
       writeFileSync(`${values.apk}.sha256`, `${sha256}  ${basename(values.apk)}\n`)
-      writeFileSync(`${values.apk}.json`, `${JSON.stringify({ file: basename(values.apk), ...metadata, layout, nativeLibraries, sha256 }, null, 2)}\n`)
+      writeFileSync(`${values.apk}.json`, `${JSON.stringify({ file: basename(values.apk), ...metadata, layout, nativeLibraries, launcherIcons, sha256 }, null, 2)}\n`)
       console.log(JSON.stringify({ ...metadata, sha256 }, null, 2))
     }
   }

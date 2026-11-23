@@ -4,6 +4,7 @@
 //   npm run ios:ipa   未签名真机包  node scripts/build-ios.mjs --ipa [--fresh]
 //   npm run ios:appstore  TestFlight / App Store 包  node scripts/build-ios.mjs --app-store [--upload] [--fresh]
 //  - gen/apple 不入库: 不存在或带 --fresh 时重新 `tauri ios init` (最低系统版本等取自 tauri.ios.conf.json);
+//  - 应用图标: 每次把 src-tauri/icons/ios 覆盖进 gen/apple 的 AppIcon 并逐字节核对 (init 生成的是 Tauri 默认图标);
 //  - Info.plist 的 iOS 专属条目在 src-tauri/Info.ios.plist, 原生壳在 src-tauri/plugins/ios-shell, 都由 Tauri 自动并入;
 //  - --driver 把模拟器验收的遥控通道打进包 (docs/testing/ios-simulator.md), 只用于验收, 不能用于发布;
 //  - 模拟器包与未签名 IPA 不需要签名。未签名 IPA 装不进没越狱的手机, 要由使用者自己重签
@@ -12,7 +13,7 @@
 //    调用前先解锁, 见 jiangshu-infra reports/macos-signing.md); --upload 再用 APPLE_API_* 的 App Store Connect
 //    密钥传到 TestFlight。同一个版本号只能上传一次。
 import { execFileSync } from 'node:child_process'
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -67,6 +68,18 @@ const run = (cmd, argv) => execFileSync(cmd, argv, { env, stdio: 'inherit' })
 const project = 'src-tauri/gen/apple'
 if (args.includes('--fresh')) rmSync(project, { recursive: true, force: true })
 if (!existsSync(project)) run('npx', ['tauri', 'ios', 'init'])
+// 应用图标: init 生成的是 Tauri 默认图标 (2.11.0 及以前的 TestFlight 构建都带着它), 每次打包用入库的整套覆盖再逐字节核对
+const iconSource = 'src-tauri/icons/ios'
+const iconSet = join(project, 'Assets.xcassets/AppIcon.appiconset')
+const icons = readdirSync(iconSource).filter(file => file.endsWith('.png'))
+if (!icons.length || !existsSync(iconSet)) throw new Error(`缺少 ${iconSource} 或 ${iconSet}`)
+for (const file of icons) cpSync(join(iconSource, file), join(iconSet, file))
+for (const file of readdirSync(iconSet).filter(file => file.endsWith('.png'))) {
+  if (!existsSync(join(iconSource, file)) || !readFileSync(join(iconSet, file)).equals(readFileSync(join(iconSource, file)))) {
+    throw new Error(`应用图标 ${file} 与 ${iconSource} 不一致 (Tauri 默认图标?)`)
+  }
+}
+console.log(`${icons.length} 个应用图标与 ${iconSource} 一致`)
 if (appStore) {
   // Tauri 的导出一步按自动签名生成 ExportOptions, 与手动签名对不上; 只借它构建与归档, 导出自己做。
   const archive = join(project, 'build/lightread_iOS.xcarchive')
