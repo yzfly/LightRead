@@ -4,7 +4,7 @@
 //   npm run ios:ipa   未签名真机包  node scripts/build-ios.mjs --ipa [--fresh]
 //   npm run ios:appstore  TestFlight / App Store 包  node scripts/build-ios.mjs --app-store [--upload] [--fresh]
 //  - gen/apple 不入库: 不存在或带 --fresh 时重新 `tauri ios init` (最低系统版本等取自 tauri.ios.conf.json);
-//  - 应用图标: 每次把 src-tauri/icons/ios 覆盖进 gen/apple 的 AppIcon 并逐字节核对 (init 生成的是 Tauri 默认图标);
+//  - 应用图标: 每次把 src-tauri/icons/ios 覆盖进 gen/apple 的 AppIcon 并逐字节核对, 带透明通道的拒绝打包 (init 生成的是 Tauri 默认图标);
 //  - Info.plist 的 iOS 专属条目在 src-tauri/Info.ios.plist, 原生壳在 src-tauri/plugins/ios-shell, 都由 Tauri 自动并入;
 //  - --driver 把模拟器验收的遥控通道打进包 (docs/testing/ios-simulator.md), 只用于验收, 不能用于发布;
 //  - 模拟器包与未签名 IPA 不需要签名。未签名 IPA 装不进没越狱的手机, 要由使用者自己重签
@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pngHasAlpha } from './build-ios-icons.mjs'
 
 if (process.platform !== 'darwin') throw new Error('iOS 构建只能在 macOS 上进行')
 const args = process.argv.slice(2)
@@ -73,7 +74,11 @@ const iconSource = 'src-tauri/icons/ios'
 const iconSet = join(project, 'Assets.xcassets/AppIcon.appiconset')
 const icons = readdirSync(iconSource).filter(file => file.endsWith('.png'))
 if (!icons.length || !existsSync(iconSet)) throw new Error(`缺少 ${iconSource} 或 ${iconSet}`)
-for (const file of icons) cpSync(join(iconSource, file), join(iconSet, file))
+for (const file of icons) {
+  // App Store 拒收带透明通道的图标 (2.11.1 首次上传被拒); 重新生成用 scripts/build-ios-icons.mjs
+  if (pngHasAlpha(readFileSync(join(iconSource, file)))) throw new Error(`${iconSource}/${file} 带透明通道, iOS 图标必须不透明: node scripts/build-ios-icons.mjs`)
+  cpSync(join(iconSource, file), join(iconSet, file))
+}
 for (const file of readdirSync(iconSet).filter(file => file.endsWith('.png'))) {
   if (!existsSync(join(iconSource, file)) || !readFileSync(join(iconSet, file)).equals(readFileSync(join(iconSource, file)))) {
     throw new Error(`应用图标 ${file} 与 ${iconSource} 不一致 (Tauri 默认图标?)`)
