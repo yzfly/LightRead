@@ -186,6 +186,8 @@ mod tests {
     assert!(!is_inbox_path(Path::new("/x/Documents/Inbox/sub/book.epub")));
   }
 
+  // 样例是 Android 路径; Windows 不把没有盘符的「/data/…」当绝对路径
+  #[cfg(unix)]
   #[test]
   fn android_open_inbox_only_accepts_direct_children_without_parent_dirs() {
     use super::is_android_inbox_path;
