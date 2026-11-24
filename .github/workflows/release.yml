@@ -246,10 +246,17 @@ jobs:
             echo "✓ $dmg"
           done
 
+  # 格式兼容语料 (各种格式的公有领域书逐本导入、打开、看正文与图片), 不过不发版
+  format-corpus:
+    needs: preflight
+    uses: ./.github/workflows/format-corpus.yml
+    with:
+      ref: ${{ inputs.tag || github.ref }}
+
   publish:
-    needs: [desktop, desktop-linux, rust-floor, macos-signed]
-    # 全部桌面平台、macOS 签名校验与 Rust 最低版本检查成功后才公开草稿。
-    if: ${{ !cancelled() && needs.desktop.result == 'success' && needs.desktop-linux.result == 'success' && needs.rust-floor.result == 'success' && needs.macos-signed.result == 'success' }}
+    needs: [desktop, desktop-linux, rust-floor, macos-signed, format-corpus]
+    # 全部桌面平台、macOS 签名校验、Rust 最低版本检查与格式兼容语料都成功后才公开草稿。
+    if: ${{ !cancelled() && needs.desktop.result == 'success' && needs.desktop-linux.result == 'success' && needs.rust-floor.result == 'success' && needs.macos-signed.result == 'success' && needs.format-corpus.result == 'success' }}
     runs-on: ubuntu-22.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -357,6 +357,10 @@ class View {
         return new Promise(resolve => {
             this.#iframe.addEventListener('load', () => {
                 const doc = this.document
+                // LightRead: foliate (EPUB) 与 KF8 只把 src 换成书内资源, srcset 仍是原书的相对路径,
+                // 浏览器优先用 srcset 就成了坏图 (Standard Ebooks 等精排书的书名页、徽标)。
+                // 去掉 srcset, 浏览器改用已换好的 src
+                for (const el of doc.querySelectorAll('img[srcset], source[srcset]')) el.removeAttribute('srcset')
                 afterLoad?.(doc)
 
                 // it needs to be visible for Firefox to get computed style

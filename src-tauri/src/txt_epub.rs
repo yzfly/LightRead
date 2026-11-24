@@ -45,7 +45,25 @@ pub fn decode_text(bytes: &[u8]) -> String {
   }
   match std::str::from_utf8(bytes) {
     Ok(s) => s.strip_prefix('\u{FEFF}').unwrap_or(s).to_string(),
-    Err(_) => encoding_rs::GB18030.decode_without_bom_handling(bytes).0.into_owned(),
+    Err(_) => legacy_chinese_encoding(bytes).decode_without_bom_handling(bytes).0.into_owned(),
+  }
+}
+
+/// textToEpub.ts COMMON_HAN: 简繁写法相同的高频汉字
+const COMMON_HAN: &str = "的一是不了人在有我他中大上也之而以其子曰天下可于所此心又得出去自己日月山水小生如知道行年同手今已者十三五百千里外好老看王主乎";
+const LEGACY_SAMPLE_BYTES: usize = 64 * 1024;
+
+/// textToEpub.ts legacyChineseEncoding: 不是 UTF-8 时在 GB18030 (大陆 GBK) 与 Big5 (港台) 里挑更像中文的
+fn legacy_chinese_encoding(bytes: &[u8]) -> &'static encoding_rs::Encoding {
+  let sample = &bytes[..bytes.len().min(LEGACY_SAMPLE_BYTES)];
+  let score = |encoding: &'static encoding_rs::Encoding| {
+    let (text, _) = encoding.decode_without_bom_handling(sample);
+    text.chars().filter(|c| COMMON_HAN.contains(*c)).count()
+  };
+  if score(encoding_rs::BIG5) > score(encoding_rs::GB18030) {
+    encoding_rs::BIG5
+  } else {
+    encoding_rs::GB18030
   }
 }
 
@@ -496,6 +514,12 @@ mod tests {
     assert_eq!(decode_text("\u{FEFF}中文".as_bytes()), "中文");
     let (gbk, _, _) = encoding_rs::GB18030.encode("中文 GBK");
     assert_eq!(decode_text(&gbk), "中文 GBK");
+    // 港台 Big5 的 TXT 不能当 GBK 解成乱码 (同一段文字两种编码都要认对)
+    let passage = "第一回　靈根育孕源流出，心性修持大道生。詩曰：混沌未分天地亂，茫茫渺渺無人見。";
+    let (big5, _, _) = encoding_rs::BIG5.encode(passage);
+    assert_eq!(decode_text(&big5), passage);
+    let (gb, _, _) = encoding_rs::GB18030.encode(passage);
+    assert_eq!(decode_text(&gb), passage);
     let mut le = vec![0xFF, 0xFE];
     le.extend("ab".encode_utf16().flat_map(u16::to_le_bytes));
     assert_eq!(decode_text(&le), "ab");

@@ -49,6 +49,8 @@ const project = 'src-tauri/gen/android'
 const run = (cmd, args) => execFileSync(cmd, args, { env, stdio: 'inherit' })
 // 读者反馈过的问题先过一遍, 不过不打包 (发版 workflow 还会再跑)
 run('npm', ['run', '--silent', 'test:reader-feedback'])
+// 格式兼容语料 (各种格式的书逐本导入、打开), 不过不打包; 第一次会下载约 30MB 测试书到 ~/.cache/lightread-format-corpus
+run('npm', ['run', '--silent', 'test:format-corpus'])
 const activity = join(project, 'app/src/main/java/com/yzfly/lightread/MainActivity.kt')
 if (!existsSync(activity)) throw new Error(`找不到 ${activity}: 先运行 npx tauri android init`)
 copyFileSync('src-tauri/android/MainActivity.kt', activity)

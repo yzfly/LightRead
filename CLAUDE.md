@@ -75,6 +75,7 @@ npm run test:reading-modes   # 阅读模式: 打字机出字节奏 / 断句 / �
 npm run test:reading-focus   # 阅读焦点: 舒适区 25%–65% / 焦点线 38% / 长句 / 手动滚动后暂停跟随 (听书跟随与跳转落点, 纯函数)
 npm run test:reader-tap-zone # 轻点分区: 横屏左·中·右 / 竖屏上·中·下 / 自动阅读时无翻页区 / 单手翻页 (App 默认: 整屏下一页, 双击呼出菜单, 右滑上一页) 与双击识别 (纯函数)
 npm run test:reader-feedback # 读者反馈回归 (发版关卡): MD 书名取文件名 / App 选文件认 azw·azw3 / Android「用轻阅打开」/ 批量标签点选已有标签
+npm run corpus:fetch && npm run test:format-corpus   # 格式兼容语料 (发版关卡): 公有领域测试书逐本导入、打开、看正文 / 图片 / 目录; 自己重新构建 dist/ 并起预览, 报告在 ~/.cache/lightread-format-corpus/report
 npm run test:display-title   # 手机书架短书名 / 短作者: 只去末尾长营销括注, 作者取分号前第一段 (src/services/displayTitle.ts)
 npm run test:about-links      # 关于页全平台下载 (桌面 v / App app-v 各取最新, 镜像只认已校验版本) + 读者群二维码过期 (src/services/aboutLinks.ts)
 npm run check:style-tokens    # 样式档位棘轮: 裸 px 字号 / 圆角 / 阴影 / 非 400·500·600 字重只许减少; 替换一批后 node scripts/check-style-tokens.mjs --update
@@ -203,6 +204,7 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 - **Release 说明和提交信息不写内部开发细节（2026-11-22 用户要求）**：不提构建机、签名机、设备代号与内部流程（t9、MacAir、jiangshuMac、K30 真机、tmux、内部路径等）；验证写成读者能懂的结果，如「已在 Android / macOS 上验证」。
 - **发版后图标不能出错（2026-11-22 用户要求，代码强制）**：app-v2.11.0 的 APK 和 2.11.0 及以前的 TestFlight 构建都带着 Tauri 默认图标发了出去，原因是 `gen/android`、`gen/apple` 不入库，`tauri android|ios init` 生成的是默认图标。现在 `build-android.mjs` / `build-ios.mjs` 每次打包都把 `src-tauri/icons/android`、`src-tauri/icons/ios` 整套覆盖进去，并逐字节核对；`check-release.mjs --apk`（本机和 `release-mobile.yml` 都跑）用 `verifyApkIcons` 核对 APK 里的启动器图标，不一致或缺失就拒绝发布。不要绕开这两个脚本打包，也不要删这项检查；换图标只改 `src-tauri/icons/`（`npx tauri icon <源图>`；iOS 图标必须是不透明的无圆角正方形，App Store 拒收带透明通道的，由 `node scripts/build-ios-icons.mjs` 从 `source/ios-icon.svg` 生成，`build-ios.mjs` 会拒绝带透明通道的图标）。桌面安装包直接取 `tauri.conf.json` 的 `bundle.icon`，发版后仍要看一眼安装包里的图标。
 - **读者反馈过的问题沉淀为发版关卡（2026-11-23 用户要求）**：每修好一条读者反馈，在 `scripts/test-reader-feedback.mjs`（`npm run test:reader-feedback`）加一组用例，写明反馈日期和现象，并先确认用例在修复前失败。`release.yml`、`release-mobile.yml`、`build-android.mjs`、`build-ios.mjs`（TestFlight 上传不经过 workflow）都会先跑它，不过就不发版；原生部分另有 `cargo test --lib inbox`。用例不删不放宽；行为确实要改时，先问用户。
+- **格式兼容语料是发版关卡（2026-11-23 用户要求）**：`scripts/format-corpus/manifest.json` 列各种格式的测试书（EPUB 2/3、kepub、MOBI/KF8/AZW/AZW3、TXT 的 UTF-8/GBK/Big5/UTF-16、HTML、MD、FB2/FBZ、CBZ/CBR、DjVu、各类 PDF），**只收公有领域 / 开放许可的书**（Gutenberg 镜像 gutenberg.pglaf.org、Standard Ebooks、Internet Archive、arXiv、pdf.js 测试集），不从 Z-Library 等影子图书馆取。书不进 git：`npm run corpus:fetch` 按 SHA-256 下载到 `~/.cache/lightread-format-corpus`（t9 已备好）；`npm run test:format-corpus` 在全新浏览器里逐本导入 → 看书卡书名 / 作者 / 封面 → 打开 → 正文、图片、目录、跳章，PDF / DjVu 看页数与首页是否画出内容，报告与失败截图在缓存目录 `report/`。`format-corpus.yml` 被 `release.yml`、`release-mobile.yml` 调用，`build-android.mjs`、`build-ios.mjs` 也先跑它。加书：在 manifest 写 url 与 expect，`node scripts/format-corpus/fetch.mjs --pin` 固定摘要；读者反馈打不开的文件，能找到同类公有领域样本或能派生（`derive`）出同样问题的，就加一本。已知问题写 `known`（修好后测试会提示删掉）；不为让关卡变绿而放宽 expect。
 - 推送用 yzfly 账号（`gh auth switch -u yzfly`）。获得发版授权后才创建并推送 annotated tag；只整理发版规范的任务不推送、不发布。
 - 仓库变量 `RELEASE_BUILD_MODE=manual`：推 tag 不自动构建，由下面的 `gh workflow run` 显式触发。
 - 任一环节失败都保留草稿，修复后用同一 tag 重跑；workflow 只续建草稿，拒绝覆盖已公开版本，也不移动已有 tag。审核脚本取自本次 workflow 的固定 SHA，旧 tag 不必自带新版脚本。

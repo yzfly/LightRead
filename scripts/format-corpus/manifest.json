@@ -1,0 +1,641 @@
+{
+  "about": "格式兼容语料 (发版关卡)。只收公有领域 / 开放许可的书, 书不进 git, 由 fetch.mjs 下载到缓存并按 SHA-256 核对。expect 写读者看得到的结果; 已知问题写 known (说明 + 跟踪处), 修好后必须删掉。",
+  "books": [
+    {
+      "id": "gutenberg-alice-epub3",
+      "file": "epub/Alice-epub3.epub",
+      "url": "https://gutenberg.pglaf.org/cache/epub/11/pg11-images-3.epub",
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "EPUB 3, 带插图",
+      "expect": {
+        "title": "Alice's Adventures in Wonderland",
+        "author": "Lewis Carroll",
+        "cover": true,
+        "toc": 12,
+        "chapter": "Down the Rabbit-Hole",
+        "text": "So she was considering in her own mind",
+        "images": true
+      },
+      "sha256": "8920c32185106b53e7a87c101b7908193ce1ad00048ee77e0aa60f2fa2dbf4ae",
+      "size": 189251
+    },
+    {
+      "id": "gutenberg-alice-epub2",
+      "file": "epub/Alice-epub2.epub",
+      "url": "https://gutenberg.pglaf.org/cache/epub/11/pg11-images.epub",
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "EPUB 2 (NCX 目录), 带插图",
+      "expect": {
+        "title": "Alice's Adventures in Wonderland",
+        "author": "Lewis Carroll",
+        "cover": true,
+        "toc": 12,
+        "chapter": "Down the Rabbit-Hole",
+        "text": "So she was considering in her own mind",
+        "images": true
+      },
+      "sha256": "d74d6896e5bd7507778ff22fa5503f6135cb431ef9413ce87eb1fe73060e59e2",
+      "size": 187953
+    },
+    {
+      "id": "standardebooks-pride-epub",
+      "file": "epub/Pride-StandardEbooks.epub",
+      "url": "https://standardebooks.org/ebooks/jane-austen/pride-and-prejudice/downloads/jane-austen_pride-and-prejudice.epub?source=download",
+      "source": "Standard Ebooks",
+      "license": "CC0 1.0",
+      "covers": "EPUB 3, SVG 书名页与徽标, 精排 CSS",
+      "expect": {
+        "title": "Pride and Prejudice",
+        "author": "Jane Austen",
+        "cover": true,
+        "toc": 60,
+        "chapter": "I",
+        "text": "It is a truth universally acknowledged",
+        "images": true
+      },
+      "sha256": "bc41e616c102d33c4c37b91baaa0c87af9c73838f32d4c75c600939b1c7ea587",
+      "size": 831931
+    },
+    {
+      "id": "standardebooks-pride-kepub",
+      "file": "epub/Pride-StandardEbooks.kepub.epub",
+      "url": "https://standardebooks.org/ebooks/jane-austen/pride-and-prejudice/downloads/jane-austen_pride-and-prejudice.kepub.epub?source=download",
+      "source": "Standard Ebooks",
+      "license": "CC0 1.0",
+      "covers": "Kobo kepub (正文被 koboSpan 切碎)",
+      "expect": {
+        "title": "Pride and Prejudice",
+        "author": "Jane Austen",
+        "cover": true,
+        "toc": 60,
+        "chapter": "I",
+        "text": "It is a truth universally acknowledged",
+        "images": true
+      },
+      "sha256": "c41803d6cf8d17fff5a2f8cfda2839569ad0785fe8204bc066a7bc9573622af0",
+      "size": 802471
+    },
+    {
+      "id": "gutenberg-hongloumeng-epub3",
+      "file": "epub/紅樓夢.epub",
+      "url": "https://gutenberg.pglaf.org/cache/epub/24264/pg24264-images-3.epub",
+      "source": "Project Gutenberg #24264",
+      "license": "Public domain (US)",
+      "covers": "中文繁体长篇 EPUB 3 (Gutenberg 版没有分回目录, 只有书名与许可证两项)",
+      "expect": {
+        "title": "紅樓夢",
+        "author": "Xueqin Cao",
+        "cover": true,
+        "text": "甄士隱夢幻識通靈"
+      },
+      "sha256": "812130c92f41216e30d5bd2a8f2932c16b565f0d47db71d3115398a5934ae84c",
+      "size": 1228855
+    },
+    {
+      "id": "gutenberg-daodejing-epub3",
+      "file": "epub/道德經.epub",
+      "url": "https://gutenberg.pglaf.org/cache/epub/7337/pg7337-images-3.epub",
+      "source": "Project Gutenberg #7337",
+      "license": "Public domain (US)",
+      "covers": "中文古籍短篇 EPUB 3",
+      "expect": {
+        "title": "道德經",
+        "author": "Laozi",
+        "cover": true,
+        "text": "天下皆知美之為美"
+      },
+      "sha256": "382144164e288b78c4e14d239b5a856e5d92a92fc99f80e47ec2f7e919075002",
+      "size": 79402
+    },
+    {
+      "id": "gutenberg-rashomon-epub3",
+      "file": "epub/羅生門.epub",
+      "url": "https://gutenberg.pglaf.org/cache/epub/1982/pg1982-images-3.epub",
+      "source": "Project Gutenberg #1982",
+      "license": "Public domain (US)",
+      "covers": "日文 EPUB 3",
+      "expect": {
+        "title": "羅生門",
+        "author": "Ryūnosuke Akutagawa",
+        "cover": true,
+        "text": "羅生門"
+      },
+      "sha256": "090f520a4178b3a5575952728e5da718cc5e631de5255130d5ccd6608d11ed94",
+      "size": 86139
+    },
+    {
+      "id": "gutenberg-alice-kf8",
+      "file": "kindle/Alice-kf8.mobi",
+      "url": "https://gutenberg.pglaf.org/cache/epub/11/pg11-images-kf8.mobi",
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "MOBI 里的 KF8 (AZW3 同构)",
+      "expect": {
+        "title": "Alice's Adventures in Wonderland",
+        "author": "Lewis Carroll",
+        "cover": true,
+        "toc": 12,
+        "chapter": "Down the Rabbit-Hole",
+        "text": "So she was considering in her own mind",
+        "images": true
+      },
+      "sha256": "db91b58616a5bd224b622fca5778098a80a8485161a64b81c703247491057fcd",
+      "size": 255536
+    },
+    {
+      "id": "gutenberg-alice-mobi7",
+      "file": "kindle/Alice-mobi7.mobi",
+      "url": "https://gutenberg.pglaf.org/cache/epub/11/pg11-images.mobi",
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "老式 MOBI (Mobipocket 6), 只有封面等 2 张图",
+      "expect": {
+        "title": "Alice's Adventures in Wonderland",
+        "author": "Lewis Carroll",
+        "cover": true,
+        "text": "So she was considering in her own mind"
+      },
+      "sha256": "b3b30a3294a34c7c4c8e9432184fc334e41c84d25eabbdede44f04119c402a85",
+      "size": 241000
+    },
+    {
+      "id": "renamed-alice-mobi7-azw",
+      "file": "kindle/Alice-mobi7.azw",
+      "derive": {
+        "from": "gutenberg-alice-mobi7",
+        "op": "copy"
+      },
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": ".azw 扩展名的老式 MOBI (读者手里常见)",
+      "expect": {
+        "title": "Alice's Adventures in Wonderland",
+        "author": "Lewis Carroll",
+        "cover": true,
+        "text": "So she was considering in her own mind"
+      },
+      "sha256": "b3b30a3294a34c7c4c8e9432184fc334e41c84d25eabbdede44f04119c402a85",
+      "size": 241000
+    },
+    {
+      "id": "standardebooks-pride-azw3",
+      "file": "kindle/Pride-StandardEbooks.azw3",
+      "url": "https://standardebooks.org/ebooks/jane-austen/pride-and-prejudice/downloads/jane-austen_pride-and-prejudice.azw3?source=download",
+      "source": "Standard Ebooks",
+      "license": "CC0 1.0",
+      "covers": "AZW3 (KF8), SVG 书名页与徽标",
+      "expect": {
+        "title": "Pride and Prejudice",
+        "author": "Jane Austen",
+        "cover": true,
+        "toc": 60,
+        "chapter": "I",
+        "text": "It is a truth universally acknowledged",
+        "images": true
+      },
+      "sha256": "c0b7505e17949cbb5326e49ccbe265319b15bab0f28e1d71e309479984c0bbae",
+      "size": 974161
+    },
+    {
+      "id": "renamed-pride-azw",
+      "file": "kindle/Pride-StandardEbooks.azw",
+      "derive": {
+        "from": "standardebooks-pride-azw3",
+        "op": "copy"
+      },
+      "source": "Standard Ebooks",
+      "license": "CC0 1.0",
+      "covers": ".azw 扩展名的 KF8",
+      "expect": {
+        "title": "Pride and Prejudice",
+        "author": "Jane Austen",
+        "cover": true,
+        "text": "It is a truth universally acknowledged"
+      },
+      "sha256": "c0b7505e17949cbb5326e49ccbe265319b15bab0f28e1d71e309479984c0bbae",
+      "size": 974161
+    },
+    {
+      "id": "gutenberg-alice-txt",
+      "file": "txt/Alice.txt",
+      "url": "https://gutenberg.pglaf.org/cache/epub/11/pg11.txt",
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "英文 UTF-8 (带 BOM) 纯文本, 按 CHAPTER 分章",
+      "expect": {
+        "title": "Alice",
+        "toc": 12,
+        "chapter": "Down the Rabbit-Hole",
+        "text": "So she was considering in her own mind"
+      },
+      "sha256": "01b38ea4c710a84bc18d0bd41271a5a1a92b94e97b2812f4dece97d4a694725e",
+      "size": 174311
+    },
+    {
+      "id": "gutenberg-xiyouji-txt",
+      "file": "txt/西遊記.txt",
+      "url": "https://gutenberg.pglaf.org/cache/epub/23962/pg23962.txt",
+      "source": "Project Gutenberg #23962",
+      "license": "Public domain (US)",
+      "covers": "中文长篇 UTF-8 纯文本, 按「第X回」分章",
+      "expect": {
+        "title": "西遊記",
+        "toc": 90,
+        "chapter": "第一回",
+        "text": "靈根育孕源流出"
+      },
+      "sha256": "bd18088ccb70d3164e3a4bc9805a6ea72095d6cc3891e4f172ed0a3d281292bb",
+      "size": 2263209
+    },
+    {
+      "id": "derived-xiyouji-gbk",
+      "file": "txt/西遊記-GBK.txt",
+      "derive": {
+        "from": "gutenberg-xiyouji-txt",
+        "op": "gbk"
+      },
+      "source": "Project Gutenberg #23962",
+      "license": "Public domain (US)",
+      "covers": "GBK 编码的中文 TXT (国内下载站最常见)",
+      "expect": {
+        "title": "西遊記-GBK",
+        "toc": 90,
+        "chapter": "第一回",
+        "text": "靈根育孕源流出"
+      },
+      "sha256": "47bb3b4be6f4b12555c5f55d517f1959d60ac5aa1532d94a8257fa5e8217beb6",
+      "size": 1533666
+    },
+    {
+      "id": "derived-xiyouji-big5",
+      "file": "txt/西遊記-Big5.txt",
+      "derive": {
+        "from": "gutenberg-xiyouji-txt",
+        "op": "big5"
+      },
+      "source": "Project Gutenberg #23962",
+      "license": "Public domain (US)",
+      "covers": "Big5 编码的繁体 TXT",
+      "expect": {
+        "title": "西遊記-Big5",
+        "toc": 90,
+        "chapter": "第一回",
+        "text": "靈根育孕源流出"
+      },
+      "sha256": "2cbb10e79858f556a80dad2a7c9bab019b2060194136e2157f2a0101df3b6894",
+      "size": 1533591
+    },
+    {
+      "id": "derived-alice-utf16",
+      "file": "txt/Alice-UTF16.txt",
+      "derive": {
+        "from": "gutenberg-alice-txt",
+        "op": "utf16le-bom"
+      },
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "UTF-16LE (带 BOM) 纯文本, Windows 记事本另存为 Unicode",
+      "expect": {
+        "title": "Alice-UTF16",
+        "toc": 12,
+        "chapter": "Down the Rabbit-Hole",
+        "text": "So she was considering in her own mind"
+      },
+      "sha256": "5217cecb29762e9c199cc439b25282966c239972a9ed4093abaf8c095979b980",
+      "size": 335426
+    },
+    {
+      "id": "gutenberg-alice-html",
+      "file": "html/Alice.html",
+      "url": "https://gutenberg.pglaf.org/cache/epub/11/pg11-images.html",
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "单文件 HTML (图片是外链, 单独导入时不可得)",
+      "expect": {
+        "text": "So she was considering in her own mind"
+      },
+      "sha256": "ed5ae759a00c294b8879001f791fdfab55bdf2062242135758c5c97f97c4c737",
+      "size": 192539
+    },
+    {
+      "id": "derived-alice-md",
+      "file": "md/Alice-讀書筆記.md",
+      "derive": {
+        "from": "gutenberg-alice-txt",
+        "op": "md-notes",
+        "heading": "概述"
+      },
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "Markdown, 正文第一个标题不是书名 (2026-11-23 读者反馈)",
+      "expect": {
+        "title": "Alice-讀書筆記",
+        "text": "Project Gutenberg"
+      },
+      "sha256": "0cf940348e4bded069648b1d2bbdbd8ff6b79468de4bf6fac300b3fea4d184b5",
+      "size": 174322
+    },
+    {
+      "id": "derived-alice-fb2",
+      "file": "fb2/Alice.fb2",
+      "derive": {
+        "from": "gutenberg-alice-txt",
+        "op": "fb2",
+        "title": "Alice's Adventures in Wonderland",
+        "author": "Lewis Carroll",
+        "chapter": "^CHAPTER [IVXL]+\\."
+      },
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "FictionBook 2",
+      "expect": {
+        "title": "Alice's Adventures in Wonderland",
+        "author": "Lewis Carroll",
+        "toc": 12,
+        "chapter": "Down the Rabbit-Hole",
+        "text": "So she was considering in her own mind"
+      },
+      "sha256": "71eb18447f8ae59c901e43d145a34eb9d09b1588b4178537b0d08c929ebdab7b",
+      "size": 150478
+    },
+    {
+      "id": "derived-alice-fbz",
+      "file": "fb2/Alice.fb2.zip",
+      "derive": {
+        "from": "gutenberg-alice-txt",
+        "op": "fbz",
+        "inner": "Alice.fb2",
+        "title": "Alice's Adventures in Wonderland",
+        "author": "Lewis Carroll",
+        "chapter": "^CHAPTER [IVXL]+\\."
+      },
+      "source": "Project Gutenberg #11",
+      "license": "Public domain (US)",
+      "covers": "压缩的 FictionBook (.fb2.zip)",
+      "expect": {
+        "title": "Alice's Adventures in Wonderland",
+        "author": "Lewis Carroll",
+        "toc": 12,
+        "chapter": "Down the Rabbit-Hole",
+        "text": "So she was considering in her own mind"
+      },
+      "sha256": "35a51d0a1a900ea13291690acf0f14b116fe1a5044e80f9f7ec4484d107d0b2c",
+      "size": 52636
+    },
+    {
+      "id": "archive-abomb-cbr",
+      "file": "comic/If-An-A-Bomb-Falls-1951.cbr",
+      "url": "https://archive.org/download/ComicBook-IfAnA-bombFalls1951/Comics-IfAnA-bombFalls1951.cbr",
+      "source": "Internet Archive: ComicBook-IfAnA-bombFalls1951",
+      "license": "Public domain (1951 美国民防宣传册)",
+      "covers": "CBR 漫画",
+      "expect": {
+        "cover": true,
+        "images": true
+      },
+      "sha256": "ff7d0c8cf55b34e2449b3d6a34753ded5d1fab52a9035a4d5d1a58fa2a7e69b1",
+      "size": 1962236
+    },
+    {
+      "id": "archive-whatscookin-cbz",
+      "file": "comic/Whats-Cookin-007-1943.cbz",
+      "url": "https://archive.org/download/whats-cookin-007-1943-11-bchat/What%27s%20Cookin%27%20007%20%281943-11%29%20%28bchat%29.cbz",
+      "source": "Internet Archive: whats-cookin-007-1943-11-bchat",
+      "license": "Public Domain Mark 1.0",
+      "covers": "CBZ 漫画",
+      "expect": {
+        "cover": true,
+        "images": true
+      },
+      "sha256": "4439a3180cd739b0fa170d40ead16b31a4ea0e5c56a43fe34b86853485c8e76e",
+      "size": 6735290
+    },
+    {
+      "id": "archive-alfalfa-djvu",
+      "file": "djvu/Peruvian-alfalfa.djvu",
+      "url": "https://archive.org/download/developmentofper93west/developmentofper93west.djvu",
+      "source": "Internet Archive: developmentofper93west (美国农业部公报)",
+      "license": "Public domain (US government work)",
+      "covers": "DjVu 扫描本 (带文字层)",
+      "expect": {
+        "pages": 10,
+        "render": true
+      },
+      "sha256": "d24df88f79874c4057bfa2b1d299ab24b0323c4d05a0e912e2395b762b154e44",
+      "size": 536877
+    },
+    {
+      "id": "archive-zweifache-djvu",
+      "file": "djvu/Lehre-zweifachen-Wahrheit.djvu",
+      "url": "https://archive.org/download/dielehrevonderz00maywgoog/dielehrevonderz00maywgoog.djvu",
+      "source": "Internet Archive: dielehrevonderz00maywgoog (Google 扫描)",
+      "license": "Public domain (1868)",
+      "covers": "DjVu 德文旧书扫描",
+      "expect": {
+        "pages": 48,
+        "render": true
+      },
+      "sha256": "456771f62e1f542a5704b9a26f217cd22af0c599506c9c8b9cd768638cf7b9ba",
+      "size": 2097274
+    },
+    {
+      "id": "archive-alfalfa-pdf",
+      "file": "pdf/Peruvian-alfalfa-scan.pdf",
+      "url": "https://archive.org/download/developmentofper93west/developmentofper93west.pdf",
+      "source": "Internet Archive: developmentofper93west",
+      "license": "Public domain (US government work)",
+      "covers": "扫描 PDF + OCR 文字层",
+      "expect": {
+        "pages": 10,
+        "render": true
+      },
+      "sha256": "8803015a780bcd4639c8ab734b0d9b047dc4c82c65bd4af95a98693b7190a9d2",
+      "size": 997756
+    },
+    {
+      "id": "arxiv-attention-pdf",
+      "file": "pdf/Attention-Is-All-You-Need.pdf",
+      "url": "https://arxiv.org/pdf/1706.03762v7",
+      "source": "arXiv:1706.03762v7",
+      "license": "arXiv 允许再分发 (作者授权); 仅作测试缓存不再分发",
+      "covers": "LaTeX 论文 PDF, 公式与矢量图",
+      "expect": {
+        "pages": 15,
+        "render": true
+      },
+      "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "size": 2215244
+    },
+    {
+      "id": "pdfjs-tracemonkey",
+      "file": "pdf/pdfjs-tracemonkey.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/tracemonkey.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "双栏学术论文, Type1 字体",
+      "expect": {
+        "pages": 14,
+        "render": true
+      },
+      "sha256": "3662ff519e485810520552bf301d8c3b2b917fd2f83303f4965d7abed367e113",
+      "size": 1016315
+    },
+    {
+      "id": "pdfjs-cjk-nonembedded",
+      "file": "pdf/pdfjs-cjk-nonembedded.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/perf_text_cjk_nonembedded.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "未嵌入的中日韩字体 (要靠回退字体)",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "347456be3aceb9131bceaec25ef8eef9565c32335bdc1f50f22d53b9aeaa2775",
+      "size": 7521
+    },
+    {
+      "id": "pdfjs-vertical",
+      "file": "pdf/pdfjs-vertical.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/vertical.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "竖排日文",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "514511143db12309893fb69cdf98c76f2361c20da394f79fdff2c119ed7a4393",
+      "size": 6905
+    },
+    {
+      "id": "pdfjs-arabic",
+      "file": "pdf/pdfjs-arabic-cid.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/ArabicCIDTrueType.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "阿拉伯文 CID TrueType 字体",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "1cad1de912ba29f89a6d8b08bc5b0f84382874ffedab2c8f9e05ef608c265bb1",
+      "size": 39370
+    },
+    {
+      "id": "pdfjs-jbig2",
+      "file": "pdf/pdfjs-jbig2.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/perf_codecs_jbig2.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "JBIG2 黑白扫描压缩",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "c7cdfb036282939f6a5461d67c34c895910856266c598f118cc41c9b7ca1d82e",
+      "size": 9909
+    },
+    {
+      "id": "pdfjs-jpx",
+      "file": "pdf/pdfjs-jpx.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/perf_codecs_jpx.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "JPEG 2000 图像",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "0f8479d461d0d7e5fb3875f8336ecbbc995ec180bc60b07a7a8be757a9e22169",
+      "size": 524879
+    },
+    {
+      "id": "pdfjs-cmyk-jpeg",
+      "file": "pdf/pdfjs-cmyk-jpeg.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/cmykjpeg.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "CMYK JPEG",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "659d6b19912f63db988b0b26b9bde0e6d8100667ef162051a4a84ea8e5b90272",
+      "size": 374080
+    },
+    {
+      "id": "pdfjs-scan-bilevel",
+      "file": "pdf/pdfjs-scan-bilevel.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/perf_images_scan_bilevel.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "CCITT 传真压缩的扫描页",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "3fabd640596805188db89117c50613e1897502329ac16ac4cab8a1049fb86ad8",
+      "size": 124234
+    },
+    {
+      "id": "pdfjs-rotation",
+      "file": "pdf/pdfjs-rotation.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/rotation.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "页面带 /Rotate",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "5087c2afe763d145537d652bb3bc6c321ace3a267b2679ae2c178add3ba7f1d9",
+      "size": 6605
+    },
+    {
+      "id": "pdfjs-annotations",
+      "file": "pdf/pdfjs-annotation-highlight.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/annotation-highlight.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "自带高亮批注",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "72b6387356ccfdfb95a0a5eff5e1ceb9b7667019807d7b04abaf64dad7ea143a",
+      "size": 92397
+    },
+    {
+      "id": "pdfjs-password",
+      "file": "pdf/pdfjs-password-abc.pdf",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/issue6010_1.pdf",
+      "source": "mozilla/pdf.js test/pdfs",
+      "license": "pdf.js 测试集",
+      "covers": "需要打开密码 (abc)",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "d7fd95e016b7d43bc9eed1041b0cdd6ee00e3dd902e50d0307b0a428782c543c",
+      "size": 1116,
+      "known": "加密 PDF 还不能输入密码, 只显示「PDFium load failed (4)」"
+    },
+    {
+      "id": "cdc-westnile-chinese-pdf",
+      "file": "pdf/CDC-West-Nile-Chinese.pdf",
+      "url": "https://web.archive.org/web/20130123034858id_/http://www.cdc.gov/ncidod/dvbid/westnile/languages/chinese.pdf",
+      "source": "美国 CDC 中文宣传页 (经 Web Archive)",
+      "license": "Public domain (US government work)",
+      "covers": "中文 PDF, 嵌入中文字体",
+      "expect": {
+        "pages": 1,
+        "render": true
+      },
+      "sha256": "1111e4cfa027c1d6f258e0d6117b16494d919e988969b2c786527a99de5d6c6d",
+      "size": 310456
+    }
+  ]
+}

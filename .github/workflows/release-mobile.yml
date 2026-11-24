@@ -21,7 +21,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 格式兼容语料 (scripts/format-corpus), 不过不发版
+  format-corpus:
+    uses: ./.github/workflows/format-corpus.yml
+    with:
+      ref: ${{ inputs.tag }}
+
   verify-and-publish:
+    needs: format-corpus
     runs-on: ubuntu-22.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

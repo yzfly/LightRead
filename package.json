@@ -74,6 +74,8 @@
     "test:reader-tap-zone": "node --experimental-strip-types --test scripts/test-reader-tap-zone.mjs",
     "test:reading-focus": "node --experimental-strip-types --test scripts/test-reading-focus.mjs",
     "test:reader-feedback": "node --experimental-strip-types --test scripts/test-reader-feedback.mjs",
+    "corpus:fetch": "node scripts/format-corpus/fetch.mjs",
+    "test:format-corpus": "node scripts/format-corpus/run.mjs",
     "test:display-title": "node --experimental-strip-types --test scripts/test-display-title.mjs",
     "test:cover-repair": "node --experimental-strip-types --test scripts/test-cover-repair.mjs",
     "test:local-chat": "node --experimental-strip-types --test scripts/test-local-chat.mjs",

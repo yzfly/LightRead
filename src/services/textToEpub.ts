@@ -8,7 +8,25 @@ import { CHAPTER_RE } from './smartToc'
 import { looksHardWrapped, packSections, toParagraphs } from './txtParagraphs'
 import { CODE_CSS, codeChapters, textViewForBook } from './plainText'
 
-/** TXT 常见 GBK 编码, 优先严格 UTF-8, 失败回退 GB18030; 带 BOM 的 UTF-16 按 BOM 解码 */
+/** 简繁写法相同的高频汉字: 用对了编码, 这些字会大量出现; 用错了解出来几乎都是生僻字和符号 */
+const COMMON_HAN = new Set('的一是不了人在有我他中大上也之而以其子曰天下可于所此心又得出去自己日月山水小生如知道行年同手今已者十三五百千里外好老看王主乎')
+const LEGACY_SAMPLE_BYTES = 64 * 1024
+
+function commonHanCount(text: string): number {
+  let count = 0
+  for (const char of text) if (COMMON_HAN.has(char)) count++
+  return count
+}
+
+/** 不是 UTF-8 的中文 TXT: 大陆多是 GBK (GB18030 兼容), 港台多是 Big5; 取开头一段两种都解一遍, 看哪种更像中文 */
+export function legacyChineseEncoding(bytes: Uint8Array): 'gb18030' | 'big5' {
+  const sample = bytes.subarray(0, LEGACY_SAMPLE_BYTES)
+  const big5 = commonHanCount(new TextDecoder('big5').decode(sample))
+  const gb = commonHanCount(new TextDecoder('gb18030').decode(sample))
+  return big5 > gb ? 'big5' : 'gb18030'
+}
+
+/** TXT 解码: 带 BOM 的 UTF-16 按 BOM; 否则严格 UTF-8, 失败再在 GB18030 与 Big5 里挑 (与 Rust txt_epub::decode_text 一致) */
 export async function decodeText(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
   const head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength))
@@ -17,7 +35,7 @@ export async function decodeText(blob: Blob): Promise<string> {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(buf)
   } catch {
-    return new TextDecoder('gb18030').decode(buf)
+    return new TextDecoder(legacyChineseEncoding(new Uint8Array(buf))).decode(buf)
   }
 }
 

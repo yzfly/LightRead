@@ -1,0 +1,50 @@
+name: format-corpus
+
+# 格式兼容语料回归 (scripts/format-corpus): 桌面与 App 发版都调用, 不过不发版。
+# 书按 manifest.json 的摘要缓存, 只有 manifest 变了才重新下载。
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 要检查的 tag / 提交
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 要检查的 tag / 提交
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  format-corpus:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 缓存测试书
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/lightread-format-corpus
+          key: format-corpus-${{ hashFiles('scripts/format-corpus/manifest.json') }}
+          restore-keys: format-corpus-
+      - run: npx playwright install --with-deps chromium
+      - run: npm run corpus:fetch
+      - run: npm run test:format-corpus
+      - name: 上传报告与失败截图
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: format-corpus-report
+          path: ~/.cache/lightread-format-corpus/report
