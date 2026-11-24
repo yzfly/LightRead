@@ -56,6 +56,8 @@ jobs:
       - run: npm run test:pdf-reflow
       # 读者反馈过的问题 (scripts/test-reader-feedback.mjs), 不过不发版
       - run: npm run test:reader-feedback
+      # App 构建换用 src/mobile/i18n 的字典: 共享组件的新文案漏写进去时界面会直接显示 key
+      - run: npm run check:i18n-keys
       - name: Verify source, platform version, APK identity, fixed signature and ZIP layout
         env:
           AAPT: ${{ env.ANDROID_SDK_ROOT }}/build-tools/35.0.0/aapt

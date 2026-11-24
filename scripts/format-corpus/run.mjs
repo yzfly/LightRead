@@ -8,9 +8,11 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { CORPUS_DIR, entryPath, fetchCorpus } from './fetch.mjs'
 
+const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const FILTER = process.argv.slice(2).find(arg => !arg.startsWith('--')) ?? ''
 const WORKERS = Number(process.env.CORPUS_WORKERS || 3)
 const BOOK_TIMEOUT = 90_000
@@ -32,7 +34,9 @@ if (!base) {
   const build = spawnSync('npx', ['vite', 'build', '--logLevel', 'warn'], { stdio: 'inherit', env })
   if (build.status !== 0) throw new Error('网页版构建失败')
   const port = 4300 + Math.floor(Math.random() * 500)
-  preview = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', env })
+  // 直接起 vite 本体: 经 npx 起的话 kill 只杀掉外壳, vite preview 会一直留在机器上
+  preview = spawn(process.execPath, [join(ROOT, 'node_modules/vite/bin/vite.js'), 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', env })
+  process.on('exit', () => preview.kill())
   base = `http://localhost:${port}`
   for (let i = 0; ; i++) {
     try { if ((await fetch(base)).ok) break } catch {}
@@ -111,6 +115,7 @@ async function checkBook(book) {
     }
     await page.waitForTimeout(800)
     facts.card = (await card.innerText()).replace(/\s+/g, ' ').trim()
+    if (/\.(epub|kepub|mobi|azw3?|fb2|fbz|zip|cbz|cbr|txt|md|html?|pdf|djvu)(\s|$)/i.test(facts.card)) problems.push(`书名不该带扩展名, 书卡显示「${facts.card}」`)
     if (expect.title && !facts.card.includes(expect.title)) problems.push(`书名应为「${expect.title}」, 书卡显示「${facts.card}」`)
     if (expect.author && !facts.card.includes(expect.author)) problems.push(`作者应为「${expect.author}」, 书卡显示「${facts.card}」`)
     if (expect.cover) {
@@ -119,6 +124,17 @@ async function checkBook(book) {
     }
 
     await card.click()
+    if (expect.password) {
+      // 先输错一次: 要提示密码不对并留在输入框; 再输对
+      const input = page.locator('.pdf-password input[type=password]')
+      await input.waitFor({ timeout: 30_000 })
+      await input.fill(`${expect.password}-wrong`)
+      await input.press('Enter')
+      const wrong = await page.locator('.pdf-password-error').waitFor({ timeout: 10_000 }).then(() => true, () => false)
+      if (!wrong) problems.push('输错密码后没有提示「密码不对」')
+      await input.fill(expect.password)
+      await input.press('Enter')
+    }
     const kind = await Promise.race([
       page.waitForSelector('foliate-view', { timeout: 45_000 }).then(() => 'foliate'),
       page.waitForSelector('.p-holder canvas', { timeout: 45_000 }).then(() => 'pdf'),
@@ -181,6 +197,13 @@ async function checkBook(book) {
       })
       if (expect.pages && facts.pages < expect.pages) problems.push(`页数 ${facts.pages}, 应至少 ${expect.pages}`)
     }
+    if (expect.password) {
+      // 导入时没密码取不到封面; 解锁后第一页补成封面, 回书架就能看到
+      await page.evaluate(() => { location.hash = '#/library' })
+      const unlockedCover = await page.waitForFunction(() => [...document.querySelectorAll('.book-card')]
+        .some(card => card.querySelector('.cover img')?.naturalWidth > 0), null, { timeout: 15_000 }).then(() => true, () => false)
+      if (!unlockedCover) problems.push('输对密码后书架上仍是文字封面')
+    }
   } catch (error) {
     problems.push(error.message.split('\n')[0])
   }
@@ -207,7 +230,6 @@ await Promise.all(Array.from({ length: Math.min(WORKERS, queue.length) }, async 
   }
 }))
 await browser.close()
-preview?.kill()
 
 results.sort((a, b) => a.id.localeCompare(b.id))
 writeFileSync(join(REPORT_DIR, 'report.json'), JSON.stringify({ base, at: new Date().toISOString(), seconds: Math.round((Date.now() - startedAt) / 1000), results }, null, 2))

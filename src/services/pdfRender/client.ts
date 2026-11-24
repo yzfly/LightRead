@@ -40,7 +40,7 @@ export class PdfRenderClient {
   #ready: Promise<void>
   #dead: Error | null = null
 
-  private constructor(worker: Worker, bytes: ArrayBuffer) {
+  private constructor(worker: Worker, bytes: ArrayBuffer, password: string) {
     this.#worker = worker
     worker.onmessage = e => this.#onMessage(e.data)
     worker.onerror = e => this.#fail(new Error(`pdf-render-worker: ${(e as ErrorEvent)?.message ?? 'error'}`))
@@ -48,7 +48,7 @@ export class PdfRenderClient {
     this.#ready = new Promise<void>((resolve, reject) => {
       const id = ++this.#seq
       this.#loading = { id, resolve, reject }
-      worker.postMessage({ id, type: 'load', bytes }, [bytes])
+      worker.postMessage({ id, type: 'load', bytes, password }, [bytes])
     })
     // 没人等 ready 时不要变成未处理的拒绝; render() 会自己报错
     this.#ready.catch(() => {})
@@ -56,8 +56,8 @@ export class PdfRenderClient {
 
   #loading: { id: number; resolve: () => void; reject: (e: unknown) => void } | null = null
 
-  /** bytes 会被转移给 Worker (调用后不可再用)。环境不支持 Worker 时返回 null, bytes 保持可用。 */
-  static create(bytes: ArrayBuffer, factory: WorkerFactory = defaultFactory): PdfRenderClient | null {
+  /** bytes 会被转移给 Worker (调用后不可再用)。环境不支持 Worker 时返回 null, bytes 保持可用。password 是打开密码, 没有就留空。 */
+  static create(bytes: ArrayBuffer, password = '', factory: WorkerFactory = defaultFactory): PdfRenderClient | null {
     if (typeof Worker === 'undefined') return null
     let worker: Worker
     try {
@@ -66,7 +66,7 @@ export class PdfRenderClient {
       console.warn('[pdf-render] worker unavailable, using main thread', e)
       return null
     }
-    return new PdfRenderClient(worker, bytes)
+    return new PdfRenderClient(worker, bytes, password)
   }
 
   get alive() {

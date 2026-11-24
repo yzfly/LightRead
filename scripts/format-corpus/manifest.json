@@ -616,12 +616,12 @@
       "license": "pdf.js 测试集",
       "covers": "需要打开密码 (abc)",
       "expect": {
+        "password": "abc",
         "pages": 1,
         "render": true
       },
       "sha256": "d7fd95e016b7d43bc9eed1041b0cdd6ee00e3dd902e50d0307b0a428782c543c",
-      "size": 1116,
-      "known": "加密 PDF 还不能输入密码, 只显示「PDFium load failed (4)」"
+      "size": 1116
     },
     {
       "id": "cdc-westnile-chinese-pdf",

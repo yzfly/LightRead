@@ -61,6 +61,7 @@ jobs:
           npm run test:quote-card
           npm run test:reader-feedback
           npm run check:style-tokens
+          npm run check:i18n-keys
           node --experimental-strip-types --test scripts/test-mobile-updater.mjs scripts/test-platform-boundary.mjs
       - name: 在构建前准备 Release 草稿
         env:

@@ -1,9 +1,9 @@
 /**
  * PDF 页面渲染 Worker: 打开一次 PDF, 之后按页栅格化, 把位图交回主线程。
- * 消息: load(bytes) → render(req)* → close; 每条带 id, 回复同 id。
+ * 消息: load(bytes, password) → render(req)* → close; 每条带 id, 回复同 id。
  * 一个 Worker 一份 MuPDF 实例: 崩溃 (wasm trap) 后整个 Worker 由主线程结束, 不会污染下一本书。
  */
-import { rasterPage, type RasterRequest } from './raster.ts'
+import { openPdfDocument, rasterPage, type RasterRequest } from './raster.ts'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 let mupdf: any = null
@@ -18,7 +18,7 @@ self.onmessage = async (e: MessageEvent) => {
     if (type === 'load') {
       mupdf ??= (await import('mupdf')).default
       doc?.destroy?.()
-      doc = mupdf.Document.openDocument(new Uint8Array(msg.bytes as ArrayBuffer), 'application/pdf')
+      doc = openPdfDocument(mupdf, new Uint8Array(msg.bytes as ArrayBuffer), msg.password ?? '')
       post({ id, type: 'ok' })
     } else if (type === 'render') {
       if (!doc) throw new Error('pdf not loaded')

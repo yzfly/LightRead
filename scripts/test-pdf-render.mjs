@@ -60,7 +60,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 
 function start() {
   const worker = new FakeWorker()
-  const client = PdfRenderClient.create(new ArrayBuffer(8), () => worker)
+  const client = PdfRenderClient.create(new ArrayBuffer(8), '', () => worker)
   return { worker, client }
 }
 
@@ -139,8 +139,15 @@ test('client: load failure, worker crash event and close() all reject pending re
 
 test('client: create() returns null when the worker cannot be constructed', () => {
   const bytes = new ArrayBuffer(8)
-  assert.equal(PdfRenderClient.create(bytes, () => { throw new Error('blocked') }), null)
+  assert.equal(PdfRenderClient.create(bytes, '', () => { throw new Error('blocked') }), null)
   assert.equal(bytes.byteLength, 8, 'bytes stay usable for the main-thread fallback')
+})
+
+test('client: the open password goes to the worker with the file', () => {
+  const worker = new FakeWorker()
+  PdfRenderClient.create(new ArrayBuffer(8), 'abc', () => worker)
+  assert.equal(worker.sent[0].type, 'load')
+  assert.equal(worker.sent[0].password, 'abc')
 })
 
 test('pageWindow: normal zoom keeps the old ±4 pages; heavy zoom shrinks to fit the budget', () => {

@@ -68,6 +68,7 @@ if (Object.keys(exported).length) {
 const run = (cmd, argv) => execFileSync(cmd, argv, { env, stdio: 'inherit' })
 // 读者反馈过的问题先过一遍, 不过不打包; TestFlight 上传不经过发版 workflow, 这里就是关卡
 run('npm', ['run', '--silent', 'test:reader-feedback'])
+run('npm', ['run', '--silent', 'check:i18n-keys'])
 // 格式兼容语料 (各种格式的书逐本导入、打开), 不过不打包; 第一次会下载约 30MB 测试书到 ~/.cache/lightread-format-corpus
 run('npm', ['run', '--silent', 'test:format-corpus'])
 const project = 'src-tauri/gen/apple'

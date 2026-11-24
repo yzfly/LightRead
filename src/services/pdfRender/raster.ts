@@ -21,6 +21,16 @@ export interface RasterView {
   release: () => void
 }
 
+/** 打开 PDF; 有打开密码的文件先用 password 解锁 (PDFium 已核对过密码, 这里不对就当引擎失败) */
+export function openPdfDocument(mupdf: any, bytes: Uint8Array, password = ''): any {
+  const doc = mupdf.Document.openDocument(bytes, 'application/pdf')
+  if (doc.needsPassword() && !doc.authenticatePassword(password)) {
+    doc.destroy()
+    throw new Error('MuPDF: PDF password rejected')
+  }
+  return doc
+}
+
 export function rasterPage(mupdf: any, doc: any, req: RasterRequest): RasterView {
   let page: any = null
   let pixmap: any = null

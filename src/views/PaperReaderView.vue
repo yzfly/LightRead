@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import AppSelect from '../components/AppSelect.vue'
+import PdfPasswordPrompt from '../components/PdfPasswordPrompt.vue'
+import { usePdfPassword } from '../composables/usePdfPassword'
 import AppModal from '../components/AppModal.vue'
 import { AutoScrollClock, ScrollAccumulator } from '../services/autoScroll'
 import { AUTO_SPEED_LEVELS, AUTO_SPEED_STEPS, speedPosition, secondsAtPosition } from '../services/autoReadSpeed'
@@ -24,6 +26,7 @@ import { aiConfigured, chatStream, explainPrompt, plainAiText, readerSystemPromp
 import {
   PdfiumDoc,
   PdfEngineError,
+  PdfPasswordError,
   hitBoundary,
   rangeRects,
   rangeText,
@@ -32,7 +35,7 @@ import {
 } from '../services/pdfium'
 import { initMupdf } from '../services/mupdf'
 import { PdfRenderClient, paintRenderedPage } from '../services/pdfRender/client'
-import { rasterPage } from '../services/pdfRender/raster'
+import { openPdfDocument, rasterPage } from '../services/pdfRender/raster'
 import { PAGE_BITMAP_BUDGET, pageWindow } from '../services/pdfRender/budget'
 import { isWasmCrash } from '../services/wasmCrash'
 import { exportDiagnostics, logEvent, requestCommunityFocus } from '../services/diagnostics'
@@ -115,6 +118,10 @@ const router = useRouter()
 const library = useLibrary()
 const settings = useSettings()
 const bookId = String(route.params.id)
+const pdfPassword = usePdfPassword(bookId)
+const passwordPrompt = pdfPassword.prompt
+/** 打开密码, MuPDF 渲染时也要用 */
+let renderPassword = ''
 
 const meta = ref<BookMeta>()
 const loading = ref(true)
@@ -164,7 +171,7 @@ function mupdfDoc(): Promise<any> {
       const mupdf = await initMupdf()
       const bytes = renderBytes
       renderBytes = null
-      return mupdf.Document.openDocument(bytes, 'application/pdf')
+      return openPdfDocument(mupdf, bytes, renderPassword)
     })()
   }
   return mupdfDocPromise
@@ -1050,6 +1057,9 @@ async function onPdfOpenPicked(event: Event) {
     let probe: PdfiumDoc | null = null
     try {
       probe = await PdfiumDoc.open(await file.arrayBuffer())
+    } catch (e) {
+      // 有打开密码的文件照常导入, 进阅读页再输密码
+      if (!(e instanceof PdfPasswordError)) throw e
     } finally {
       probe?.close()
     }
@@ -3848,14 +3858,16 @@ onMounted(async () => {
       .match(/%PDF-(\d\.\d)/)?.[1] ?? ''
     // 流式阅读已下线；读取旧设置时也必须回到原版 PDF。
     settings.pdf.layout = 'original'
-    pdm = await PdfiumDoc.open(fileData)
+    const opened = await pdfPassword.open(fileData)
+    pdm = opened.doc
+    renderPassword = opened.password
     // PDFium 已把字节拷进自己的 wasm 堆; 这份缓冲直接转移给渲染 Worker (MuPDF 在那边再拷进它的堆),
     // 主线程不再留第二份。Worker 起不来时缓冲没被转移, 留给主线程的 MuPDF。此后不要再读 fileData。
     renderBytes = null
     pageRenderer?.close()
     pageRenderer = null
     if (settings.pdf.renderer === 'mupdf') {
-      pageRenderer = PdfRenderClient.create(fileData)
+      pageRenderer = PdfRenderClient.create(fileData, renderPassword)
       if (!pageRenderer) renderBytes = new Uint8Array(fileData)
     }
     pageCount.value = pdm.pages.length
@@ -4514,7 +4526,10 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-if="loading" class="paper-state">{{ t('reader.opening') }}</div>
+    <div v-if="passwordPrompt" class="paper-state">
+      <PdfPasswordPrompt :wrong="passwordPrompt.wrong" :attempt="passwordPrompt.attempt" @submit="pdfPassword.submit" @back="router.push(backTarget)" />
+    </div>
+    <div v-else-if="loading" class="paper-state">{{ t('reader.opening') }}</div>
     <div v-else-if="error" class="paper-state">
       <p>{{ error }}</p>
       <button v-if="pdfEngineCrashed" class="btn" @click="exportDiagnosticsFromError">{{ t('settings.diagnosticsExport') }}</button>

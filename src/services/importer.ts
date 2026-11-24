@@ -5,6 +5,7 @@ import { detectReadableFormat, looksLikeText } from './plainText'
 import { convertToEpub } from './textToEpub'
 import { makeFoliateBook } from './foliateBook'
 import { isTauri } from '../storage/types'
+import type { PdfiumDoc } from './pdfium'
 
 const isMobileUa = () => typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
@@ -29,8 +30,10 @@ async function extractFoliateMeta(file: File) {
   try {
     cover = (await book.getCover?.()) ?? undefined
   } catch { /* 无封面不影响导入 */ }
+  const title = flattenMeta(meta.title)
   const result = {
-    title: flattenMeta(meta.title),
+    // 没有 ComicInfo 的漫画, foliate 拿带扩展名的文件名当书名; 当作没有书名, 由调用方用去掉扩展名的文件名
+    title: title === file.name ? '' : title,
     author: flattenMeta(meta.author),
     description: flattenMeta(meta.description),
     language: flattenMeta(meta.language),
@@ -58,20 +61,22 @@ async function readPdfMeta(file: File) {
   try {
     const title = doc.meta('Title')
     const author = doc.meta('Author')
-    let cover: Blob | undefined
-    if (doc.pages[0]) {
-      const img = doc.render(0, 0.6)
-      const canvas = document.createElement('canvas')
-      canvas.width = img.width
-      canvas.height = img.height
-      canvas.getContext('2d')!.putImageData(img, 0, 0)
-      cover = await new Promise<Blob | undefined>(resolve =>
-        canvas.toBlob(b => resolve(b?.size ? b : undefined), 'image/jpeg', 0.8))
-    }
-    return { title, author, cover }
+    return { title, author, cover: await pdfCoverBlob(doc) }
   } finally {
     doc.close()
   }
+}
+
+/** PDF 第一页做封面; 有打开密码的书在阅读页解锁后也用它补封面 */
+export async function pdfCoverBlob(doc: PdfiumDoc): Promise<Blob | undefined> {
+  if (!doc.pages[0]) return undefined
+  const img = doc.render(0, 0.6)
+  const canvas = document.createElement('canvas')
+  canvas.width = img.width
+  canvas.height = img.height
+  canvas.getContext('2d')!.putImageData(img, 0, 0)
+  return new Promise<Blob | undefined>(resolve =>
+    canvas.toBlob(b => resolve(b?.size ? b : undefined), 'image/jpeg', 0.8))
 }
 
 /**

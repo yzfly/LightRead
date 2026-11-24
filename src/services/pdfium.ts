@@ -50,6 +50,16 @@ const heapMb = (mod: WrappedPdfiumModule) => {
   }
 }
 
+/** 文件要打开密码: 没给密码或给的不对 (wrong) */
+export class PdfPasswordError extends Error {
+  readonly wrong: boolean
+  constructor(wrong: boolean) {
+    super(wrong ? 'PDF password incorrect' : 'PDF password required')
+    this.name = 'PdfPasswordError'
+    this.wrong = wrong
+  }
+}
+
 /** PDF 引擎无法继续工作; message 不面向用户, 界面用 reader.pdfEngineCrashed */
 export class PdfEngineError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -127,7 +137,7 @@ export class PdfiumDoc {
     return this.m.pdfium as any
   }
 
-  static async open(data: ArrayBuffer): Promise<PdfiumDoc> {
+  static async open(data: ArrayBuffer, password = ''): Promise<PdfiumDoc> {
     const bytes = new Uint8Array(data)
     logEvent('info', 'pdf', `open start ${Math.round(bytes.length / 1024)}KB`)
     // 第一次失败可能只因实例已被之前的崩溃或占满的堆拖累 (导入取封面的崩溃是被吞掉的),
@@ -135,7 +145,7 @@ export class PdfiumDoc {
     for (let attempt = 1; ; attempt++) {
       const m = await pdfiumModule()
       try {
-        const d = PdfiumDoc.load(m, bytes)
+        const d = PdfiumDoc.load(m, bytes, password)
         logEvent('info', 'pdf', `open ok pages=${d.pages.length} heap=${heapMb(m)}MB attempt=${attempt}`)
         return d
       } catch (error) {
@@ -151,17 +161,19 @@ export class PdfiumDoc {
     }
   }
 
-  private static load(m: WrappedPdfiumModule, bytes: Uint8Array): PdfiumDoc {
+  private static load(m: WrappedPdfiumModule, bytes: Uint8Array, password: string): PdfiumDoc {
     const d = new PdfiumDoc(m)
     // PDFium 要求文档存续期间源缓冲有效, filePtr 在 close 时才释放
     d.filePtr = m.pdfium.wasmExports.malloc(bytes.length)
     // 堆长不动时 malloc 返回 0; 这时再写入会从地址 0 起覆盖引擎自身的数据, 必须先拦下
     if (!d.filePtr) throw new PdfEngineError(`PDFium out of memory: file ${bytes.length} bytes, heap ${heapMb(m)}MB`)
     ;(m.pdfium as any).HEAPU8.set(bytes, d.filePtr)
-    d.doc = m.FPDF_LoadMemDocument(d.filePtr, bytes.length, '')
+    d.doc = m.FPDF_LoadMemDocument(d.filePtr, bytes.length, password)
     if (!d.doc) {
       m.pdfium.wasmExports.free(d.filePtr)
-      throw new Error(`PDFium load failed (${m.FPDF_GetLastError?.() ?? 'unknown'})`)
+      const code = m.FPDF_GetLastError?.()
+      if (code === 4 /* FPDF_ERR_PASSWORD */) throw new PdfPasswordError(Boolean(password))
+      throw new Error(`PDFium load failed (${code ?? 'unknown'})`)
     }
     const n = m.FPDF_GetPageCount(d.doc)
     // 只读页面尺寸, 不解析页面内容: 打开时不必把全书内容过一遍, 单页有问题也不影响打开

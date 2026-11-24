@@ -82,6 +82,7 @@
     "test:about-links": "node --experimental-strip-types --test scripts/test-about-links.mjs",
     "test:site-links": "node --test scripts/test-site-links.mjs",
     "check:style-tokens": "node scripts/check-style-tokens.mjs",
+    "check:i18n-keys": "node scripts/check-i18n-keys.mjs",
     "e2e:cover-repair": "node scripts/e2e-cover-repair.mjs",
     "test:key-words": "node --experimental-strip-types --test scripts/test-key-words.mjs",
     "test:zh-segment": "node --experimental-strip-types --test scripts/test-zh-segment.mjs",

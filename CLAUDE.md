@@ -78,6 +78,7 @@ npm run test:reader-feedback # 读者反馈回归 (发版关卡): MD 书名取�
 npm run corpus:fetch && npm run test:format-corpus   # 格式兼容语料 (发版关卡): 公有领域测试书逐本导入、打开、看正文 / 图片 / 目录; 自己重新构建 dist/ 并起预览, 报告在 ~/.cache/lightread-format-corpus/report
 npm run test:display-title   # 手机书架短书名 / 短作者: 只去末尾长营销括注, 作者取分号前第一段 (src/services/displayTitle.ts)
 npm run test:about-links      # 关于页全平台下载 (桌面 v / App app-v 各取最新, 镜像只认已校验版本) + 读者群二维码过期 (src/services/aboutLinks.ts)
+npm run check:i18n-keys       # 文案 key 两套字典 (桌面 src/i18n、App src/mobile/i18n) 都要有; 棘轮, 补齐后 --update
 npm run check:style-tokens    # 样式档位棘轮: 裸 px 字号 / 圆角 / 阴影 / 非 400·500·600 字重只许减少; 替换一批后 node scripts/check-style-tokens.mjs --update
 node scripts/publish-community.mjs <二维码.png> --expires YYYY-MM-DD [--wechat ID]   # 换关于页微信群码 (7 天过期, 不打包): 传 R2 lightread-assets/community/v1/ 并回读校验; 先裁到只剩二维码。过期后应用显示作者微信 1796060717 (加好友拉群, --wechat 可远程改)
 npm run test:cover-repair     # 损坏封面: 空文件 / 缺失 / 非图片回退文字封面, 从书籍文件重新生成写回, 取不到清标记 (src/services/coverRepair.ts)
@@ -169,7 +170,7 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 - 全局类 `.segmented` 是设置页等的分段控件；阅读器工具栏各自有 scoped 的 `.seg`，不要合并。
 - 图标一律内联 SVG（`aria-hidden="true"`），不用 emoji 当图标；图标按钮必须有 `aria-label`/`title`。
 - 触屏设备不依赖 hover：`@media (hover: none)` 下提供可点的替代（如 BookCard 的「更多」按钮）。
-- 所有用户可见文案走 `t()`，中英两个字典同时加 key，放在对应分区（`// ---- 藏书 ----` 等）。
+- 所有用户可见文案走 `t()`，中英两个字典同时加 key，放在对应分区（`// ---- 藏书 ----` 等）。App 构建用的是 `src/mobile/i18n/zh.ts`、`en.ts`（`src/mobile/overrides.json` 换掉桌面那份）：共享组件和服务的新文案四个字典都要加，否则 App 上直接显示 key。`npm run check:i18n-keys` 检查（发版关卡，已有缺口在 `scripts/i18n-keys-baseline.json`，只许减少）。
 - UI / UX 需求先从全局检索同类入口，优先统一控件与交互；不只修反馈截图里的单点。应用内选择和确认使用 `AppSelect` / `AppModal` / `askConfirm`，不新增原生 `<select>` 或 `alert` / `confirm` / `prompt`。文件选择、权限和安装器属于系统能力。
 - 全局排查不等于扩大改版范围。替换弹窗时保留所在页面原有布局与触发控件尺寸；未明确要求改版的页面不得顺带重排。藏书页手机端 (≤720px) 已按 2026-10-17 用户确认的原型改版：标题 + 今日 + 圆形「＋」/ 吸顶搜索 / 继续阅读卡 / 列表标题 (范围·排序·选择) / `BookCard compact` (封面只留进度条, 「⋯」在作者行, 长按进入选择) / 选择模式底部 4 项操作栏；添加、书卡操作、批量更多都走 `AppModal` 底部面板。论文 / 书源 / 阅读记录 / 设置的手机端 (≤720px) 按 2026-10-17 用户确认的原型改版：论文页为状态 + 标签筛选与列表行 (`services/paperState.ts`)；书源页按 2026-10-18 已确认原型修正为搜索范围选择窗口、公共书源／私人书库／个人书单分组，社区目录折叠；推荐书单按 2026-10-18 用户要求归入藏书 → 书单，放在个人书单下方，不再放在书源页；藏书的「书单」为页内列表，管理独立打开；设置页为账号卡 + 分组列表，二级页复用原分区并由 `?page=` 驱动。桌面布局保持原样，不要把手机改版带到桌面（桌面藏书页 2026-10-26 起按用户选定的「书桌」原型改版，见上方「样式档位」；那是桌面自己的设计，不是手机改版）。
 - 手机文案按实际宽度检查换行；超过两行的界面说明逐项审阅，优先精简或按需展开。保留关键风险信息，不截断书籍正文、用户内容和必要错误详情。
