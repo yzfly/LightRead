@@ -607,7 +607,8 @@ test('phone browsers open GitHub when it answers quickly, otherwise the GitCode 
 test('Android project patch adds the install permission once and keeps the cache shareable', async () => {
   const { patchManifest, patchFilePaths } = await import('./patch-android-project.mjs')
   const provider = `<provider android:name="androidx.core.content.FileProvider" android:authorities="\${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true" />`
-  const manifest = `<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <application>${provider}</application>\n</manifest>\n`
+  const activity = `<activity android:name=".MainActivity" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n            </intent-filter>\n        </activity>`
+  const manifest = `<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <application>${activity}${provider}</application>\n</manifest>\n`
   const patched = patchManifest(manifest)
   assert.match(patched, /INTERNET" \/>\n    <uses-permission android:name="android\.permission\.REQUEST_INSTALL_PACKAGES" \/>/)
   assert.equal(patchManifest(patched), patched)

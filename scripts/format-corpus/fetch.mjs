@@ -60,7 +60,8 @@ function legacyEncoder(label) {
 }
 
 const utf8 = bytes => new TextDecoder().decode(bytes).replace(/^﻿/, '')
-const FIXED_MTIME = new Date('2026-01-01T00:00:00Z')
+// ZIP 存的是不带时区的本地时间 (fflate 用 getHours 等取值): 按本地字段构造, 各时区写出的字节才一样
+const FIXED_MTIME = new Date(2026, 0, 1)
 
 /** 由已下载的原件派生出常见的「野生」变体: 编码、改名、FB2 */
 const DERIVE = {
