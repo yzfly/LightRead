@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "version": "2.11.2",
+  "version": "2.11.3",
   "app": {
     "windows": [
       {
