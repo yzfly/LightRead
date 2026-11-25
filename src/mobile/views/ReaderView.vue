@@ -25,6 +25,7 @@ import { injectFontIntoDoc, resolveFontFamily } from '../../services/fonts.ts'
 import { isTauri } from '../../storage/types.ts'
 import { listenErrorKey, listVoicesSorted, warmUpSpeech, resetEdgeFailure, systemSpeechAvailable } from '../services/tts.ts'
 import { ListenPlayer, type ListenFeed } from '../../services/listenPlayer.ts'
+import { mediaKeyCommand } from '../../services/listenMediaKeys.ts'
 import { SentenceCursor, loadListenBookmark, saveListenBookmark, agoBucket, type CursorPos, type ListenBookmark } from '../../services/readAloud.ts'
 import { readingArea, followTarget, jumpLine, isOnScreen, followHeld, scrollMotion, prefersReducedMotion, type Area } from '../../services/readingFocus.ts'
 import { EDGE_VOICES, edgeAvailable, playAudio } from '../../services/edgeTts.ts'
@@ -2415,14 +2416,22 @@ function setupMediaSession() {
   const ms = (navigator as any).mediaSession
   if (!ms) return
   const on = (action: string, fn: () => void) => { try { ms.setActionHandler(action, fn) } catch { /* 不支持的动作 */ } }
-  on('play', () => (ttsState.value === 'paused' ? resumeTTS() : void startTTS()))
-  on('pause', pauseTTS)
+  on('play', () => runMediaKey('play'))
+  on('pause', () => runMediaKey('pause'))
   on('stop', stopTTS)
   on('previoustrack', () => void skipListen('paragraph', -1))
   on('nexttrack', () => void skipListen('paragraph', 1))
   on('seekbackward', () => void skipListen('sentence', -1))
   on('seekforward', () => void skipListen('sentence', 1))
   updateMediaSession()
+}
+
+/** 媒体键按当前听书状态决定做什么 (Web Audio 播放时 Chromium 每次都发 'pause', 见 listenMediaKeys) */
+function runMediaKey(action: 'play' | 'pause') {
+  const command = mediaKeyCommand(action, ttsState.value)
+  if (command === 'pause') pauseTTS()
+  else if (command === 'resume') resumeTTS()
+  else if (command === 'start') void startTTS()
 }
 
 function updateMediaSession() {

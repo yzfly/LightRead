@@ -10,6 +10,10 @@ import { fileURLToPath } from 'node:url'
 // 前端源码里的相对导入不写 .ts (由 Vite 补), 直接在 node 里跑时补上
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    // Vite 的 `?url` 资源导入 (字体等): 换成导出该路径字符串的模块
+    if (specifier.endsWith('?url')) {
+      return { shortCircuit: true, url: `data:text/javascript,export default ${encodeURIComponent(JSON.stringify(specifier.slice(0, -4)))}` }
+    }
     if (specifier.startsWith('.') && context.parentURL?.includes('/src/') && !/\.[cm]?[jt]s$/.test(specifier)) {
       const url = new URL(`${specifier}.ts`, context.parentURL)
       if (existsSync(fileURLToPath(url))) return { shortCircuit: true, url: url.href }
@@ -126,5 +130,40 @@ test('批量设置标签: 点选已有标签与手输结果一致', () => {
     const modal = src.slice(src.indexOf("t('library.tagModalTitle'"), src.indexOf("t('library.clearTags')"))
     assert.match(modal, /v-for="tag in allTags"[\s\S]*?toggleTagInDraft\(tagDraft, tag\)/, `${view}: 标签弹窗要列出已有标签供点选`)
     assert.match(src, /const tags = parseTagDraft\(tagDraft\.value\)/, `${view}: 提交时按同一规则拆分`)
+  }
+})
+
+// 2026-11-25 Windows (issue #25): 听书时耳机线控键能暂停, 再按一次不能继续。
+// 听书用 Web Audio 出声, Chromium / WebView2 看不到媒体元素在播, 系统媒体键每次都发 'pause'
+test('耳机 / 媒体键: 暂停后再按「暂停」等于继续, 「播放」不打断正在读的', async () => {
+  const { mediaKeyCommand } = await import('../src/services/listenMediaKeys.ts')
+  assert.equal(mediaKeyCommand('pause', 'playing'), 'pause')
+  assert.equal(mediaKeyCommand('pause', 'paused'), 'resume')
+  assert.equal(mediaKeyCommand('pause', 'stopped'), 'none')
+  assert.equal(mediaKeyCommand('play', 'paused'), 'resume')
+  assert.equal(mediaKeyCommand('play', 'stopped'), 'start')
+  assert.equal(mediaKeyCommand('play', 'playing'), 'none')
+  for (const view of ['src/views/ReaderView.vue', 'src/mobile/views/ReaderView.vue']) {
+    const src = read(view)
+    const setup = src.slice(src.indexOf('function setupMediaSession()'), src.indexOf('function updateMediaSession()'))
+    for (const action of ['play', 'pause']) {
+      assert.match(setup, new RegExp(`on\\('${action}', \\(\\) => runMediaKey\\('${action}'\\)\\)`), `${view}: '${action}' 要按当前状态决定做什么`)
+    }
+  }
+})
+
+// 2026-11-15 Windows / 2026-11-23 iOS (issue #24): 选了楷体正文不变 —— 书里 body / p 自带的
+// font-family 盖过了只写在 html 上的阅读字体 (多见于中文 EPUB)
+test('阅读字体盖过书自带的字体, 代码类元素保留等宽', async () => {
+  const prefs = { theme: 'light', fontSize: 18, fontFamily: '', lineHeight: 1.8, letterSpacing: 0, justify: true }
+  const override = /body, body :not\(pre\):not\(code\):not\(kbd\):not\(samp\):not\(tt\) \{ font-family: inherit !important; \}/
+  for (const path of ['../src/services/readerTheme.ts', '../src/mobile/services/readerTheme.ts']) {
+    const { FONT_FAMILIES, getReaderCSS } = await import(path)
+    assert.doesNotMatch(getReaderCSS(prefs, false), override, `${path}: 默认字体时用书自己的字体`)
+    for (const { value } of FONT_FAMILIES.filter(f => f.value)) {
+      const css = getReaderCSS({ ...prefs, fontFamily: value }, false)
+      assert.ok(css.includes(`font-family: ${value} !important;`), `${path}: html 上要写选中的字体`)
+      assert.match(css, override, `${path}: 选了 ${value} 时正文要继承它`)
+    }
   }
 })
