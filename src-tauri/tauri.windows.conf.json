@@ -12,7 +12,8 @@
         "fullscreen": false,
         "transparent": true,
         "decorations": false,
-        "shadow": false
+        "shadow": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling"
       }
     ]
   }

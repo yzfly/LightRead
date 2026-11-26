@@ -22,6 +22,7 @@ mod ios_shell;
 mod ipc_contract_tests;
 mod library_files;
 mod library_import;
+mod media_controls;
 mod local_llm;
 mod local_tts;
 mod model_download;
@@ -248,6 +249,7 @@ pub fn run() {
       edge_tts::edge_tts_synthesize,
       sapi_tts::sapi_tts_voices,
       sapi_tts::sapi_tts_synthesize,
+      media_controls::media_controls_update,
       stealth::stealth_enter,
       window_chrome::window_chrome,
       stealth::stealth_exit,

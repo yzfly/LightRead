@@ -22,6 +22,7 @@ import { isTauri } from '../storage/types'
 import { listVoicesSorted, warmUpSpeech, resetEdgeFailure } from '../services/tts'
 import { ListenPlayer, type ListenFeed } from '../services/listenPlayer'
 import { mediaKeyCommand } from '../services/listenMediaKeys'
+import { nativeMediaControls, onMediaControlsButton, syncMediaControls, type MediaControlsAction } from '../services/systemMediaControls'
 import { SentenceCursor, loadListenBookmark, saveListenBookmark, agoBucket, type CursorPos, type ListenBookmark } from '../services/readAloud'
 import { readingArea, followTarget, jumpLine, isOnScreen, followHeld, scrollMotion, prefersReducedMotion, type Area } from '../services/readingFocus'
 import { EDGE_VOICES, edgeAvailable, playAudio } from '../services/edgeTts'
@@ -2247,7 +2248,17 @@ const sleepShort = computed(() => {
 })
 
 // ---- 系统媒体控制: 锁屏 / 耳机键 / 键盘媒体键 ----
+/** Windows: 系统媒体会话在原生层 (services/systemMediaControls), 按键以事件传回 */
+let stopMediaButtons: Promise<() => void> | null = null
+
+function onMediaButton(action: MediaControlsAction) {
+  if (action === 'play' || action === 'pause') runMediaKey(action)
+  else if (action === 'stop') stopTTS()
+  else void skipListen('paragraph', action === 'nexttrack' ? 1 : -1)
+}
+
 function setupMediaSession() {
+  if (nativeMediaControls()) stopMediaButtons ??= onMediaControlsButton(onMediaButton)
   const ms = (navigator as any).mediaSession
   if (!ms) return
   const on = (action: string, fn: () => void) => { try { ms.setActionHandler(action, fn) } catch { /* 不支持的动作 */ } }
@@ -2270,16 +2281,23 @@ function runMediaKey(action: 'play' | 'pause') {
 }
 
 function updateMediaSession() {
+  const title = chapterLabel.value || meta.value?.title || ''
+  const artist = meta.value?.author ?? ''
+  const album = meta.value?.title ?? ''
+  void syncMediaControls({ state: ttsState.value, title, artist, album })
   const ms = (navigator as any).mediaSession
   if (!ms) return
   try {
     const MM = (window as any).MediaMetadata
-    if (MM) ms.metadata = new MM({ title: chapterLabel.value || meta.value?.title || '', artist: meta.value?.author ?? '', album: meta.value?.title ?? '' })
+    if (MM) ms.metadata = new MM({ title, artist, album })
     ms.playbackState = ttsState.value === 'playing' ? 'playing' : ttsState.value === 'paused' ? 'paused' : 'none'
   } catch { /* 忽略 */ }
 }
 
 function clearMediaSession() {
+  void syncMediaControls({ state: 'stopped', title: '', artist: '', album: '' })
+  void stopMediaButtons?.then(stop => stop())
+  stopMediaButtons = null
   const ms = (navigator as any).mediaSession
   if (!ms) return
   try {
