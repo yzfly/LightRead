@@ -152,6 +152,23 @@ test('耳机 / 媒体键: 暂停后再按「暂停」等于继续, 「播放」�
   }
 })
 
+// 2026-11-26 Windows v2.11.2 (issue #25 复现): 上面的改法没生效。WebView2 只在 AudioContext 出声时挂系统媒体会话,
+// 暂停时会话消失, 第二下媒体键根本到不了页面。会话改由原生层按窗口持有, 暂停时保留为「已暂停」
+test('Windows 媒体键: 系统媒体会话在原生层, 暂停后仍在', () => {
+  const conf = JSON.parse(read('src-tauri/tauri.windows.conf.json'))
+  const args = conf.app.windows[0].additionalBrowserArgs ?? ''
+  assert.match(args, /--disable-features=[^ ]*HardwareMediaKeyHandling/, 'WebView2 自己的媒体会话要关掉, 免得系统里有两个')
+  for (const keep of ['msWebOOUI', 'msPdfOOUI', 'msSmartScreenProtection']) assert.ok(args.includes(keep), `保留 wry 默认关掉的 ${keep}`)
+  assert.match(read('src-tauri/src/lib.rs'), /media_controls::media_controls_update/, '原生命令要注册')
+  const native = read('src-tauri/src/media_controls.rs')
+  assert.match(native, /MediaPlaybackStatus::Paused/, '暂停时会话保留为已暂停')
+  const src = read('src/views/ReaderView.vue')
+  const setup = src.slice(src.indexOf('function setupMediaSession()'), src.indexOf('function updateMediaSession()'))
+  assert.match(setup, /onMediaControlsButton\(onMediaButton\)/, '阅读页要接原生按键')
+  const update = src.slice(src.indexOf('function updateMediaSession()'), src.indexOf('function clearMediaSession()'))
+  assert.match(update, /syncMediaControls\(\{ state: ttsState\.value/, '播放 / 暂停状态要上报原生层')
+})
+
 // 2026-11-15 Windows / 2026-11-23 iOS (issue #24): 选了楷体正文不变 —— 书里 body / p 自带的
 // font-family 盖过了只写在 html 上的阅读字体 (多见于中文 EPUB)
 test('阅读字体盖过书自带的字体, 代码类元素保留等宽', async () => {
