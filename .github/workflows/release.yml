@@ -146,6 +146,12 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+  windows-arm64:
+    needs: preflight
+    uses: ./.github/workflows/windows-arm64.yml
+    with:
+      ref: ${{ inputs.tag || github.ref }}
+
   # Linux 独立并行构建；最终 publish 等待全部平台与 Rust 最低版本检查。
   desktop-linux:
     needs: preflight
@@ -255,15 +261,21 @@ jobs:
       ref: ${{ inputs.tag || github.ref }}
 
   publish:
-    needs: [desktop, desktop-linux, rust-floor, macos-signed, format-corpus]
+    needs: [desktop, windows-arm64, desktop-linux, rust-floor, macos-signed, format-corpus]
     # 全部桌面平台、macOS 签名校验、Rust 最低版本检查与格式兼容语料都成功后才公开草稿。
-    if: ${{ !cancelled() && needs.desktop.result == 'success' && needs.desktop-linux.result == 'success' && needs.rust-floor.result == 'success' && needs.macos-signed.result == 'success' && needs.format-corpus.result == 'success' }}
+    if: ${{ !cancelled() && needs.desktop.result == 'success' && needs.windows-arm64.result == 'success' && needs.desktop-linux.result == 'success' && needs.rust-floor.result == 'success' && needs.macos-signed.result == 'success' && needs.format-corpus.result == 'success' }}
     runs-on: ubuntu-22.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Windows-ARM64
+          path: windows-arm64
+      - name: 上传已在 Windows ARM64 上安装并启动的安装包
+        run: gh release upload "$RELEASE_TAG" "windows-arm64/LightRead_${RELEASE_TAG#v}_arm64-installer.exe" --clobber
       - name: 下载并核对 Release 资产，生成完整 SHA256 清单
         run: |
           mkdir release-assets
@@ -271,7 +283,8 @@ jobs:
           cd release-assets
           compgen -G '*_aarch64.dmg' >/dev/null
           compgen -G '*_x64.dmg' >/dev/null
-          compgen -G '*-setup.exe' >/dev/null
+          test -s "LightRead_${RELEASE_TAG#v}_x64-setup.exe"
+          test -s "LightRead_${RELEASE_TAG#v}_arm64-installer.exe"
           compgen -G '*.AppImage' >/dev/null
           compgen -G '*.deb' >/dev/null
           # 桌面 Release 不带 APK: 已安装的 App 会采用任何带 APK 的 vX.Y.Z, 混入会把桌面版本推给 App 用户。

@@ -1,0 +1,52 @@
+name: Windows ARM64 installer
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-arm64.yml'
+      - '.cargo/config.toml'
+      - 'src-tauri/Cargo.*'
+      - 'src-tauri/tauri*.conf.json'
+      - 'src-tauri/vendor/**'
+      - 'scripts/*-windows-arm64.ps1'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-targets: false
+      - name: Prepare native offline speech libraries
+        run: ./scripts/prepare-windows-arm64.ps1
+      - run: npm ci
+      - name: Build native ARM64 app and NSIS installer
+        run: npm run tauri -- build --target aarch64-pc-windows-msvc --bundles nsis -- --locked
+      - name: Install, verify the PE architecture and launch LightRead
+        run: ./scripts/check-windows-arm64.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-ARM64
+          path: dist-installer/*_arm64-installer.exe
+          if-no-files-found: error
