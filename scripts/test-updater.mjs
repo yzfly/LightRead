@@ -9,6 +9,7 @@ const state = {
 }
 globalThis.__updaterTest = state
 globalThis.__APP_VERSION__ = '1.3.0'
+globalThis.__APP_ARCH__ = ''
 const updaterUrl = new URL('../src/services/updater.ts', import.meta.url).href
 const modules = {
   '../storage/types': 'export const isTauri = () => globalThis.__updaterTest.native',
@@ -65,6 +66,7 @@ beforeEach(() => {
   delete globalThis.LightReadUpdater
   state.storage.clear()
   state.native = true
+  globalThis.__APP_ARCH__ = ''
   state.fetcher = async () => ({ json: async () => release() })
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: 'Mozilla/5.0 (Linux; Android 12)' } })
   globalThis.localStorage = {
@@ -74,6 +76,26 @@ beforeEach(() => {
   }
   globalThis.document = Object.assign(new EventTarget(), { visibilityState: 'visible' })
   globalThis.window = new EventTarget()
+})
+
+test('Windows recommends the installer for the running application architecture', () => {
+  const win = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+  const arm = { name: 'LightRead_3.0.0_arm64-installer.exe', url: '/arm', size: 1 }
+  const x64 = { name: 'LightRead_3.0.0_x64-setup.exe', url: '/x64', size: 1 }
+  // Already-installed x64 clients pick the first setup.exe regardless of architecture.
+  assert.equal([arm, x64].find(asset => /setup\.exe$/.test(asset.name)), x64)
+  for (const assets of [[arm, x64], [x64, arm]]) {
+    globalThis.__APP_ARCH__ = 'aarch64'
+    assert.equal(pickRecommendedDownload(assets, win)?.url, arm.url)
+    assert.equal(pickRecommendedDownload([x64], win), null)
+    globalThis.__APP_ARCH__ = 'x86_64'
+    assert.equal(pickRecommendedDownload(assets, 'Windows ARM64')?.url, x64.url)
+    assert.equal(pickRecommendedDownload([arm], win), null)
+  }
+  globalThis.__APP_ARCH__ = ''
+  assert.equal(pickRecommendedDownload([arm, x64], 'Windows ARM64')?.url, arm.url)
+  assert.equal(pickRecommendedDownload([arm, x64], win)?.url, x64.url)
+  assert.equal(pickRecommendedDownload([{ ...x64, name: 'legacy-setup.exe' }], win)?.url, x64.url)
 })
 
 test('Android never falls back to another platform installer when APK is missing', () => {

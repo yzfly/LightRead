@@ -35,6 +35,7 @@ function foliatePaginatorFork(): Plugin {
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(mobile ? mobileVersion : pkg.version),
+    __APP_ARCH__: JSON.stringify(process.env.TAURI_ENV_ARCH || ''),
     __APP_PLATFORM__: JSON.stringify(process.env.TAURI_ENV_PLATFORM || 'web'),
     // 模拟器验收的遥控通道 (src/services/e2eDriver.ts); 不设就是空串, 模块不进产物
     __E2E_DRIVER__: JSON.stringify(process.env.LIGHTREAD_E2E_DRIVER || ''),
