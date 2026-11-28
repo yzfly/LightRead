@@ -1,6 +1,6 @@
 import { normalizeFocusLines, normalizeLyricAnchor } from '../services/readingModes/lyric.ts'
 import { defineStore } from 'pinia'
-import { watch } from 'vue'
+import { onScopeDispose, watch } from 'vue'
 import { startSettingsTracking } from '../services/sync/settingsTracker.ts'
 import { readSyncedSettings } from '../services/sync/settingsSync.ts'
 import { emptyLayoutOverrides, restoreLayoutOverrides, resolveReaderPrefs, resolvePdfPrefs, screenLayout, type LayoutOverrides, type ReaderLayoutKey, type PdfLayoutKey } from '../services/adaptiveLayout.ts'
@@ -25,6 +25,7 @@ export interface ReaderPrefs {
   /** 滚动模式下跨章连续滚动: 章与章首尾相接 (docs/continuous-scroll.md); 关掉回到单章滚动 */
   continuousScroll: boolean
   fontFamily: string
+  writingMode: 'original' | 'horizontal'
   justify: boolean
   /** 字距 (em), 0 为书籍原样; 大字预设为 0.05 */
   letterSpacing: number
@@ -332,6 +333,7 @@ interface SettingsState {
 }
 
 const STORAGE_KEY = 'lightread-settings'
+const storesWithPersistence = new WeakSet<object>()
 
 const defaults: SettingsState = {
   version: SETTINGS_VERSION,
@@ -350,6 +352,7 @@ const defaults: SettingsState = {
     portraitScroll: true,
     continuousScroll: true,
     fontFamily: '',
+    writingMode: 'original',
     justify: true,
     letterSpacing: 0,
     progressDisplay: 'both',
@@ -642,20 +645,31 @@ export const useSettings = defineStore('settings', {
       if (key in this.layoutOverrides.pdf) this.layoutOverrides.pdf[key as PdfLayoutKey] = true
     },
     persistOnChange() {
+      if (storesWithPersistence.has(this)) return
+      storesWithPersistence.add(this)
       // 设置同步: 记录每项可同步设置的修改时间 (services/sync/settingsSync.ts)
       startSettingsTracking(() => this.$state, defaults)
       let timer: ReturnType<typeof setTimeout> | undefined
+      const flush = () => {
+        if (timer === undefined) return
+        clearTimeout(timer)
+        timer = undefined
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.$state))
+      }
       watch(
         () => this.$state,
-        state => {
+        () => {
           clearTimeout(timer)
-          timer = setTimeout(
-            () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state)),
-            300,
-          )
+          timer = setTimeout(flush, 300)
         },
         { deep: true },
       )
+      window.addEventListener('pagehide', flush)
+      onScopeDispose(() => {
+        window.removeEventListener('pagehide', flush)
+        storesWithPersistence.delete(this)
+        flush()
+      })
     },
     resetReader() {
       this.reader = structuredClone(defaults.reader)

@@ -104,7 +104,7 @@ foliate 原本只在滚动停下 250ms 后才更新锚点，期间若有重排�
 
 ## 11. 渲染器接口契约（fork 与轻阅之间）
 
-fork 仍注册为 `foliate-paginator`（view.js 按名字创建，且运行时会切 `flow`）。翻页模式代码原样不动；只有 `flow="scrolled"` 且元素带 `continuous` 属性时进入多槽模式（轻阅在「跨章连续滚动」开、非固定版式、非竖排时设置该属性）。不带 `continuous` 的滚动模式保持原行为，作为回退。
+阅读器使用 `foliate-paginator`。可重排书籍选「连续滚动」时，阅读器设置 `flow="scrolled"` 和 `continuous` 属性。渲染器根据章节实际使用的书写方向决定是否启用多槽模式。横排支持跨章连续滚动，竖排使用单章滚动。
 
 **主章（primary）**：阅读线所在的槽。下面所有「当前章」语义都指主章。
 
@@ -176,7 +176,7 @@ fork 仍注册为 `foliate-paginator`（view.js 按名字创建，且运行时�
   5. 极短章（高度不到阅读线的 20%）：`goTo` / `scrollToAnchor` 之后，把目标章「钉」成主章，直到用户自己滚动。否则一跳过去，主章就落到了下一章。
   6. `render()`（容器尺寸变化，或 margin / gap 等属性变化）会同步重排所有已载入的槽。`setStyles` 按 §6 处理：先排主章和可见的槽，其余在真空闲时逐个排。样式内容没变时不重写样式表。
   7. 没有做下下章的提前解压（§4 最后一条）。
-  8. 竖排：任何一个槽检测到 vertical 书写方向，就退出连续模式。保留主章，回到原来的单章行为；这本书之后不再进入连续模式（`open()` 时重置）。
+  8. 竖排：任何一个槽检测到 vertical 书写方向，就退出连续模式。保留主章，回到原来的单章行为；重新开书或更改书写方向后重新判定。选「横排」后可恢复连续滚动。
   9. `view.init()` 在没有进度时会调用 `next()`。连续模式下没有任何槽时，`next()/prev()` 和原版一样打开相邻章。
   10. `destroy()` 用 `disconnect()` 停掉容器的 ResizeObserver（原版的 `unobserve(this)` 实际不起作用）。
 - **测试**：`scripts/e2e-continuous-scroll.mjs`（`npm run e2e:continuous-scroll`，可用 `E2E_BASE` 改地址；`SCENARIO=basic|device|all`）。只统计与视口相交的 iframe：屏幕外的章因为别处卸载而挪动，读者看不到。

@@ -203,6 +203,13 @@ let systemFontsLoading = false
         <input v-model.number="reader.gap" type="range" min="2" max="16" step="1" :aria-label="t('reader.margin')" />
         <span class="tp-value">{{ reader.gap }}%</span>
       </div>
+      <div v-if="!fixedLayout" class="set-row">
+        <span class="tp-label">{{ t('reader.writingMode') }}</span>
+        <div class="seg" role="group" :aria-label="t('reader.writingMode')">
+          <button type="button" :class="{ active: reader.writingMode === 'original' }" :aria-pressed="reader.writingMode === 'original'" @click="reader.writingMode = 'original'">{{ t('reader.writingOriginal') }}</button>
+          <button type="button" :class="{ active: reader.writingMode === 'horizontal' }" :aria-pressed="reader.writingMode === 'horizontal'" @click="reader.writingMode = 'horizontal'">{{ t('reader.writingHorizontal') }}</button>
+        </div>
+      </div>
       <div class="set-row">
         <span class="tp-label">{{ t('reader.font') }}</span>
         <AppSelect v-model="reader.fontFamily" class="input" :aria-label="t('reader.font')">
