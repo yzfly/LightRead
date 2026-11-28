@@ -27,5 +27,17 @@ tar -xf $archive -C $cache
 if ($LASTEXITCODE -ne 0) { throw "Failed to extract $archive" }
 $lib = Join-Path $cache "$stem/lib"
 if (!(Test-Path -LiteralPath (Join-Path $lib 'sherpa-onnx-c-api.lib'))) { throw "Missing ARM64 libraries in $lib" }
-$env:SHERPA_ONNX_LIB_DIR = $lib
-if ($env:GITHUB_ENV) { "SHERPA_ONNX_LIB_DIR=$lib" | Out-File -Encoding utf8 -Append $env:GITHUB_ENV }
+# GGML can produce a portable ARM build with Clang. Its cl.exe mode probes the build CPU.
+$clang = (Get-Command clang-cl.exe -ErrorAction Stop).Source.Replace('\', '/')
+$settings = @{
+    SHERPA_ONNX_LIB_DIR = $lib
+    CMAKE_GENERATOR = 'Ninja'
+    CMAKE_C_COMPILER = $clang
+    CMAKE_CXX_COMPILER = $clang
+    CMAKE_C_COMPILER_TARGET = 'aarch64-pc-windows-msvc'
+    CMAKE_CXX_COMPILER_TARGET = 'aarch64-pc-windows-msvc'
+}
+foreach ($setting in $settings.GetEnumerator()) {
+    [Environment]::SetEnvironmentVariable($setting.Key, $setting.Value, 'Process')
+    if ($env:GITHUB_ENV) { "$($setting.Key)=$($setting.Value)" | Out-File -Encoding utf8 -Append $env:GITHUB_ENV }
+}
