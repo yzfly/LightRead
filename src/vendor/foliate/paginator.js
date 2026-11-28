@@ -35,7 +35,9 @@
  *    font size applies to every book (services/bookFontSize.ts, issue #22).
  * Vite resolves `foliate-js/view.js`'s `./paginator.js` to this file (vite.config.ts).
  */
+import * as CFI from 'foliate-js/epubcfi.js'
 import { relativizeBookResource } from '../../services/bookFontSize.ts'
+import { scrolledPageGeometry } from '../../services/portraitLayout.ts'
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -352,6 +354,9 @@ class View {
     get document() {
         return this.#iframe.contentDocument
     }
+    get src() {
+        return this.#iframe.src
+    }
     async load(src, afterLoad, beforeRender) {
         if (typeof src !== 'string') throw new Error(`${src} is not string`)
         return new Promise(resolve => {
@@ -361,6 +366,18 @@ class View {
                 // 浏览器优先用 srcset 就成了坏图 (Standard Ebooks 等精排书的书名页、徽标)。
                 // 去掉 srcset, 浏览器改用已换好的 src
                 for (const el of doc.querySelectorAll('img[srcset], source[srcset]')) el.removeAttribute('srcset')
+                if (this.container.getAttribute('writing-mode') === 'horizontal') {
+                    const style = doc.createElement('style')
+                    const rule = ':root, body, body * { writing-mode: horizontal-tb !important; }'
+                    // Layered important rules take precedence over publisher styles, including IDs.
+                    // Keep a plain rule for WebViews without cascade layers.
+                    style.textContent = `${rule} @layer lightread-writing { ${rule} }`
+                    doc.head.prepend(style)
+                    for (const el of doc.querySelectorAll('[style]')) {
+                        if (el.style?.getPropertyPriority('writing-mode') === 'important')
+                            el.style.setProperty('writing-mode', 'horizontal-tb', 'important')
+                    }
+                }
                 afterLoad?.(doc)
 
                 // it needs to be visible for Firefox to get computed style
@@ -536,7 +553,7 @@ export class Paginator extends HTMLElement {
     static observedAttributes = [
         'flow', 'gap', 'margin',
         'max-inline-size', 'max-block-size', 'max-column-count',
-        'continuous', 'column-count', // LightRead: auto / fixed columns
+        'continuous', 'column-count', 'writing-mode', // LightRead: auto / fixed columns
     ]
     // LightRead: marker so the build can be checked for the fork (scripts / grep dist)
     static lightreadFork = 'lightread-continuous-paginator/1'
@@ -808,6 +825,9 @@ export class Paginator extends HTMLElement {
                     this.#syncMode()
                 }
                 break
+            case 'writing-mode':
+                if (_ !== value) this.#refreshWritingMode(value)
+                break
             case 'continuous':
                 this.#syncMode()
                 break
@@ -897,6 +917,7 @@ export class Paginator extends HTMLElement {
     #beforeRender({ vertical, rtl, background }) {
         this.#vertical = vertical
         this.#rtl = rtl
+        if (vertical) this.#contBlocked = true
         this.#top.classList.toggle('vertical', vertical)
 
         const { width, height } = this.#container.getBoundingClientRect()
@@ -933,14 +954,14 @@ export class Paginator extends HTMLElement {
             // FIXME: vertical-rl only, not -lr
             this.setAttribute('dir', vertical ? 'rtl' : 'ltr')
             this.#top.style.padding = '0'
-            const columnWidth = maxInlineSize
-
             this.heads = null
             this.feet = null
             this.#header.replaceChildren()
             this.#footer.replaceChildren()
 
-            return { flow, margin, gap, columnWidth }
+            const geometry = vertical ? { gap, columnWidth: maxInlineSize }
+                : scrolledPageGeometry(width, maxInlineSize, g)
+            return { flow, margin, ...geometry }
         }
 
         const fixedColumns = Number(this.getAttribute('column-count'))
@@ -1383,7 +1404,9 @@ export class Paginator extends HTMLElement {
                     doc.head.append($style)
                     this.#styleMap.set(doc, [$styleBefore, $style])
                 }
-                onLoad?.({ doc, index })
+                onLoad?.()
+                this.setStyles(this.#styles)
+                this.dispatchEvent(new CustomEvent('load', { detail: { doc, index } }))
             }
             const beforeRender = this.#beforeRender.bind(this)
             await view.load(src, afterLoad, beforeRender)
@@ -1404,6 +1427,27 @@ export class Paginator extends HTMLElement {
         } else await this.scrollToAnchor(target, select)
         if (hasFocus) this.focusView()
     }
+    // A section's writing axis is detected before its first layout. Reload the same blob at
+    // the current text anchor so dimensions, images and overlays all use the new axis.
+    #refreshWritingMode(mode) {
+        if (mode !== this.getAttribute('writing-mode')) return
+        if (this.#busy) {
+            const retry = () => this.#refreshWritingMode(mode)
+            this.#busy.then(retry, retry)
+            return
+        }
+        this.#contBlocked = false
+        const view = this.#view
+        if (!view?.document?.body || !view.src) return
+        const range = this.#mode === 'cont'
+            ? this.#contVisibleRange(this.#primary) : this.#getVisibleRange()
+        range.collapse(true)
+        const parts = CFI.parse(CFI.fromRange(range))
+        const anchor = doc => CFI.toRange(doc, parts)
+        if (this.#mode === 'cont') this.#exitCont(range)
+        const index = this.#index
+        this.#track(this.#display({ index, src: view.src, anchor })).then(() => this.#syncMode())
+    }
     #canGoToIndex(index) {
         return index >= 0 && index <= this.sections.length - 1
     }
@@ -1411,11 +1455,7 @@ export class Paginator extends HTMLElement {
         if (index === this.#index) await this.#display({ index, anchor, select, focus })
         else {
             const oldIndex = this.#index
-            const onLoad = detail => {
-                this.sections[oldIndex]?.unload?.()
-                this.setStyles(this.#styles)
-                this.dispatchEvent(new CustomEvent('load', { detail }))
-            }
+            const onLoad = () => this.sections[oldIndex]?.unload?.()
             await this.#display(Promise.resolve(this.sections[index].load())
                 .then(src => ({ index, src, anchor, onLoad, select, focus }))
                 .catch(e => {
@@ -1958,7 +1998,6 @@ export class Paginator extends HTMLElement {
             const beforeRender = info => {
                 slot.vertical = info.vertical
                 slot.rtl = info.rtl
-                if (info.vertical) this.#contBlocked = true
                 return this.#beforeRender(info)
             }
             await Promise.race([view.load(src, afterLoad, beforeRender), killed])

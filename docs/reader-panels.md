@@ -34,7 +34,8 @@
 | （顶部提示） | 已开场景提示 + 管理 | — | 大字 / 墨水屏 / 沉浸开着时显示，点「管理」打开模式面板 |
 | 文字 | 字号 | `reader.fontSize` | A− / 滑条 / A+ / 数字框 |
 | | 行距 | `reader.lineHeight` | |
-| | 边距 | `reader.gap` | |
+| | 边距 | `reader.gap` | 横排滚动时，百分比按居中阅读区域的宽度计算 |
+| | 书写方向 | `reader.writingMode` | 可重排书籍可选「原书」（默认）或「横排」 |
 | | 字体 | `reader.fontFamily` | |
 | | 更多 › 字距 | `reader.letterSpacing` | **新露出**（原先只有大字会改它） |
 | | 更多 › 对齐 | `reader.justify` | **新露出**：两端对齐 / 左对齐 |

@@ -520,8 +520,6 @@ function layoutGeometry() {
   }
 }
 let appliedGeometry = ''
-/** 竖排书 (vertical-rl 等) 暂不启用跨章连续滚动; 首个分节加载后才知道 */
-let bookVertical = false
 /** 渲染器处于跨章连续滚动 (多槽) 模式: 同时活着多个分节文档, getContents() 主章 (阅读线所在) 排第一 */
 const isContinuous = () => !!view?.renderer?.continuous
 
@@ -541,10 +539,10 @@ function applyPrefs() {
     if (modes.einkActive.value) view.renderer.removeAttribute('animated')
     else view.renderer.setAttribute('animated', '')
     const layout = readerLayout.value
-    // 跨章连续滚动 (docs/continuous-scroll.md §11): 滚动模式、非固定版式、非竖排时开启; 先于 flow 设置,
-    // 切到滚动时渲染器直接进多槽模式。旧版 paginator 不认这个属性, 照常单章滚动
+    // 先设置书写方向与跨章偏好，渲染器在切换 flow 时按章节方向选择滚动方式。
     const r = view.renderer
-    const wantContinuous = layout.flow === 'scrolled' && prefs.continuousScroll && !view.isFixedLayout && !bookVertical
+    if (!view.isFixedLayout) setRendererAttr(r, 'writing-mode', prefs.writingMode)
+    const wantContinuous = layout.flow === 'scrolled' && prefs.continuousScroll && !view.isFixedLayout
     if (r.hasAttribute('continuous') !== wantContinuous) r.toggleAttribute('continuous', wantContinuous)
     setRendererAttr(r, 'flow', layout.flow)
     const geo = layoutGeometry()
@@ -723,7 +721,7 @@ function layoutSignature(per: number, scrolled: boolean) {
   const p = settings.readerPrefs
   const rect = container.value?.getBoundingClientRect()
   const q = (n = 0) => Math.round(n / 8)
-  return [p.fontSize, p.lineHeight, p.gap, p.fontFamily, p.justify ? 1 : 0, scrolled ? 's' : 'p', per, q(rect?.width), q(rect?.height)].join('|')
+  return [p.fontSize, p.lineHeight, p.gap, p.fontFamily, p.writingMode, p.justify ? 1 : 0, scrolled ? 's' : 'p', per, q(rect?.width), q(rect?.height)].join('|')
 }
 
 async function buildTocAnchors() {
@@ -2329,15 +2327,6 @@ function onSectionLoad(e: CustomEvent) {
   dj.onSectionLoad(e.detail)
   const { doc, index } = e.detail
   for (const resolve of sectionLoadResolvers.splice(0)) resolve()
-  // 竖排书不启用跨章连续滚动 (docs/continuous-scroll.md §9): 第一次见到竖排分节时撤掉 continuous
-  if (!bookVertical) {
-    try {
-      if (doc.defaultView?.getComputedStyle(doc.body).writingMode?.startsWith('vertical')) {
-        bookVertical = true
-        if (view?.renderer?.hasAttribute?.('continuous')) setTimeout(applyPrefs, 0)
-      }
-    } catch { /* 忽略 */ }
-  }
   const custom = selectedCustomFont()
   if (custom) injectFontIntoDoc(doc, custom)
   doc.addEventListener('keydown', handleKeydown)

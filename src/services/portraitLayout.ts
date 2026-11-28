@@ -129,3 +129,10 @@ export function portraitSpacing(width: number, userGap: number) {
     maxInlineSize: PORTRAIT_MAX_INLINE,
   }
 }
+
+/** 横排滚动页把两侧留白算在居中的阅读区域内，宽屏上的行宽上限才不会盖过页边距设置。 */
+export function scrolledPageGeometry(viewportWidth: number, maxInlineSize: number, gapFraction: number) {
+  const pageWidth = Math.min(viewportWidth, maxInlineSize)
+  const gap = pageWidth * gapFraction
+  return { gap, columnWidth: pageWidth - 2 * gap }
+}

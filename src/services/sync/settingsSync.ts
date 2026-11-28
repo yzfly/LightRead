@@ -45,6 +45,7 @@ export const SETTINGS_SYNC_SPEC: SettingsSpec = {
     continuousScroll: SYNC,
     /** 字体名: 别的设备没有这个字体时按 CSS 回退, 照样同步 */
     fontFamily: SYNC,
+    writingMode: SYNC,
     justify: SYNC,
     letterSpacing: SYNC,
     progressDisplay: SYNC,
