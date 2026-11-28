@@ -10,7 +10,7 @@
 
 export type PlatformId = 'windows' | 'mac' | 'linux' | 'android' | 'ios'
 /** 安装包种类, 界面用 about.pkg.<kind> 取文案 */
-export type PackageKind = 'installer' | 'appleSilicon' | 'intel' | 'appimage' | 'deb' | 'rpm' | 'apk' | 'testflight'
+export type PackageKind = 'installer' | 'windowsArm64' | 'appleSilicon' | 'intel' | 'appimage' | 'deb' | 'rpm' | 'apk' | 'testflight'
 
 export interface PlatformPackage {
   kind: PackageKind
@@ -36,6 +36,7 @@ const SAFE_NAME = /^[^/\\?#]+$/
 
 const RULES: Array<{ platform: PlatformId; kind: PackageKind; match: RegExp }> = [
   { platform: 'windows', kind: 'installer', match: /_x64-setup\.exe$/ },
+  { platform: 'windows', kind: 'windowsArm64', match: /_arm64-installer\.exe$/ },
   { platform: 'mac', kind: 'appleSilicon', match: /_aarch64\.dmg$/ },
   { platform: 'mac', kind: 'intel', match: /_x64\.dmg$/ },
   { platform: 'linux', kind: 'appimage', match: /\.AppImage$/ },

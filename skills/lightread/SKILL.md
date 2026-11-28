@@ -18,7 +18,7 @@ description: 轻阅 LightRead 使用指南：介绍这款开源免费的全格�
 
 | 平台 | 说明 |
 |---|---|
-| Windows 10 / 11 | x64 安装包（.exe） |
+| Windows | x64 或 ARM64 安装包（.exe），按设备处理器选择 |
 | macOS | Apple 芯片与 Intel 各一个 .dmg |
 | Linux | AppImage / deb / rpm（x86_64） |
 | Android | arm64 APK（Android 7.0+），界面按手机重新设计 |

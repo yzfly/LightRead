@@ -61,7 +61,7 @@
         { "@type": "Question", "name": "能导出微信读书那样的笔记吗？", "acceptedAnswer": { "@type": "Answer", "text": "可以。阅读器的「笔记」面板底部有「复制全部」和「导出」：纯文本与微信读书「复制全部笔记」同一版式，也能导出 Markdown、JSON 和 Readwise CSV。" } },
         { "@type": "Question", "name": "支持 Kindle 的书吗？", "acceptedAnswer": { "@type": "Answer", "text": "支持 MOBI、AZW、AZW3。不支持 KFX 格式和 DRM 加密的文件。" } },
         { "@type": "Question", "name": "手机能和电脑同步吗？", "acceptedAnswer": { "@type": "Answer", "text": "能。用轻阅账号（邮箱验证码登录）或自己的 WebDAV，同步阅读进度、划线笔记、书签、书单、阅读记录和设置；书籍文件也可以一起同步。" } },
-        { "@type": "Question", "name": "怎样总是下载到最新版？", "acceptedAnswer": { "@type": "Answer", "text": "用固定下载链接 https://code.jiangshu.ai/LightRead/download/<平台>（windows、mac、mac-intel、linux、linux-deb、linux-rpm、android），它始终跳到最新版安装包；加 ?mirror=gitcode 走国内镜像。" } }
+        { "@type": "Question", "name": "怎样总是下载到最新版？", "acceptedAnswer": { "@type": "Answer", "text": "用固定下载链接 https://code.jiangshu.ai/LightRead/download/<平台>（windows、windows-arm64、mac、mac-intel、linux、linux-deb、linux-rpm、android），它始终跳到最新版安装包；加 ?mirror=gitcode 走国内镜像。" } }
       ]
     }
   ]
@@ -268,6 +268,7 @@ h3 { font-family: var(--serif); font-size: clamp(23px, 2.7vw, 30px); line-height
 .dl p { margin: 0; font-size: 14px; color: var(--ink-3); line-height: 1.5; }
 .dl .links { display: grid; gap: 8px; }
 .dl .links a { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 14px; border-radius: var(--r-sm); background: var(--glass-line); color: var(--ink); font-size: 15px; font-weight: 500; }
+.dl .links a[hidden] { display: none; }
 .dl .links a:hover { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); text-decoration: none; }
 .dl .links a svg { width: 16px; height: 16px; opacity: .7; }
 .dl .ver { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); min-height: 1.5em; }
@@ -500,8 +501,11 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
         <div class="dl-grid">
           <div class="dl" data-os="windows">
             <div class="dl-head"><h3>Windows</h3><span class="tag">本机</span></div>
-            <p>Windows 10 / 11 · x64</p>
-            <div class="links"><a data-fixed="windows" href="download/windows">安装包 .exe<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a></div>
+            <p>Windows 10 / 11</p>
+            <div class="links">
+              <a data-fixed="windows" href="download/windows">x64 .exe<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
+              <a data-fixed="windows-arm64" href="download/windows-arm64" hidden>ARM64 .exe<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
+            </div>
             <span class="ver" data-ver="windows"></span>
           </div>
           <div class="dl" data-os="mac">
@@ -537,7 +541,7 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
           </div>
         </div>
         <div class="fixed">
-          <p>固定链接：<code>https://code.jiangshu.ai/LightRead/download/&lt;平台&gt;</code>，平台为 <code>windows</code> <code>mac</code> <code>mac-intel</code> <code>linux</code> <code>linux-deb</code> <code>linux-rpm</code> <code>android</code> <code>ios</code>（TestFlight）；加 <code>?mirror=gitcode</code> 走国内镜像。不带平台 (<a href="download/"><code>/download/</code></a>) 按你的系统自动选择。</p>
+          <p>固定链接：<code>https://code.jiangshu.ai/LightRead/download/&lt;平台&gt;</code>，平台为 <code>windows</code> <code>windows-arm64</code> <code>mac</code> <code>mac-intel</code> <code>linux</code> <code>linux-deb</code> <code>linux-rpm</code> <code>android</code> <code>ios</code>（TestFlight）；加 <code>?mirror=gitcode</code> 走国内镜像。不带平台 (<a href="download/"><code>/download/</code></a>) 按你的系统自动选择。</p>
           <p>所有版本：<a href="https://github.com/yzfly/LightRead/releases">GitHub Releases</a> · <a href="https://gitcode.com/langgpt/LightRead/releases">GitCode 镜像</a> · 每个版本附带 <code>SHA256SUMS</code> 校验 · 机器可读：<a href="download/latest.json">latest.json</a></p>
         </div>
       </div>
@@ -601,8 +605,8 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
   var hero = document.getElementById('hero-download')
   var labels = { windows: '下载 Windows 版', mac: '下载 macOS 版', linux: '下载 Linux 版', android: '下载安卓 App', ios: '加入 iOS 测试版' }
   if (labels[os]) document.getElementById('hero-download-label').textContent = labels[os]
-  // macOS 要分 Apple 芯片与 Intel, 去下载区选; iOS 走 TestFlight
-  if (os === 'mac' || !os) hero.setAttribute('href', '#download')
+  // Windows 和 macOS 去下载区选择处理器架构，iOS 走 TestFlight
+  if (os === 'windows' || os === 'mac' || !os) hero.setAttribute('href', '#download')
   if (os === 'ios') hero.setAttribute('href', 'download/ios')
   if (os === 'ios') document.getElementById('hero-note').textContent = 'iOS 版是 TestFlight 测试版：先装苹果的 TestFlight App，再点上面的按钮加入。'
 
@@ -636,6 +640,9 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
     data.platforms.forEach(function (p) {
       var el = document.querySelector('[data-ver="' + p.platform + '"]')
       if (el) el.textContent = 'v' + p.version
+      if (p.platform === 'windows' && p.packages.some(function (pkg) { return pkg.kind === 'windowsArm64' })) {
+        document.querySelector('[data-fixed="windows-arm64"]').hidden = false
+      }
     })
   }).catch(function () {})
 })()

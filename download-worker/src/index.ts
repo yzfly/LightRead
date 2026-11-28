@@ -2,7 +2,7 @@
  * 轻阅固定下载链接 (路由 code.jiangshu.ai/LightRead/download*):
  *
  *   /LightRead/download/                 按访问者系统跳到对应安装包; 识别不了回主页下载区
- *   /LightRead/download/windows          Windows x64 安装包 (.exe)
+ *   /LightRead/download/windows          Windows x64 安装包 (.exe)       windows-arm64: ARM64 (.exe)
  *   /LightRead/download/mac              macOS Apple 芯片 (.dmg)        mac-intel: Intel (.dmg)
  *   /LightRead/download/linux            Linux AppImage                linux-deb / linux-rpm
  *   /LightRead/download/android          安卓 App (.apk, app-vX.Y.Z 线)
@@ -13,7 +13,7 @@
  * 版本挑选与应用「关于」页同一套规则 (src/services/aboutLinks.ts): 桌面只认 vX.Y.Z, App 取最新带 APK 的 Release,
  * 草稿 / 预发布不算, GitCode 只认带 SHA256SUMS 的版本。Release 列表在每个边缘节点缓存 5 分钟。
  */
-import { IOS_TESTFLIGHT_URL, detectPlatform, iosDownload, parsePlatformReleases, type PackageKind, type PlatformDownload, type PlatformId, type ReleaseListSource } from '../../src/services/aboutLinks'
+import { IOS_TESTFLIGHT_URL, detectPlatform, iosDownload, parsePlatformReleases, type PackageKind, type PlatformDownload, type PlatformId, type ReleaseListSource } from '../../src/services/aboutLinks.ts'
 
 const SITE = 'https://code.jiangshu.ai/LightRead/'
 const LISTS: Record<ReleaseListSource, string> = {
@@ -35,6 +35,7 @@ const LIST_TTL = 300
 /** 固定链接名 → 平台 + 安装包种类 */
 const TARGETS: Record<string, { platform: PlatformId; kind: PackageKind }> = {
   windows: { platform: 'windows', kind: 'installer' },
+  'windows-arm64': { platform: 'windows', kind: 'windowsArm64' },
   mac: { platform: 'mac', kind: 'appleSilicon' },
   'mac-arm64': { platform: 'mac', kind: 'appleSilicon' },
   'mac-intel': { platform: 'mac', kind: 'intel' },
@@ -83,11 +84,10 @@ async function githubFeedList(): Promise<unknown[]> {
   const out: unknown[] = []
   if (desktop) {
     const v = desktop.slice(1)
-    out.push({
-      tag_name: desktop,
-      assets: [`LightRead_${v}_x64-setup.exe`, `LightRead_${v}_aarch64.dmg`, `LightRead_${v}_x64.dmg`, `LightRead_${v}_amd64.AppImage`, `LightRead_${v}_amd64.deb`, `LightRead-${v}-1.x86_64.rpm`]
-        .map(n => asset(desktop, n)),
-    })
+    const names = [`LightRead_${v}_x64-setup.exe`, `LightRead_${v}_aarch64.dmg`, `LightRead_${v}_x64.dmg`, `LightRead_${v}_amd64.AppImage`, `LightRead_${v}_amd64.deb`, `LightRead-${v}-1.x86_64.rpm`]
+    const arm64 = `LightRead_${v}_arm64-installer.exe`
+    if (await published(desktop, arm64)) names.push(arm64)
+    out.push({ tag_name: desktop, assets: names.map(name => asset(desktop, name)) })
   }
   if (app) out.push({ tag_name: app, assets: [asset(app, `LightRead_${app}_android_arm64.apk`)] })
   return out
@@ -113,12 +113,13 @@ async function loadList(source: ReleaseListSource, ctx: ExecutionContext): Promi
   return items
 }
 
-/** 先取请求的来源, 失败再换另一个; 两边都失败返回 null */
-async function loadAny(prefer: ReleaseListSource, ctx: ExecutionContext): Promise<{ source: ReleaseListSource; items: PlatformDownload[] } | null> {
+/** 首选来源还缺目标安装包时，从另一来源获取。 */
+async function loadAny<T>(prefer: ReleaseListSource, ctx: ExecutionContext, select: (items: PlatformDownload[]) => T | undefined) {
   for (const source of prefer === 'gitcode' ? ['gitcode', 'github'] as const : ['github', 'gitcode'] as const) {
     try {
       const items = await loadList(source, ctx)
-      if (items.length) return { source, items }
+      const value = items.length ? select(items) : undefined
+      if (value !== undefined) return { source, value }
     } catch { /* 换下一个来源 */ }
   }
   return null
@@ -129,7 +130,7 @@ function redirect(url: string, status = 302) {
 }
 
 async function latestJson(prefer: ReleaseListSource, ctx: ExecutionContext) {
-  const got = await loadAny(prefer, ctx)
+  const got = await loadAny(prefer, ctx, items => items)
   const fixed = Object.fromEntries(Object.keys(TARGETS).filter(k => !['mac-arm64', 'linux-appimage'].includes(k)).map(k => [k, `${SITE}download/${k}`]))
   const body = {
     name: 'LightRead 轻阅',
@@ -138,7 +139,7 @@ async function latestJson(prefer: ReleaseListSource, ctx: ExecutionContext) {
     fixedLinks: fixed,
     note: 'fixedLinks always redirect (HTTP 302) to the newest build; append ?mirror=gitcode for the China mirror. Desktop uses tags vX.Y.Z, the Android app uses app-vX.Y.Z, iOS is distributed through TestFlight.',
     // iOS 不在 Release 里, 版本由 TestFlight 管: 不给 version, 标出渠道
-    platforms: [...(got?.items ?? []), { platform: 'ios', channel: 'testflight', packages: iosDownload().packages }],
+    platforms: [...(got?.value ?? []), { platform: 'ios', channel: 'testflight', packages: iosDownload().packages }],
   }
   return new Response(JSON.stringify(body, null, 2), {
     status: got ? 200 : 503,
@@ -157,18 +158,23 @@ export default {
 
     let name = rest
     if (!name) {
-      const platform = detectPlatform(request.headers.get('user-agent') ?? '')
+      const ua = request.headers.get('user-agent') ?? ''
+      const platform = detectPlatform(ua)
       if (!platform) return redirect(`${SITE}#download`)
       name = DEFAULT_TARGET[platform]
+      if (platform === 'windows') {
+        const arch = request.headers.get('sec-ch-ua-arch')
+        if (arch === '"arm"' || /\b(?:ARM64|AArch64)\b/i.test(ua)) name = 'windows-arm64'
+        else if (arch !== '"x86"') return redirect(`${SITE}#download`)
+      }
     }
     const target = TARGETS[name]
     if (!target) return redirect(`${SITE}#download`)
 
     if (target.platform === 'ios') return redirect(IOS_TESTFLIGHT_URL)
     const line = target.platform === 'android' ? 'app' : 'desktop'
-    const got = await loadAny(prefer, ctx)
-    const pkg = got?.items.find(d => d.platform === target.platform)?.packages.find(p => p.kind === target.kind)
-    if (!got || !pkg) return redirect(RELEASE_PAGES[prefer][line])
-    return redirect(pkg.url)
+    const got = await loadAny(prefer, ctx, items =>
+      items.find(d => d.platform === target.platform)?.packages.find(p => p.kind === target.kind))
+    return redirect(got?.value.url ?? RELEASE_PAGES[prefer][line])
   },
 }

@@ -2,6 +2,8 @@
 declare const __APP_VERSION__: string
 /** 构建平台 (TAURI_ENV_PLATFORM): android / ios / linux / macos / windows; 网页版为 web */
 declare const __APP_PLATFORM__: string
+/** Tauri 目标架构，网页构建为空。 */
+declare const __APP_ARCH__: string
 /** 模拟器验收遥控端地址 (LIGHTREAD_E2E_DRIVER); 正式构建为空串 */
 declare const __E2E_DRIVER__: string
 

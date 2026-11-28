@@ -342,17 +342,20 @@ export interface DownloadOption {
 
 /** 按运行平台挑出对应的安装包, 推荐项排在前面 */
 export function pickDownloads(assets: ReleaseAsset[], ua = navigator.userAgent): DownloadOption[] {
-  const platform: 'mac' | 'windows' | 'linux' | 'android' =
+  // Windows WebView2 can report x64 on Arm. Native updates follow the build target.
+  const windowsArm = __APP_ARCH__ ? __APP_ARCH__ === 'aarch64' : /arm64|aarch64/i.test(ua)
+  const platform =
     /Android/i.test(ua) ? 'android'
     : /Mac/i.test(ua) ? 'mac'
-    : /Win/i.test(ua) ? 'windows'
+    : /Win/i.test(ua) ? (windowsArm ? 'windows-arm64' : 'windows-x64')
     : 'linux'
 
   const rules: Array<{ match: RegExp; label: string; on: string }> = [
     { match: /aarch64\.dmg$/, label: 'macOS (Apple Silicon)', on: 'mac' },
     { match: /x64\.dmg$/, label: 'macOS (Intel)', on: 'mac' },
-    { match: /setup\.exe$/, label: t('update.windowsInstaller'), on: 'windows' },
-    { match: /\.msi$/, label: 'Windows (MSI)', on: 'windows' },
+    { match: /_arm64-installer\.exe$/i, label: `${t('update.windowsInstaller')} (ARM64)`, on: 'windows-arm64' },
+    { match: /^(?!.*(?:arm64|aarch64)).*setup\.exe$/i, label: `${t('update.windowsInstaller')} (x64)`, on: 'windows-x64' },
+    { match: /^(?!.*(?:arm64|aarch64)).*\.msi$/i, label: 'Windows (MSI)', on: 'windows-x64' },
     { match: /\.AppImage$/, label: 'Linux (AppImage)', on: 'linux' },
     { match: /\.deb$/, label: 'Linux (deb)', on: 'linux' },
     { match: /\.rpm$/, label: 'Linux (rpm)', on: 'linux' },

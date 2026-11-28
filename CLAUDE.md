@@ -191,7 +191,7 @@ sync-server/           轻阅账号后端 (Cloudflare Worker + D1 + R2, sync.jia
 
 - 官网 https://code.jiangshu.ai/LightRead/ 是对外唯一入口：GitHub 仓库 homepage、README、应用「关于」页与手册的「在网页上看」都指向它；以后 App 的说明页、帮助链接一律跳官网（地址集中在 `src/services/siteLinks.ts`）。页面同时写给人和 AI 看：JSON-LD、`llms.txt` / `llms-full.txt`、每章 `.md` 原文、sitemap。
 - 源码 `site/index.html`（手写首页，读书气质 + 磨砂玻璃）+ `scripts/build-site.mjs`（把 `docs/manual` 等渲染成 `manual/*.html`、`docs/*.html`，输出 `site-dist/`）。`.github/workflows/pages.yml` 在 site / 手册 / 版本文件改动后发布到 GitHub Pages。新增站内文档要同时改 `build-site.mjs` 的 `PAGES` 与 `siteLinks.ts`（`npm run test:site-links` 校验）。
-- 固定下载链接 `https://code.jiangshu.ai/LightRead/download/<windows|mac|mac-intel|linux|linux-deb|linux-rpm|android>` 始终 302 到最新版（`?mirror=gitcode` 走镜像，`/download/latest.json` 给机器读），由 Cloudflare Worker `download-worker/`（路由 `code.jiangshu.ai/LightRead/download*`）提供，版本挑选复用 `src/services/aboutLinks.ts`，发版后无需改动。部署：`cd download-worker && CLOUDFLARE_API_TOKEN=$(cat ~/.config/tokenssh-ai/cloudflare-workers-token) npx wrangler deploy -c wrangler.jsonc`。
+- 固定下载链接 `https://code.jiangshu.ai/LightRead/download/<windows|windows-arm64|mac|mac-intel|linux|linux-deb|linux-rpm|android>` 始终 302 到最新版（`?mirror=gitcode` 走镜像，`/download/latest.json` 给机器读），由 Cloudflare Worker `download-worker/`（路由 `code.jiangshu.ai/LightRead/download*`）提供，版本挑选复用 `src/services/aboutLinks.ts`，发版后无需改动。部署：`cd download-worker && CLOUDFLARE_API_TOKEN=$(cat ~/.config/tokenssh-ai/cloudflare-workers-token) npx wrangler deploy -c wrangler.jsonc`。
 
 ## 账号后端部署
 
