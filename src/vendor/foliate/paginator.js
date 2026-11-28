@@ -36,6 +36,7 @@
  * Vite resolves `foliate-js/view.js`'s `./paginator.js` to this file (vite.config.ts).
  */
 import { relativizeBookResource } from '../../services/bookFontSize.ts'
+import { scrolledPageGeometry } from '../../services/portraitLayout.ts'
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -933,14 +934,14 @@ export class Paginator extends HTMLElement {
             // FIXME: vertical-rl only, not -lr
             this.setAttribute('dir', vertical ? 'rtl' : 'ltr')
             this.#top.style.padding = '0'
-            const columnWidth = maxInlineSize
-
             this.heads = null
             this.feet = null
             this.#header.replaceChildren()
             this.#footer.replaceChildren()
 
-            return { flow, margin, gap, columnWidth }
+            const geometry = vertical ? { gap, columnWidth: maxInlineSize }
+                : scrolledPageGeometry(width, maxInlineSize, g)
+            return { flow, margin, ...geometry }
         }
 
         const fixedColumns = Number(this.getAttribute('column-count'))
