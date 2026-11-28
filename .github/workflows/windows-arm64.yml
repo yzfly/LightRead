@@ -29,6 +29,8 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-node@v4
         with:
+          # workerd (a web-build dependency) only distributes an x64 Windows binary.
+          architecture: x64
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
