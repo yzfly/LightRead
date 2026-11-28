@@ -31,7 +31,7 @@ Windows · macOS · Linux · Android · iOS（TestFlight 测试版）· 网页 P
 | | |
 | --- | --- |
 | 是什么 | 开源、本地优先的电子书与 PDF 阅读器，读书、读论文、听书都在一个应用里 |
-| 支持设备 | Windows 10 / 11、macOS（Apple 芯片与 Intel）、Linux（deb / rpm / AppImage）、Android（arm64）、网页 PWA |
+| 支持设备 | Windows（x64 / ARM64）、macOS（Apple 芯片与 Intel）、Linux（deb / rpm / AppImage）、Android（arm64）、网页 PWA |
 | 支持格式 | EPUB、PDF、MOBI、AZW、AZW3、FB2、TXT、Markdown、HTML、DjVu、CBZ / CBR 漫画，以及代码、日志等纯文本文件 |
 | 阅读模式 | 点睛阅读（重点词 / 要句标记）、打字机、歌词、仿生阅读、自动翻页与匀速滚动、听书跟读；夜读、护眼、墨水屏、大字、沉浸场景 |
 | 排版 | 翻页 / 按章滚动 / 跨章连续滚动，单栏 / 双栏，字号、行距、边距、字体、主题随手调；App 支持音量键翻页、PDF 重排 |
@@ -130,7 +130,7 @@ Windows · macOS · Linux · Android · iOS（TestFlight 测试版）· 网页 P
 
 | 渠道 | 地址 | 适合 |
 | --- | --- | --- |
-| 官网固定链接 | `https://code.jiangshu.ai/LightRead/download/<平台>`：[windows](https://code.jiangshu.ai/LightRead/download/windows) · [mac](https://code.jiangshu.ai/LightRead/download/mac) · [mac-intel](https://code.jiangshu.ai/LightRead/download/mac-intel) · [linux](https://code.jiangshu.ai/LightRead/download/linux) · [linux-deb](https://code.jiangshu.ai/LightRead/download/linux-deb) · [linux-rpm](https://code.jiangshu.ai/LightRead/download/linux-rpm) · [android](https://code.jiangshu.ai/LightRead/download/android) · [ios](https://code.jiangshu.ai/LightRead/download/ios)（TestFlight） | 链接不变，始终下载最新版；加 `?mirror=gitcode` 走国内镜像 |
+| 官网固定链接 | `https://code.jiangshu.ai/LightRead/download/<平台>`：[Windows x64](https://code.jiangshu.ai/LightRead/download/windows) · [Windows ARM64](https://code.jiangshu.ai/LightRead/download/windows-arm64) · [mac](https://code.jiangshu.ai/LightRead/download/mac) · [mac-intel](https://code.jiangshu.ai/LightRead/download/mac-intel) · [linux](https://code.jiangshu.ai/LightRead/download/linux) · [linux-deb](https://code.jiangshu.ai/LightRead/download/linux-deb) · [linux-rpm](https://code.jiangshu.ai/LightRead/download/linux-rpm) · [android](https://code.jiangshu.ai/LightRead/download/android) · [ios](https://code.jiangshu.ai/LightRead/download/ios)（TestFlight） | 链接不变，始终下载最新版；加 `?mirror=gitcode` 走国内镜像 |
 | GitHub Releases · 桌面版 | [github.com/yzfly/LightRead/releases/latest](https://github.com/yzfly/LightRead/releases/latest) | Windows、macOS、Linux |
 | GitHub Releases · 安卓 App | [以 `app-v` 开头的版本](https://github.com/yzfly/LightRead/releases?q=app-v&expanded=true) | Android 手机、平板 |
 | GitCode 国内镜像 | [gitcode.com/langgpt/LightRead/releases](https://gitcode.com/langgpt/LightRead/releases) | 访问 GitHub 慢时使用，桌面版与 App 均有 |
@@ -141,7 +141,8 @@ Windows · macOS · Linux · Android · iOS（TestFlight 测试版）· 网页 P
 
 | 设备 | 安装包 |
 | --- | --- |
-| Windows 10 / 11（64 位） | `LightRead_x.y.z_x64-setup.exe` |
+| Windows，Intel / AMD x64 | `LightRead_x.y.z_x64-setup.exe` |
+| Windows，ARM64 | `LightRead_x.y.z_arm64-installer.exe` |
 | macOS · Apple 芯片（M 系列） | `LightRead_x.y.z_aarch64.dmg` |
 | macOS · Intel | `LightRead_x.y.z_x64.dmg` |
 | Ubuntu / Debian | `LightRead_x.y.z_amd64.deb` |

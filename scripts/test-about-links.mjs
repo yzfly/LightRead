@@ -6,6 +6,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import downloads from '../download-worker/src/index.ts'
 import { IOS_TESTFLIGHT_URL, AUTHOR_WECHAT, COMMUNITY_BASE, detectPlatform, parseCommunity, parsePlatformReleases, parseWechatContact, iosDownload } from '../src/services/aboutLinks.ts'
 
 const GH = 'https://github.com/yzfly/LightRead/releases/download/'
@@ -35,6 +36,49 @@ test('desktop and app lines each pick their newest release', () => {
   assert.equal(android.length, 1)
   assert.equal(android[0].url, `${GH}app-v2.3.0/LightRead_app-v2.3.0_android_arm64.apk`)
   assert.equal(android[0].size, 10 * 1048576)
+})
+
+test('Windows download links keep x64 and native ARM64 installers distinct', async t => {
+  const tag = 'v2.12.0'
+  const x64 = 'LightRead_2.12.0_x64-setup.exe'
+  const arm64 = 'LightRead_2.12.0_arm64-installer.exe'
+  const base = `${GH}${tag}/`
+  const site = 'https://code.jiangshu.ai/LightRead/'
+  const mirror = 'https://gitcode.com/langgpt/LightRead/releases/download/'
+  const latest = 'https://github.com/yzfly/LightRead/releases/latest'
+  let armAvailable = true
+  let limited = false
+  const names = () => [...(armAvailable ? [arm64] : []), x64, 'SHA256SUMS']
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    if (url.includes('api.github.com')) return limited ? new Response(null, { status: 403 }) : Response.json([gh(tag, names())])
+    if (url.includes('api.gitcode.com')) return Response.json([{ tag_name: tag, assets: names().map(name => ({ name })) }])
+    if (url.endsWith('/releases.atom')) return new Response(`<feed><entry><link href="https://github.com/yzfly/LightRead/releases/tag/${tag}"/></entry></feed>`)
+    assert.equal(init.method, 'HEAD')
+    return new Response(null, { status: names().some(name => url === base + name) ? 302 : 404 })
+  })
+  const oldCache = globalThis.caches
+  globalThis.caches = { default: { match: async () => undefined, put: async () => {} } }
+  t.after(() => { if (oldCache === undefined) delete globalThis.caches; else globalThis.caches = oldCache })
+  const get = (suffix, headers) => downloads.fetch(new Request(site + 'download/' + suffix, { headers }), {}, { waitUntil() {} })
+  const location = async (suffix, headers) => (await get(suffix, headers)).headers.get('location')
+  const windows = { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+  assert.equal(await location('windows'), base + x64)
+  assert.equal(await location('windows-arm64'), base + arm64)
+  assert.equal(await location('windows-arm64?mirror=gitcode'), `${mirror}${tag}/${arm64}`)
+  assert.equal(await location('', { ...windows, 'sec-ch-ua-arch': '"arm"' }), base + arm64)
+  assert.equal(await location('', { ...windows, 'sec-ch-ua-arch': '"x86"' }), base + x64)
+  assert.equal(await location('', windows), site + '#download')
+
+  // GitHub can return an Atom tag before its binaries exist. Only expose an ARM download if its asset is published.
+  limited = true
+  for (const available of [false, true]) {
+    armAvailable = available
+    const catalog = await (await get('latest.json')).json()
+    const packages = catalog.platforms.find(p => p.platform === 'windows').packages
+    assert.deepEqual(packages.map(p => p.name), armAvailable ? [x64, arm64] : [x64])
+    assert.equal(await location('windows-arm64'), armAvailable ? base + arm64 : latest)
+    assert.equal(await location('windows'), base + x64)
+  }
 })
 
 test('an older unified release still supplies the APK when no app-v release exists', () => {

@@ -31,7 +31,7 @@ Free, open source, no ads. Local reading needs no account or internet connection
 | | |
 | --- | --- |
 | What it is | An open-source, local-first reader for ebooks and PDFs: books, research papers, and audio reading in one app |
-| Devices | Windows 10/11, macOS (Apple Silicon and Intel), Linux (deb / rpm / AppImage), Android (arm64), web PWA |
+| Devices | Windows (x64 and ARM64), macOS (Apple Silicon and Intel), Linux (deb / rpm / AppImage), Android (arm64), web PWA |
 | Formats | EPUB, PDF, MOBI, AZW, AZW3, FB2, TXT, Markdown, HTML, DjVu, CBZ / CBR comics, plus plain-text files such as source code and logs |
 | Reading modes | Key-idea highlighting (key words and key sentences), typewriter, lyrics, bionic-style word guide, auto page turn and smooth scroll, read-along with text to speech; night, eye-care, e-ink, large-text, and immersive scenes |
 | Layout | Paginated, per-chapter scroll, or continuous scroll across chapters; one or two columns; font size, line height, margins, fonts, and themes; volume-key page turning and PDF reflow on Android |
@@ -130,7 +130,7 @@ Desktop and Android are released separately; each channel below always has the l
 
 | Channel | Link | For |
 | --- | --- | --- |
-| Fixed links on the website | `https://code.jiangshu.ai/LightRead/download/<platform>`: [windows](https://code.jiangshu.ai/LightRead/download/windows) · [mac](https://code.jiangshu.ai/LightRead/download/mac) · [mac-intel](https://code.jiangshu.ai/LightRead/download/mac-intel) · [linux](https://code.jiangshu.ai/LightRead/download/linux) · [linux-deb](https://code.jiangshu.ai/LightRead/download/linux-deb) · [linux-rpm](https://code.jiangshu.ai/LightRead/download/linux-rpm) · [android](https://code.jiangshu.ai/LightRead/download/android) | The link never changes and always serves the newest build; add `?mirror=gitcode` for the China mirror |
+| Fixed links on the website | `https://code.jiangshu.ai/LightRead/download/<platform>`: [Windows x64](https://code.jiangshu.ai/LightRead/download/windows) · [Windows ARM64](https://code.jiangshu.ai/LightRead/download/windows-arm64) · [mac](https://code.jiangshu.ai/LightRead/download/mac) · [mac-intel](https://code.jiangshu.ai/LightRead/download/mac-intel) · [linux](https://code.jiangshu.ai/LightRead/download/linux) · [linux-deb](https://code.jiangshu.ai/LightRead/download/linux-deb) · [linux-rpm](https://code.jiangshu.ai/LightRead/download/linux-rpm) · [android](https://code.jiangshu.ai/LightRead/download/android) | The link never changes and always serves the newest build; add `?mirror=gitcode` for the China mirror |
 | GitHub Releases · desktop | [github.com/yzfly/LightRead/releases/latest](https://github.com/yzfly/LightRead/releases/latest) | Windows, macOS, Linux |
 | GitHub Releases · Android | [Releases tagged `app-v…`](https://github.com/yzfly/LightRead/releases?q=app-v&expanded=true) | Android phones and tablets |
 | GitCode mirror (China) | [gitcode.com/langgpt/LightRead/releases](https://gitcode.com/langgpt/LightRead/releases) | When GitHub is slow; desktop and Android |
@@ -141,7 +141,8 @@ Pick the file for your device (`x.y.z` is the version):
 
 | Device | File |
 | --- | --- |
-| Windows 10/11, 64-bit | `LightRead_x.y.z_x64-setup.exe` |
+| Windows, Intel / AMD x64 | `LightRead_x.y.z_x64-setup.exe` |
+| Windows, ARM64 | `LightRead_x.y.z_arm64-installer.exe` |
 | macOS, Apple Silicon | `LightRead_x.y.z_aarch64.dmg` |
 | macOS, Intel | `LightRead_x.y.z_x64.dmg` |
 | Ubuntu / Debian | `LightRead_x.y.z_amd64.deb` |

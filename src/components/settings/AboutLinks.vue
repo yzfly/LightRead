@@ -24,6 +24,7 @@ const PLATFORM_LABEL: Record<PlatformId, string> = {
 }
 const PKG_KEY: Record<PackageKind, string> = {
   installer: 'settings.pkgInstaller',
+  windowsArm64: 'settings.pkgWindowsArm64',
   appleSilicon: 'settings.pkgAppleSilicon',
   intel: 'settings.pkgIntel',
   appimage: 'settings.pkgAppImage',

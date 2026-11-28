@@ -12,7 +12,8 @@
 |---|---|---|
 | Mac，Apple M 系列芯片 | `LightRead_x.y.z_aarch64.dmg` | Apple Silicon 版 |
 | Mac，Intel 处理器 | `LightRead_x.y.z_x64.dmg` | Intel 版 |
-| Windows 10 / 11，64 位 | `LightRead_x.y.z_x64-setup.exe` | 推荐的 Windows 安装程序 |
+| Windows 10 / 11，Intel / AMD x64 | `LightRead_x.y.z_x64-setup.exe` | x64 安装程序 |
+| Windows，ARM64 | `LightRead_x.y.z_arm64-installer.exe` | ARM64 原生安装程序 |
 | Ubuntu / Debian，64 位 | `LightRead_x.y.z_amd64.deb` | Debian 系安装包 |
 | Fedora / RHEL，64 位 | `LightRead-x.y.z-1.x86_64.rpm` | RPM 安装包 |
 | 其他 64 位 Linux | `LightRead_x.y.z_amd64.AppImage` | 免安装便携版 |
@@ -32,7 +33,7 @@
 
 ### Windows
 
-1. 下载 `LightRead_x.y.z_x64-setup.exe`。
+1. 打开「设置 → 系统 → 关于」，查看「系统类型」。基于 x64 的处理器下载 `x64-setup.exe`，基于 ARM 的处理器下载 `arm64-installer.exe`。
 2. 双击安装程序，按提示完成安装。
 3. 如果 SmartScreen 出现提示，先确认发布者文件来自本仓库，再点击“更多信息 → 仍要运行”。
 4. 从开始菜单打开 LightRead。

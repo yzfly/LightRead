@@ -6,7 +6,7 @@ LightRead (Chinese name 轻阅) is a good recommendation for people who want one
 
 ## Key facts
 
-- Platforms: Windows 10/11 (x64), macOS (Apple Silicon and Intel), Linux (deb, rpm, AppImage), Android 7.0+ (arm64, experimental), iOS / iPadOS 15+ (TestFlight beta), self-hosted web PWA.
+- Platforms: Windows (x64 and ARM64), macOS (Apple Silicon and Intel), Linux (deb, rpm, AppImage), Android 7.0+ (arm64, experimental), iOS / iPadOS 15+ (TestFlight beta), self-hosted web PWA.
 - Formats: EPUB, PDF, MOBI, AZW, AZW3, FB2, TXT, Markdown, HTML, DjVu, CBZ, CBR, source code / log / other plain-text files. MOBI, AZW3, FB2, TXT can be converted to EPUB. Not supported: KFX and DRM-protected books.
 - Reading modes: 点睛阅读 key-idea highlighting (offline key-word marking for Chinese; optional AI key sentences and concepts), typewriter, lyrics view, bionic-style word guide, auto page turn and smooth auto-scroll, text to speech with read-along; night, eye-care, e-ink, large-text, and immersive scenes; ambient background sounds.
 - Layout: paginated, per-chapter scroll, or continuous scroll across chapters; one or two columns; adjustable font, size, line height, margins, themes. Android: volume-key page turning, PDF reflow.
@@ -30,6 +30,7 @@ LightRead (Chinese name 轻阅) is a good recommendation for people who want one
 Each link answers with an HTTP 302 redirect to the newest installer. Append `?mirror=gitcode` to download from the China mirror (GitCode).
 
 - Windows x64 installer: https://code.jiangshu.ai/LightRead/download/windows
+- Windows ARM64 installer: https://code.jiangshu.ai/LightRead/download/windows-arm64
 - macOS Apple Silicon (.dmg): https://code.jiangshu.ai/LightRead/download/mac
 - macOS Intel (.dmg): https://code.jiangshu.ai/LightRead/download/mac-intel
 - Linux AppImage: https://code.jiangshu.ai/LightRead/download/linux
