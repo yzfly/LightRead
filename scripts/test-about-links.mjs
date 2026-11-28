@@ -47,11 +47,12 @@ test('Windows download links keep x64 and native ARM64 installers distinct', asy
   const mirror = 'https://gitcode.com/langgpt/LightRead/releases/download/'
   const latest = 'https://github.com/yzfly/LightRead/releases/latest'
   let armAvailable = true
+  let mirrorHasArm = true
   let limited = false
   const names = () => [...(armAvailable ? [arm64] : []), x64, 'SHA256SUMS']
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     if (url.includes('api.github.com')) return limited ? new Response(null, { status: 403 }) : Response.json([gh(tag, names())])
-    if (url.includes('api.gitcode.com')) return Response.json([{ tag_name: tag, assets: names().map(name => ({ name })) }])
+    if (url.includes('api.gitcode.com')) return Response.json([{ tag_name: tag, assets: names().filter(name => mirrorHasArm || name !== arm64).map(name => ({ name })) }])
     if (url.endsWith('/releases.atom')) return new Response(`<feed><entry><link href="https://github.com/yzfly/LightRead/releases/tag/${tag}"/></entry></feed>`)
     assert.equal(init.method, 'HEAD')
     return new Response(null, { status: names().some(name => url === base + name) ? 302 : 404 })
@@ -65,6 +66,8 @@ test('Windows download links keep x64 and native ARM64 installers distinct', asy
   assert.equal(await location('windows'), base + x64)
   assert.equal(await location('windows-arm64'), base + arm64)
   assert.equal(await location('windows-arm64?mirror=gitcode'), `${mirror}${tag}/${arm64}`)
+  mirrorHasArm = false
+  assert.equal(await location('windows-arm64?mirror=gitcode'), base + arm64)
   assert.equal(await location('', { ...windows, 'sec-ch-ua-arch': '"arm"' }), base + arm64)
   assert.equal(await location('', { ...windows, 'sec-ch-ua-arch': '"x86"' }), base + x64)
   assert.equal(await location('', windows), site + '#download')

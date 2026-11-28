@@ -268,6 +268,7 @@ h3 { font-family: var(--serif); font-size: clamp(23px, 2.7vw, 30px); line-height
 .dl p { margin: 0; font-size: 14px; color: var(--ink-3); line-height: 1.5; }
 .dl .links { display: grid; gap: 8px; }
 .dl .links a { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 14px; border-radius: var(--r-sm); background: var(--glass-line); color: var(--ink); font-size: 15px; font-weight: 500; }
+.dl .links a[hidden] { display: none; }
 .dl .links a:hover { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); text-decoration: none; }
 .dl .links a svg { width: 16px; height: 16px; opacity: .7; }
 .dl .ver { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); min-height: 1.5em; }
@@ -503,7 +504,7 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
             <p>Windows 10 / 11</p>
             <div class="links">
               <a data-fixed="windows" href="download/windows">x64 .exe<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
-              <a data-fixed="windows-arm64" href="download/windows-arm64">ARM64 .exe<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
+              <a data-fixed="windows-arm64" href="download/windows-arm64" hidden>ARM64 .exe<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14"/></svg></a>
             </div>
             <span class="ver" data-ver="windows"></span>
           </div>
@@ -639,6 +640,9 @@ footer { margin-top: 120px; padding: 0 0 max(32px, env(safe-area-inset-bottom));
     data.platforms.forEach(function (p) {
       var el = document.querySelector('[data-ver="' + p.platform + '"]')
       if (el) el.textContent = 'v' + p.version
+      if (p.platform === 'windows' && p.packages.some(function (pkg) { return pkg.kind === 'windowsArm64' })) {
+        document.querySelector('[data-fixed="windows-arm64"]').hidden = false
+      }
     })
   }).catch(function () {})
 })()

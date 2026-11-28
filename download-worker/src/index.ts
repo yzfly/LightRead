@@ -113,12 +113,13 @@ async function loadList(source: ReleaseListSource, ctx: ExecutionContext): Promi
   return items
 }
 
-/** 先取请求的来源, 失败再换另一个; 两边都失败返回 null */
-async function loadAny(prefer: ReleaseListSource, ctx: ExecutionContext): Promise<{ source: ReleaseListSource; items: PlatformDownload[] } | null> {
+/** 首选来源还缺目标安装包时，从另一来源获取。 */
+async function loadAny<T>(prefer: ReleaseListSource, ctx: ExecutionContext, select: (items: PlatformDownload[]) => T | undefined) {
   for (const source of prefer === 'gitcode' ? ['gitcode', 'github'] as const : ['github', 'gitcode'] as const) {
     try {
       const items = await loadList(source, ctx)
-      if (items.length) return { source, items }
+      const value = items.length ? select(items) : undefined
+      if (value !== undefined) return { source, value }
     } catch { /* 换下一个来源 */ }
   }
   return null
@@ -129,7 +130,7 @@ function redirect(url: string, status = 302) {
 }
 
 async function latestJson(prefer: ReleaseListSource, ctx: ExecutionContext) {
-  const got = await loadAny(prefer, ctx)
+  const got = await loadAny(prefer, ctx, items => items)
   const fixed = Object.fromEntries(Object.keys(TARGETS).filter(k => !['mac-arm64', 'linux-appimage'].includes(k)).map(k => [k, `${SITE}download/${k}`]))
   const body = {
     name: 'LightRead 轻阅',
@@ -138,7 +139,7 @@ async function latestJson(prefer: ReleaseListSource, ctx: ExecutionContext) {
     fixedLinks: fixed,
     note: 'fixedLinks always redirect (HTTP 302) to the newest build; append ?mirror=gitcode for the China mirror. Desktop uses tags vX.Y.Z, the Android app uses app-vX.Y.Z, iOS is distributed through TestFlight.',
     // iOS 不在 Release 里, 版本由 TestFlight 管: 不给 version, 标出渠道
-    platforms: [...(got?.items ?? []), { platform: 'ios', channel: 'testflight', packages: iosDownload().packages }],
+    platforms: [...(got?.value ?? []), { platform: 'ios', channel: 'testflight', packages: iosDownload().packages }],
   }
   return new Response(JSON.stringify(body, null, 2), {
     status: got ? 200 : 503,
@@ -172,9 +173,8 @@ export default {
 
     if (target.platform === 'ios') return redirect(IOS_TESTFLIGHT_URL)
     const line = target.platform === 'android' ? 'app' : 'desktop'
-    const got = await loadAny(prefer, ctx)
-    const pkg = got?.items.find(d => d.platform === target.platform)?.packages.find(p => p.kind === target.kind)
-    if (!got || !pkg) return redirect(RELEASE_PAGES[prefer][line])
-    return redirect(pkg.url)
+    const got = await loadAny(prefer, ctx, items =>
+      items.find(d => d.platform === target.platform)?.packages.find(p => p.kind === target.kind))
+    return redirect(got?.value.url ?? RELEASE_PAGES[prefer][line])
   },
 }
