@@ -47,6 +47,7 @@
     "preview": "npm run build && wrangler dev",
     "tauri": "tauri",
     "e2e": "node scripts/e2e-smoke.mjs",
+    "e2e:epub-layout": "node scripts/e2e-epub-layout.mjs",
     "e2e:epub-compat": "node scripts/e2e-epub-compat.mjs",
     "e2e:book-sources": "node scripts/e2e-book-sources.mjs",
     "e2e:booklists": "node scripts/e2e-booklists.mjs",

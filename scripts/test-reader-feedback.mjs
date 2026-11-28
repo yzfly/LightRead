@@ -184,3 +184,26 @@ test('阅读字体盖过书自带的字体, 代码类元素保留等宽', async 
     }
   }
 })
+
+// 2026-11-26, #26: Windows 宽窗口里滚动阅读，调整边距后正文一直是 720px 宽。
+test('滚动阅读按居中阅读区宽度计算边距，宽屏和窄屏的正文都会随滑块收窄', async () => {
+  const { scrolledPageGeometry } = await import('../src/services/portraitLayout.ts')
+  for (const [viewport, maxWidth] of [[1440, 720], [400, 1200]]) {
+    const width = Math.min(viewport, maxWidth)
+    for (const percent of [2, 6, 16]) {
+      const { gap, columnWidth } = scrolledPageGeometry(viewport, maxWidth, percent / 100)
+      assert.ok(Math.abs(gap - width * percent / 100) < 0.001)
+      assert.equal(columnWidth, width - 2 * gap)
+    }
+  }
+})
+
+// 2026-11-27, #27: 日文 EPUB 默认保留竖排，横排选择随阅读设置同步。
+test('默认跟随原书，选择横排后同步书写方向', async () => {
+  const { settingsDefaults } = await import('../src/stores/settings.ts')
+  const { readSyncedSettings } = await import('../src/services/sync/settingsSync.ts')
+  const settings = settingsDefaults()
+  assert.equal(settings.reader.writingMode, 'original')
+  settings.reader.writingMode = 'horizontal'
+  assert.equal(readSyncedSettings(settings)['reader.writingMode'], 'horizontal')
+})
